@@ -1,113 +1,58 @@
-const axios = require("axios");
-const Parser = require("rss-parser");
-const FeedParser = require("feedparser");
-const xml2js = require("xml2js");
-const { XMLParser } = require("fast-xml-parser");
 const fs = require("fs");
-const { sendMessage } = require("./message");
+const { sendMessage } = require("./src/message");
+const { parseRSS } = require("./src/parsers/rss");
+const { parseAtom } = require("./src/parsers/atom");
+const { parseYouTube } = require("./src/parsers/youtube");
+const { parseXML } = require("./src/parsers/xml");
+const { parseFallback } = require("./src/parsers/fallback");
 
-// Wczytanie config.json
+// Config
 const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// Wczytanie/zainicjalizowanie cache.json
+// Cache
 let cache = {};
 const cacheFile = "./cache.json";
-
 if (fs.existsSync(cacheFile)) {
   try {
     cache = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-    console.log(`[Cache] Wczytano backup (${Object.keys(cache).length} kanałów)`);
-  } catch (err) {
-    console.error("[Cache] Błąd przy odczycie cache.json:", err.message);
+    console.log(`[Cache] Załadowano plik (${Object.keys(cache).length} kanałów)`);
+  } catch {
+    console.warn("[Cache] Błąd przy wczytywaniu cache.json, tworzę pusty.");
     cache = {};
   }
 }
-
-// Zapis cache do pliku
 function saveCache() {
   fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2), "utf8");
 }
 
-// Pobieranie feedów (różne parsery)
-async function fetchFeed(feedUrl) {
-  let latestItems = [];
+// Główna logika parsowania feedu
+async function fetchFeed(url) {
+  let items = [];
 
-  try {
-    const parser = new Parser();
-    const feed = await parser.parseURL(feedUrl);
-    if (feed.items && feed.items.length > 0) {
-      latestItems = feed.items.map(item => ({
-        title: item.title,
-        link: item.link,
-        contentSnippet: item.contentSnippet,
-        isoDate: item.isoDate,
-      }));
-    }
-  } catch (e) {}
+  items = await parseRSS(url);
+  if (items.length) return items;
 
-  if (latestItems.length === 0) {
-    try {
-      const res = await axios.get(feedUrl, { responseType: "stream" });
-      const feedparser = new FeedParser();
-      latestItems = await new Promise((resolve, reject) => {
-        const items = [];
-        res.data.pipe(feedparser);
-        feedparser.on("error", reject);
-        feedparser.on("readable", function () {
-          let item;
-          while ((item = this.read())) {
-            items.push({
-              title: item.title,
-              link: item.link,
-              contentSnippet: item.description,
-              isoDate: item.pubdate,
-            });
-          }
-        });
-        feedparser.on("end", () => resolve(items));
-      });
-    } catch (e) {}
-  }
+  items = await parseAtom(url);
+  if (items.length) return items;
 
-  if (latestItems.length === 0) {
-    try {
-      const res = await axios.get(feedUrl);
-      const result = await xml2js.parseStringPromise(res.data);
-      const items = result?.rss?.channel?.[0]?.item || [];
-      latestItems = items.map(i => ({
-        title: i.title[0],
-        link: i.link[0],
-        contentSnippet: i.description ? i.description[0] : "",
-        isoDate: i.pubDate ? i.pubDate[0] : null,
-      }));
-    } catch (e) {}
-  }
+  items = await parseYouTube(url);
+  if (items.length) return items;
 
-  if (latestItems.length === 0) {
-    try {
-      const res = await axios.get(feedUrl);
-      const parser = new XMLParser();
-      const jsonObj = parser.parse(res.data);
-      const items = jsonObj?.rss?.channel?.item || [];
-      latestItems = items.map(i => ({
-        title: i.title,
-        link: i.link,
-        contentSnippet: i.description || "",
-        isoDate: i.pubDate || null,
-      }));
-    } catch (e) {}
-  }
+  items = await parseXML(url);
+  if (items.length) return items;
 
-  return latestItems;
+  items = await parseFallback(url);
+  return items;
 }
 
+// Sprawdzenie dla kanału
 async function checkFeedsForChannel(channelIndex, channelConfig) {
   if (!cache[channelIndex]) cache[channelIndex] = {};
 
   for (const feedUrl of channelConfig.RSS) {
     try {
       const items = await fetchFeed(feedUrl);
-      if (items.length === 0) continue;
+      if (!items.length) continue;
 
       if (!cache[channelIndex][feedUrl]) cache[channelIndex][feedUrl] = [];
 
@@ -124,29 +69,25 @@ async function checkFeedsForChannel(channelIndex, channelConfig) {
           await sendMessage(channelConfig.Webhook, channelConfig.Thread, entry);
         }
 
-        // dopisz nowe linki do historii (BEZ kasowania starych)
+        // dopisz linki do cache
         cache[channelIndex][feedUrl] = [
-          ...newItems.map(i => i.link),
-          ...cache[channelIndex][feedUrl]
+          ...newItems.map((i) => i.link),
+          ...cache[channelIndex][feedUrl],
         ];
-
         saveCache();
       }
-    } catch (e) {
-      console.error(`[Kanał ${channelIndex + 1}] Błąd RSS ${feedUrl}:`, e.message);
+    } catch (err) {
+      console.error(`[Kanał ${channelIndex + 1}] Błąd feeda ${feedUrl}:`, err.message);
     }
   }
 }
 
-// Uruchamianie dla każdego kanału
+// Uruchamianie
 config.channels.forEach((channelConfig, index) => {
   const intervalMs = channelConfig.TimeChecker * 60 * 1000;
-  console.log(
-    `[Kanał ${index + 1}] Start. Sprawdzanie co ${channelConfig.TimeChecker} minut.`
-  );
+  console.log(`[Kanał ${index + 1}] Start. Sprawdzanie co ${channelConfig.TimeChecker} minut.`);
 
   setInterval(() => checkFeedsForChannel(index, channelConfig), intervalMs);
 
-  // pierwsze sprawdzenie zaraz po starcie
   checkFeedsForChannel(index, channelConfig);
 });

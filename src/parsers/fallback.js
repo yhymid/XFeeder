@@ -28,18 +28,47 @@ async function parseFallback(feedUrl) {
         return found ? found[1] : null;
       };
 
+      const getTagWithAttr = (tag, attrName, attrValue) => {
+        const regex = new RegExp(`<${tag}[^>]*${attrName}="${attrValue}"[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
+        const found = block.match(regex);
+        return found ? cleanCDATA(found[1].trim()) : "";
+      };
+
+      // Szukanie obrazka w różnych formatach
+      let imageUrl = null;
+      
+      // enclosure
+      imageUrl = getAttr('enclosure', 'url');
+      if (imageUrl) {
+        const type = getAttr('enclosure', 'type');
+        if (type && !type.startsWith('image/')) imageUrl = null; // Tylko obrazki
+      }
+      
+      // media:thumbnail
+      if (!imageUrl) {
+        imageUrl = getAttr('media:thumbnail', 'url');
+      }
+      
+      // og:image w description
+      if (!imageUrl) {
+        const description = getTag('description');
+        const imgMatch = description.match(/<img[^>]+src="([^">]+)"/);
+        if (imgMatch) imageUrl = imgMatch[1];
+      }
+
       return {
         title: getTag("title"),
         link: getTag("link"),
         contentSnippet: getTag("description"),
         isoDate: getTag("pubDate"),
-        enclosure: getAttr("enclosure", "url"),
+        enclosure: imageUrl,
         author: getTag("author"),
         guid: getTag("guid"),
         categories: [],
       };
     });
-  } catch {
+  } catch (error) {
+    console.error(`[Fallback] Błąd parsowania ${feedUrl}:`, error.message);
     return [];
   }
 }

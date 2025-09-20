@@ -4,6 +4,17 @@ async function sendMessage(webhookUrl, threadId, entry) {
   try {
     const webhookClient = new WebhookClient({ url: webhookUrl });
 
+    // Jeśli to YouTube, wyślij sam link bez embed
+    if (entry.link && (entry.link.includes('youtube.com') || entry.link.includes('youtu.be'))) {
+      await webhookClient.send({
+        content: `📺 **Nowy film**: ${entry.link}`,
+        threadId: threadId !== "null" ? threadId : undefined,
+      });
+      console.log(`[YouTube Link] Wysłano: ${entry.title}`);
+      return;
+    }
+
+    // Dla innych feedów - normalny embed
     const embed = new EmbedBuilder()
       .setTitle(entry.title || "Nowy wpis")
       .setURL(entry.link)

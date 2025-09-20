@@ -46,5 +46,5 @@ And of course this have support Discord Webhook with Threads <br>
 `node main.js`
 
 # Preview
-![Preview1](.../Preview/image.png)
-![Preview2](.../Preview/image2.png)
+![Preview1](Preview/image.png)
+![Preview2](Preview/image2.png)

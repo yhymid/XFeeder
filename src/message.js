@@ -14,7 +14,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
       return;
     }
 
-    // Dla innych feedów - normalny embed z obrazkiem
+    // Dla innych feedów - normalny embed z WIELKIM obrazkiem
     const embed = new EmbedBuilder()
       .setTitle(entry.title || "Nowy wpis")
       .setURL(entry.link)
@@ -23,12 +23,12 @@ async function sendMessage(webhookUrl, threadId, entry) {
       .setFooter({ text: entry.author ? `Autor: ${entry.author}` : "RSS Bot" })
       .setTimestamp(entry.isoDate ? new Date(entry.isoDate) : new Date());
 
-    // Dodaj obrazek jeśli dostępny
+    // DODAJ WIELKI OBRAZEK (setImage zamiast setThumbnail)
     if (entry.enclosure) {
-      if (entry.enclosure.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-        embed.setImage(entry.enclosure);
+      if (entry.enclosure.match(/\.(jpg|jpeg|png|gif|webp|bmp)(\?.*)?$/i)) {
+        embed.setImage(entry.enclosure); // WIELKI OBRAZEK
       } else {
-        // Jeśli to nie obrazek, może to być thumbnail w polu
+        // Jeśli to nie obrazek, może to być video - pokaż jako thumbnail
         embed.setThumbnail(entry.enclosure);
       }
     }

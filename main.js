@@ -1,10 +1,30 @@
 const fs = require("fs");
+const axios = require("axios"); // Import axios dla globalnej konfiguracji
 const { sendMessage } = require("./src/message");
 const { parseRSS } = require("./src/parsers/rss");
 const { parseAtom } = require("./src/parsers/atom");
 const { parseYouTube } = require("./src/parsers/youtube");
 const { parseXML } = require("./src/parsers/xml");
 const { parseFallback } = require("./src/parsers/fallback");
+
+// 🔧 GLOBALNA KONFIGURACJA AXIOS DLA WSZYSTKICH PARSERÓW
+axios.defaults.timeout = 15000; // 15 sekund timeout
+axios.defaults.headers.common['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+axios.defaults.headers.common['Accept'] = 'application/rss+xml,application/atom+xml,application/xml,text/xml,application/json,text/html;q=0.9,*/*;q=0.8';
+axios.defaults.headers.common['Accept-Language'] = 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7';
+axios.defaults.headers.common['Accept-Encoding'] = 'gzip, deflate, br';
+axios.defaults.headers.common['Connection'] = 'keep-alive';
+axios.defaults.headers.common['Cache-Control'] = 'no-cache';
+axios.defaults.headers.common['Pragma'] = 'no-cache';
+
+// Dodaj również customową instancję dla rss-parser jeśli będzie potrzebna
+const customAxios = axios.create({
+  timeout: 15000,
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/rss+xml,application/atom+xml,application/xml,text/xml',
+  }
+});
 
 // Config
 const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
@@ -51,6 +71,13 @@ async function checkFeedsForChannel(channelIndex, channelConfig) {
 
   for (const feedUrl of channelConfig.RSS) {
     try {
+      // Dodaj krótkie opóźnienie między requestami aby uniknąć blokady
+      if (feedUrl.includes('youtube.com')) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
       const items = await fetchFeed(feedUrl);
       if (!items.length) continue;
 
@@ -90,4 +117,16 @@ config.channels.forEach((channelConfig, index) => {
   setInterval(() => checkFeedsForChannel(index, channelConfig), intervalMs);
 
   checkFeedsForChannel(index, channelConfig);
+});
+
+// Obsługa graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n[Shutdown] Zapisuję cache i zamykam...');
+  saveCache();
+  process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[Critical Error] Nieoczekiwany błąd:', error);
+  saveCache();
 });

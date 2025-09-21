@@ -1,33 +1,38 @@
 // main.js - Główna logika XFeeder
 const fs = require("fs");
-const axios = require("axios");
+const axios = require("axios"); // Import axios dla globalnej konfiguracji
 const { sendMessage } = require("./src/message");
+
 // ----------------------------------------------------------------------
 // IMPORT WSZYSTKICH PARSERÓW
 // ----------------------------------------------------------------------
+const { parseRSS } = require("./src/parsers/rss");
 const { parseAtom } = require("./src/parsers/atom");
 const { parseYouTube } = require("./src/parsers/youtube");
-const { parseXML } = require("./src/parsers/xml"); 
-const { parseRSS } = require("./src/parsers/rss"); 
+const { parseXML } = require("./src/parsers/xml");
 const { parseJSON } = require("./src/parsers/json"); 
-const { parseApiX } = require("./src/parsers/api_x"); // Niestandardowe API
-const { parseFallback } = require("./src/parsers/fallback"); // Ostatni Web Scraper
+const { parseApiX } = require("./src/parsers/api_x"); 
+const { parseFallback } = require("./src/parsers/fallback");
 
-// Plik utils.js jest implikowany, jeśli używasz parseDate w logice sendMessage lub innych miejscach,
-// ale w logice main.js nie jest potrzebny, więc zostawiamy go poza importem głównym.
+// ----------------------------------------------------------------------
+// 🏆 GLOBALNA KONFIGURACJA AXIOS DLA WSZYSTKICH PARSERÓW
+// ----------------------------------------------------------------------
+axios.defaults.timeout = 15000; // 15 sekund timeout
+axios.defaults.headers.common['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+axios.defaults.headers.common['Accept'] = 'application/rss+xml,application/atom+xml,application/xml,text/xml,application/json,text/html;q=0.9,*/*;q=0.8';
+axios.defaults.headers.common['Accept-Language'] = 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7';
+axios.defaults.headers.common['Accept-Encoding'] = 'gzip, deflate, br';
+axios.defaults.headers.common['Connection'] = 'keep-alive';
+axios.defaults.headers.common['Cache-Control'] = 'no-cache';
+axios.defaults.headers.common['Pragma'] = 'no-cache';
 
-// --- KONFIGURACJA HTTP CLIENT ---
-const httpClient = axios.create({
-     timeout: 15000, 
-     headers: {
-       'User-Agent': 'Mozilla/5.0 (XFeeder Bot; compatible; Google-Bot/2.1; +https://github.com/YourRepo)',
-       'Accept': 'application/rss+xml,application/atom+xml,application/xml,application/json,text/xml,text/html;q=0.9,*/*;q=0.8',
-       'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
-       'Accept-Encoding': 'gzip, deflate, br',
-       'Connection': 'keep-alive',
-       'Cache-Control': 'no-cache',
-       'Pragma': 'no-cache',
-      },
+// Wersja customAxios z Twojego starego kodu (nieużywana, ale zostawiona jako referencja)
+const customAxios = axios.create({
+  timeout: 15000,
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/rss+xml,application/atom+xml,application/xml,text/xml',
+  }
 });
 
 // --- KONFIGURACJA I CACHE ---
@@ -53,26 +58,27 @@ function saveCache() {
 
 /**
  * Wywołuje kolejno parsery do momentu, aż jeden zwróci dane.
+ * Wszystkie parsery muszą używać globalnego obiektu 'axios' z jego defaults.
  * @param {string} url Adres URL feeda.
- * @param {object} client Instancja klienta HTTP (axios).
  * @returns {Array} Lista sparsowanych elementów.
  */
-async function fetchFeed(url, client) {
+async function fetchFeed(url) {
     let items = [];
 
-    // UZUPELNIONA I POSORTOWANA LISTA PARSERÓW
+    // Poprawna i kompletna lista parserów
     const parsers = [
-        parseYouTube,   // 1. Najbardziej specyficzny (YouTube Atom)
-        parseAtom,      // 2. Standard Atom (GitHub, Blogi Atom)
-        parseApiX,      // 3. Niestandardowe API (np. Steam JSON)
-        parseXML,       // 4. Zaawansowany RSS/XML (xml2js, content:encoded)
-        parseJSON,      // 5. JSON Feed (Standard)
-        parseRSS,       // 6. Regex Fallback (Ostatnia szansa dla źle sformatowanych feedów)
-        parseFallback,  // 7. Web Scraper (Ostateczna deska ratunku - HTML meta tagi)
+        parseYouTube,   
+        parseAtom,      
+        parseApiX,      
+        parseXML,       
+        parseJSON,      
+        parseRSS,       
+        parseFallback,  
     ];
 
+    // Przekazujemy GLOBALNY AXIOS do wszystkich parserów
     for (const parser of parsers) {
-        items = await parser(url, client); 
+        items = await parser(url, axios); 
         if (items.length) {
             console.log(`[Parser] Sukces: ${parser.name} dla ${url}`);
             return items;
@@ -94,49 +100,36 @@ async function checkFeedsForChannel(channelIndex, channelConfig) {
             const jitter = Math.floor(Math.random() * 500); 
             await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
 
-            const items = await fetchFeed(feedUrl, httpClient);
+            // W fetchFeed przekazujemy GLOBALNY AXIOS
+            const items = await fetchFeed(feedUrl, axios); 
             if (!items.length) continue;
 
             if (!cache[channelIndex][feedUrl]) cache[channelIndex][feedUrl] = [];
 
-            // Elementy z feeda są zazwyczaj posortowane od NAJNOWSZEGO do NAJSTARSZEGO
             const newItems = [];
+            
+            // --- PRZYWRÓCONA, CZYTELNA LOGIKA CACHE ---
             for (const item of items) {
-                // Wykorzystaj 'guid' jako fallback dla linku, jeśli link nie istnieje
-                const uniqueId = item.guid || item.link;
-                // Weryfikacja: Jeśli unikalny ID jest pusty LUB jest już w cache, przerwij pętlę.
-                if (!uniqueId || cache[channelIndex][feedUrl].includes(uniqueId)) break; 
-
-                // Dodatkowa weryfikacja daty: Upewnij się, że element ma datę
-                // (choć parseDate w utils.js powinien to zapewnić, to dodatkowa weryfikacja nie zaszkodzi)
-                if (!item.isoDate) {
-                    // Pominięcie elementu, jeśli data jest pusta po parsowaniu
-                    console.warn(`[Cache] Pominięto wpis bez daty dla ${feedUrl}`);
-                    continue;
-                }
-
+                // Do cache używamy zawsze 'link', jak w Twojej oryginalnej wersji, 
+                // choć 'guid' jest lepsze, to 'link' gwarantuje wsteczną kompatybilność
+                // i prostotę Twojego systemu.
+                if (cache[channelIndex][feedUrl].includes(item.link)) break; 
                 newItems.push(item);
             }
 
             if (newItems.length > 0) {
-                // 1. Zbieramy linki/guidy do cache
-                const newIdsToCache = newItems.map((i) => i.guid || i.link);
- 
-                // 2. Wiadomości do wysłania (bierzemy NAJNOWSZE 'RequestSend' elementów)
-                newItems.reverse(); // Odwracamy: [Najstarszy_Nowy, ..., Najnowszy_Nowy]
-                const toSend = newItems.slice(-channelConfig.RequestSend); 
+                // Cięcie do wysłania (nowe elementy są na końcu po odwróceniu)
+                const toSend = newItems.slice(0, channelConfig.RequestSend); 
 
-                // 3. Wysyłamy w poprawnej CHRONOLOGICZNEJ kolejności
-                for (const entry of toSend) {
+                for (const entry of toSend.reverse()) { // Wysłanie od najstarszego do najnowszego
                     await sendMessage(channelConfig.Webhook, channelConfig.Thread, entry);
                 }
 
-                // 4. Aktualizacja cache (dodajemy nowe ID od najnowszego)
+                // dopisz linki do cache
                 cache[channelIndex][feedUrl] = [
-                    ...newIdsToCache, 
+                    ...newItems.map((i) => i.link),
                     ...cache[channelIndex][feedUrl],
                 ];
-
                 saveCache();
                 console.log(`[Kanał ${channelIndex + 1}] Znaleziono i wysłano ${toSend.length} nowych wpisów z ${feedUrl}.`);
             }

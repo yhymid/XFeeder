@@ -1,60 +1,100 @@
-const axios = require("axios");
-const { XMLParser } = require("fast-xml-parser");
+// src/parsers/atom.js
+const xml2js = require('xml2js');
+const { stripHtml } = require("string-strip-html"); 
+const { parseDate } = require("./utils"); 
 
-function cleanCDATA(str) {
-  if (!str) return "";
-  return str.replace("<![CDATA[", "").replace("]]>", "").trim();
-}
+// Konfiguracja dla xml2js
+const parser = new xml2js.Parser({ 
+    explicitArray: false, 
+    ignoreAttrs: false, 
+    attrkey: "ATTR", 
+    charkey: "VALUE", 
+    valueProcessers: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans]
+});
 
-async function parseAtom(feedUrl) {
-  try {
-    const res = await axios.get(feedUrl);
-    const parser = new XMLParser({ 
-      ignoreAttributes: false,
-      isArray: (name) => name === "entry" || name === "link" || name === "media:thumbnail"
-    });
-    const data = parser.parse(res.data);
+/**
+ * Parsuje kanał w formacie Atom, włączając rozszerzenia Media RSS.
+ * @param {string} feedUrl URL feeda.
+ * @param {object} httpClient Instancja axios.
+ * @returns {Array} Lista przetworzonych wpisów.
+ */
+async function parseAtom(feedUrl, httpClient) {
+    // Specjalna obsługa YouTube jest w osobnym parserze
+    if (feedUrl.includes("youtube.com") || feedUrl.includes("yt:")) return [];
 
-    const entries = data.feed?.entry || [];
-    if (!entries.length) return [];
+    try {
+        const res = await httpClient.get(feedUrl);
+        const xml = res.data;
+        
+        const data = await parser.parseStringPromise(xml);
+        
+        if (!data.feed || !data.feed.entry) {
+            return [];
+        }
 
-    return (Array.isArray(entries) ? entries : [entries]).map((entry) => {
-      // Pobierz obrazek - szukamy w różnych miejscach
-      let imageUrl = null;
-      
-      // Media thumbnail
-      if (entry['media:thumbnail']?.['@_url']) {
-        imageUrl = entry['media:thumbnail']['@_url'];
-      } 
-      // Media content
-      else if (entry['media:content']?.['@_url'] && entry['media:content']?.['@_type']?.startsWith('image/')) {
-        imageUrl = entry['media:content']['@_url'];
-      }
-      // Link z rel="enclosure"
-      else if (entry.link) {
-        const links = Array.isArray(entry.link) ? entry.link : [entry.link];
-        const imageLink = links.find(link => 
-          link['@_rel'] === 'enclosure' && 
-          link['@_type']?.startsWith('image/')
-        );
-        if (imageLink) imageUrl = imageLink['@_href'];
-      }
+        const rawEntries = Array.isArray(data.feed.entry) 
+            ? data.feed.entry 
+            : [data.feed.entry];
 
-      return {
-        title: cleanCDATA(entry.title || ""),
-        link: entry.link ? (Array.isArray(entry.link) ? entry.link.find(l => l['@_rel'] === 'alternate')?.['@_href'] || entry.link[0]?.['@_href'] : entry.link['@_href']) : "",
-        contentSnippet: cleanCDATA(entry.summary || entry.content || ""),
-        isoDate: entry.updated || entry.published || "",
-        enclosure: imageUrl,
-        author: entry.author?.name || null,
-        guid: entry.id || null,
-        categories: entry.category ? [].concat(entry.category) : [],
-      };
-    });
-  } catch (error) {
-    console.error(`[Atom] Błąd parsowania ${feedUrl}:`, error.message);
-    return [];
-  }
+        const items = rawEntries.map(entry => {
+            
+            const title = entry.title ? stripHtml(entry.title.VALUE || entry.title).result : 'Brak tytułu';
+            const isoDate = parseDate(entry.updated || entry.published);
+            const author = entry.author?.name?.VALUE || entry.author?.name || null;
+            
+            const links = Array.isArray(entry.link) ? entry.link : (entry.link ? [entry.link] : []);
+            
+            // 1. Znajdź link główny (rel="alternate")
+            let link = entry.link?.ATTR?.href || null; 
+            const alternateLink = links.find(l => l.ATTR && l.ATTR.rel === 'alternate');
+            if (alternateLink) {
+                link = alternateLink.ATTR.href;
+            } else if (links.length > 0 && links[0].ATTR.href) {
+                link = links[0].ATTR.href;
+            }
+
+            // 2. Pobierz obrazek (Media RSS, enclosure)
+            let image = null;
+            
+            // a) <media:thumbnail> (np. GitHub)
+            if (entry['media:thumbnail'] && entry['media:thumbnail'].ATTR && entry['media:thumbnail'].ATTR.url) {
+                image = entry['media:thumbnail'].ATTR.url;
+            }
+            // b) <link rel="enclosure" type="image/...">
+            if (!image) {
+                const enclosureLink = links.find(l => 
+                    l.ATTR && 
+                    l.ATTR.rel === 'enclosure' && 
+                    l.ATTR.type && 
+                    l.ATTR.type.startsWith('image/')
+                );
+                if (enclosureLink) image = enclosureLink.ATTR.href;
+            }
+
+            // 3. Wyczyść opis/treść
+            const rawDescription = entry.summary 
+                ? (entry.summary.VALUE || entry.summary)
+                : (entry.content ? (entry.content.VALUE || entry.content) : '');
+                
+            const contentSnippet = stripHtml(rawDescription).result.trim();
+            
+            return {
+                title,
+                link,
+                contentSnippet: contentSnippet.substring(0, 500),
+                isoDate,
+                enclosure: image,
+                author,
+                guid: entry.id,
+                categories: [],
+            };
+        });
+
+        return items;
+        
+    } catch (error) {
+        return []; 
+    }
 }
 
 module.exports = { parseAtom };

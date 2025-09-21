@@ -1,80 +1,125 @@
-const axios = require("axios");
-const xml2js = require("xml2js");
+// src/parsers/xml.js
+const xml2js = require('xml2js');
+const { stripHtml } = require("string-strip-html"); 
+const { parseDate } = require("./utils"); 
 
-function cleanCDATA(str) {
-  if (!str) return "";
-  return str.replace("<![CDATA[", "").replace("]]>", "").trim();
+/**
+ * Funkcja pomocnicza do znajdowania pierwszego URL obrazka w treści HTML.
+ * @param {string} htmlContent Kod HTML do przeszukania.
+ * @returns {string|null} Znaleziony URL obrazka lub null.
+ */
+function extractImageFromHTML(htmlContent) {
+    if (!htmlContent) return null;
+    
+    // Szukanie pierwszego tagu <img> z atrybutem src
+    const imgMatch = htmlContent.match(/<img\s+(?:[^>]*?\s+)?src=(["'])(.*?)\1/i);
+    if (imgMatch && imgMatch[2]) {
+        return imgMatch[2];
+    }
+    
+    return null;
 }
 
-async function parseXML(feedUrl) {
-  try {
-    const res = await axios.get(feedUrl, { timeout: 10000 });
-    const parser = new xml2js.Parser({
-      explicitArray: false,
-      explicitCharkey: true,
-      explicitRoot: false,
-      ignoreAttrs: false
-    });
-    
-    const data = await parser.parseStringPromise(res.data);
+// Konfiguracja dla xml2js
+const parser = new xml2js.Parser({ 
+    explicitArray: false, // Konwertuj tablice jednoelementowe na obiekty
+    ignoreAttrs: false,   // Atrybuty są potrzebne dla enclosure, media:content
+    attrkey: "ATTR",      // Klucz dla atrybutów
+    charkey: "VALUE",     // Klucz dla wartości tekstowych w tagach
+    valueProcessors: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans]
+});
 
-    const channel = data.rss?.channel || data.channel;
-    const items = channel?.item ? (Array.isArray(channel.item) ? channel.item : [channel.item]) : [];
 
-    if (!items.length) return [];
-
-    return items.map((item) => {
-      // Pobierz obrazek z różnych źródeł
-      let imageUrl = null;
-      
-      // 1. enclosure (najpierw sprawdzamy obiekt, potem tablicę)
-      if (item.enclosure) {
-        // enclosure jako obiekt z atrybutami
-        if (item.enclosure.$ && item.enclosure.$.url) {
-          if (!item.enclosure.$.type || item.enclosure.$.type.startsWith('image/')) {
-            imageUrl = item.enclosure.$.url;
-          }
-        } 
-        // enclosure jako tablica obiektów
-        else if (Array.isArray(item.enclosure)) {
-          const imageEnclosure = item.enclosure.find(enc => 
-            enc.$ && enc.$.url && (!enc.$.type || enc.$.type.startsWith('image/'))
-          );
-          if (imageEnclosure) imageUrl = imageEnclosure.$.url;
+/**
+ * Parsuje kanały w formacie RSS 2.0 i ogólne XML przy użyciu xml2js.
+ * @param {string} feedUrl URL feeda.
+ * @param {object} httpClient Instancja axios.
+ * @returns {Array} Lista przetworzonych wpisów.
+ */
+async function parseXML(feedUrl, httpClient) {
+    try {
+        const res = await httpClient.get(feedUrl);
+        const xml = res.data;
+        
+        const data = await parser.parseStringPromise(xml);
+        
+        // Weryfikacja struktury RSS 2.0
+        if (!data.rss || !data.rss.channel || !data.rss.channel.item) {
+            return []; 
         }
-      }
-      
-      // 2. media:thumbnail (oryginalny kod)
-      else if (item['media:thumbnail']?.['$']?.url) {
-        imageUrl = item['media:thumbnail']['$'].url;
-      }
-      
-      // 3. media:content (oryginalny kod)
-      else if (item['media:content']?.['$']?.url && item['media:content']?.['$']?.type?.startsWith('image/')) {
-        imageUrl = item['media:content']['$'].url;
-      }
-      
-      // 4. og:image w description (oryginalny kod)
-      else if (item.description) {
-        const ogImageMatch = item.description.match(/<img[^>]+src="([^">]+)"/);
-        if (ogImageMatch) imageUrl = ogImageMatch[1];
-      }
 
-      return {
-        title: cleanCDATA(item.title || ""),
-        link: cleanCDATA(item.link || ""),
-        contentSnippet: cleanCDATA(item.description || ""),
-        isoDate: cleanCDATA(item.pubDate || item.date || ""),
-        enclosure: imageUrl,
-        author: item['dc:creator'] || item.author || null,
-        guid: item.guid || item.link || null, // Dodany fallback na link
-        categories: item.category ? (Array.isArray(item.category) ? item.category : [item.category]) : [],
-      };
-    });
-  } catch (error) {
-    console.error(`[XML] Błąd parsowania ${feedUrl}:`, error.message);
-    return [];
-  }
+        const rawItems = Array.isArray(data.rss.channel.item) 
+            ? data.rss.channel.item 
+            : [data.rss.channel.item];
+
+        const items = rawItems.map(item => {
+            
+            const title = item.title ? stripHtml(item.title).result : 'Brak tytułu';
+            const link = item.link;
+            const isoDate = parseDate(item.pubDate);
+            const author = item['dc:creator'] || item.author || null;
+
+            // --- EKSTRAKCJA OBRAZKA (4-stopniowa hierarchia) ---
+            let image = null;
+
+            // 1. enclosure (prosty standard RSS)
+            if (item.enclosure && item.enclosure.ATTR && item.enclosure.ATTR.url && item.enclosure.ATTR.type?.startsWith('image/')) {
+                image = item.enclosure.ATTR.url;
+            }
+            
+            // 2. media:content lub media:thumbnail
+            if (!image && item['media:content'] && item['media:content'].ATTR && item['media:content'].ATTR.url && item['media:content'].ATTR.type?.startsWith('image/')) {
+                 image = item['media:content'].ATTR.url;
+            }
+            if (!image && item['media:thumbnail'] && item['media:thumbnail'].ATTR && item['media:thumbnail'].ATTR.url) {
+                 image = item['media:thumbnail'].ATTR.url;
+            }
+
+            // --- Ekstrakcja treści do szukania obrazka/opisu ---
+            const contentEncodedValue = item['content:encoded'] 
+                ? (item['content:encoded'].VALUE || item['content:encoded'])
+                : '';
+            const descriptionValue = item.description 
+                ? (item.description.VALUE || item.description) 
+                : '';
+
+            // 3. content:encoded (szukamy obrazka w pełnej treści HTML)
+            if (!image && contentEncodedValue) {
+                image = extractImageFromHTML(contentEncodedValue);
+            }
+            
+            // 4. description (ostatnia próba znalezienia obrazka)
+            if (!image && descriptionValue) {
+                image = extractImageFromHTML(descriptionValue);
+            }
+
+            // --- EKSTRAKCJA OPISU (priorytet content:encoded) ---
+            const rawDescription = contentEncodedValue || descriptionValue;
+            const contentSnippet = stripHtml(rawDescription).result.trim();
+            
+            // Konwersja kategorii na tablicę, jeśli to konieczne
+            const categories = item.category 
+                ? (Array.isArray(item.category) ? item.category : [item.category]) 
+                : [];
+
+            return {
+                title,
+                link,
+                contentSnippet: contentSnippet.substring(0, 500),
+                isoDate,
+                enclosure: image,
+                author,
+                guid: item.guid,
+                categories,
+            };
+        });
+
+        return items;
+        
+    } catch (error) {
+        // Ignorujemy błędy i zwracamy pustą tablicę, by uruchomił się kolejny parser (np. regex fallback)
+        return []; 
+    }
 }
 
 module.exports = { parseXML };

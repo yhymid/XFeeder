@@ -1,76 +1,115 @@
-const axios = require("axios");
+// src/parsers/xml.js
+const xml2js = require('xml2js');
+const { stripHtml } = require("string-strip-html"); 
+const { parseDate } = require("./utils"); 
 
-function cleanCDATA(str) {
-  if (!str) return "";
-  return str.replace("<![CDATA[", "").replace("]]>", "").trim();
+/**
+ * Funkcja pomocnicza do znajdowania pierwszego obrazka w treści HTML.
+ * @param {string} htmlContent Kod HTML do przeszukania.
+ * @returns {string|null} Znaleziony URL obrazka lub null.
+ */
+function extractImageFromHTML(htmlContent) {
+    if (!htmlContent) return null;
+    
+    // Proste wyszukiwanie pierwszego tagu <img> i atrybutu src
+    const imgMatch = htmlContent.match(/<img\s+(?:[^>]*?\s+)?src=(["'])(.*?)\1/i);
+    if (imgMatch && imgMatch[2]) {
+        // Zwraca URL
+        return imgMatch[2];
+    }
+    
+    return null;
 }
 
-async function parseFallback(feedUrl) {
-  try {
-    const res = await axios.get(feedUrl);
-    const data = res.data;
+// Konfiguracja dla xml2js (obsługa przestrzeni nazw, np. content:encoded)
+const parser = new xml2js.Parser({ 
+    explicitArray: false, 
+    ignoreAttrs: false, // Potrzebne do obsługi tagów takich jak <media:content>
+    attrkey: "ATTR", 
+    charkey: "VALUE", 
+    valueProcessors: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans]
+});
 
-    const items = [...data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-    if (!items.length) return [];
 
-    return items.map((match) => {
-      const block = match[1];
+/**
+ * Parsuje kanały w formacie RSS 2.0 i ogólne XML przy użyciu xml2js.
+ * Priorytetowo traktuje content:encoded i media:content.
+ * @param {string} feedUrl URL feeda.
+ * @param {object} httpClient Instancja axios.
+ * @returns {Array} Lista przetworzonych wpisów.
+ */
+async function parseXML(feedUrl, httpClient) {
+    try {
+        const res = await httpClient.get(feedUrl);
+        const xml = res.data;
+        
+        const data = await parser.parseStringPromise(xml);
+        
+        // Sprawdzenie, czy to RSS 2.0
+        if (!data.rss || !data.rss.channel || !data.rss.channel.item) {
+            return []; 
+        }
 
-      const getTag = (tag) => {
-        const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
-        const found = block.match(regex);
-        return found ? cleanCDATA(found[1].trim()) : "";
-      };
+        const rawItems = Array.isArray(data.rss.channel.item) 
+            ? data.rss.channel.item 
+            : [data.rss.channel.item];
 
-      const getAttr = (tag, attr) => {
-        const regex = new RegExp(`<${tag}[^>]*${attr}="([^"]+)"[^>]*>`, "i");
-        const found = block.match(regex);
-        return found ? found[1] : null;
-      };
+        const items = rawItems.map(item => {
+            
+            const title = item.title ? stripHtml(item.title).result : 'Brak tytułu';
+            const link = item.link;
+            const isoDate = parseDate(item.pubDate);
+            const author = item['dc:creator'] || item.author || null;
 
-      const getTagWithAttr = (tag, attrName, attrValue) => {
-        const regex = new RegExp(`<${tag}[^>]*${attrName}="${attrValue}"[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
-        const found = block.match(regex);
-        return found ? cleanCDATA(found[1].trim()) : "";
-      };
+            // --- EKSTRAKCJA OBRAZKA ---
+            let image = null;
 
-      // Szukanie obrazka w różnych formatach
-      let imageUrl = null;
-      
-      // enclosure
-      imageUrl = getAttr('enclosure', 'url');
-      if (imageUrl) {
-        const type = getAttr('enclosure', 'type');
-        if (type && !type.startsWith('image/')) imageUrl = null; // Tylko obrazki
-      }
-      
-      // media:thumbnail
-      if (!imageUrl) {
-        imageUrl = getAttr('media:thumbnail', 'url');
-      }
-      
-      // og:image w description
-      if (!imageUrl) {
-        const description = getTag('description');
-        const imgMatch = description.match(/<img[^>]+src="([^">]+)"/);
-        if (imgMatch) imageUrl = imgMatch[1];
-      }
+            // 1. enclosure (najprostszy standard)
+            if (item.enclosure && item.enclosure.ATTR && item.enclosure.ATTR.url && item.enclosure.ATTR.type?.startsWith('image/')) {
+                image = item.enclosure.ATTR.url;
+            }
+            
+            // 2. media:content (często używane dla obrazków)
+            if (!image && item['media:content'] && item['media:content'].ATTR && item['media:content'].ATTR.url && item['media:content'].ATTR.type?.startsWith('image/')) {
+                 image = item['media:content'].ATTR.url;
+            }
 
-      return {
-        title: getTag("title"),
-        link: getTag("link"),
-        contentSnippet: getTag("description"),
-        isoDate: getTag("pubDate"),
-        enclosure: imageUrl,
-        author: getTag("author"),
-        guid: getTag("guid"),
-        categories: [],
-      };
-    });
-  } catch (error) {
-    console.error(`[Fallback] Błąd parsowania ${feedUrl}:`, error.message);
-    return [];
-  }
+            // 3. content:encoded (WordPress, FitGirl - pełna treść z obrazkami)
+            if (!image && item['content:encoded'] && item['content:encoded'].VALUE) {
+                image = extractImageFromHTML(item['content:encoded'].VALUE);
+            }
+            
+            // 4. description (ostatnia próba)
+            if (!image && item.description && item.description.VALUE) {
+                image = extractImageFromHTML(item.description.VALUE);
+            }
+
+            // --- EKSTRAKCJA OPISU ---
+            // Używamy content:encoded jeśli jest, w przeciwnym razie description
+            const rawDescription = item['content:encoded'] 
+                ? (item['content:encoded'].VALUE || item['content:encoded'])
+                : (item.description ? (item.description.VALUE || item.description) : '');
+                
+            const contentSnippet = stripHtml(rawDescription).result.trim();
+            
+            return {
+                title,
+                link,
+                contentSnippet: contentSnippet.substring(0, 500),
+                isoDate,
+                enclosure: image,
+                author,
+                guid: item.guid,
+                categories: item.category ? (Array.isArray(item.category) ? item.category : [item.category]) : [],
+            };
+        });
+
+        return items;
+        
+    } catch (error) {
+        // Ignorujemy błędy i zwracamy pustą tablicę
+        return []; 
+    }
 }
 
-module.exports = { parseFallback };
+module.exports = { parseXML };

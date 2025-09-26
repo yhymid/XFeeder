@@ -85,8 +85,8 @@ async function fetchChannelMessages(channelId, discordConfig, httpClient) {
     "x-debug-options": "bugReporterEnabled",
     "x-discord-locale": "en-US",
     "x-discord-timezone": "Europe/Warsaw",
-    "x-super-properties": discordConfig["x-super-properties"] || "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MjA5Iiwib3NfdmVyc2lvbiI6IjEwLjAuMTkwNDUiLCJvc19hcmNoIjoieDY0IiwiYXBwX2FyY2giOiJ4NjQiLCJzeXN0ZW1fbG9jYWxlIjoicGwiLCJoYXNfY2xpZW50X21vZHMiOmZhbHNlLCJjbGllbnRfbGF1bmNoX2lkIjoiZjE0NzlhZDEtZDMxZi00ZjEzLWE0NWEtZjYxYzE5ZWFmMGIxIiwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaX0=",
-    "cookie": discordConfig.cookie || "",
+    "x-super-properties": discordConfig["x-super-properties"],
+    "cookie": discordConfig.cookie,
     "referer": `https://discord.com/channels/${discordConfig.GuildID || 'unknown'}/${channelId}`,
     "Referrer-Policy": "strict-origin-when-cross-origin"
   };
@@ -125,7 +125,7 @@ async function fetchChannelMessages(channelId, discordConfig, httpClient) {
       title: msg.content ? 
         (msg.content.length > 80 ? msg.content.substring(0, 80) + '...' : msg.content) 
         : `Wiadomość od ${msg.author.global_name || msg.author.username}`,
-      link: `https://discord.com/channels/${msg.guild_id || 'unknown'}/${msg.channel_id}/${msg.id}`,
+      link: `https://discord.com/channels/${discordConfig.GuildID}/${msg.channel_id}/${msg.id}`,
       contentSnippet: msg.content || "(brak treści)",
       isoDate: msg.timestamp || new Date().toISOString(),
       author: msg.author.global_name || msg.author.username || "Unknown",

@@ -8,15 +8,12 @@ const axios = require("axios");
 async function parseDiscord(discordConfig, httpClient = axios) {
   const messages = [];
 
-  // Sprawdź czy konfiguracja Discord istnieje
   if (!discordConfig || !discordConfig.Token) {
     console.error('[Discord parser] Brak konfiguracji Discord lub tokenu');
     return [];
   }
 
-  // Pobierz listę kanałów do monitorowania
   const channelIds = getChannelIds(discordConfig);
-  
   if (channelIds.length === 0) {
     console.error('[Discord parser] Brak channelIDs w konfiguracji');
     return [];
@@ -37,101 +34,60 @@ async function parseDiscord(discordConfig, httpClient = axios) {
   return messages;
 }
 
-/**
- * Pobiera listę channelIDs z konfiguracji
- */
 function getChannelIds(discordConfig) {
   const channelIds = [];
-  
-  // Obsługa różnych formatów konfiguracji
   if (discordConfig.ChannelIDs) {
-    if (Array.isArray(discordConfig.ChannelIDs)) {
-      channelIds.push(...discordConfig.ChannelIDs);
-    } else if (typeof discordConfig.ChannelIDs === 'string') {
-      channelIds.push(discordConfig.ChannelIDs);
-    }
+    if (Array.isArray(discordConfig.ChannelIDs)) channelIds.push(...discordConfig.ChannelIDs);
+    else if (typeof discordConfig.ChannelIDs === 'string') channelIds.push(discordConfig.ChannelIDs);
   }
-  
-  // Obsługa starego formatu GuildID dla kompatybilności wstecznej
   if (discordConfig.GuildID && channelIds.length === 0) {
-    if (Array.isArray(discordConfig.GuildID)) {
-      channelIds.push(...discordConfig.GuildID);
-    } else {
-      channelIds.push(discordConfig.GuildID);
-    }
+    if (Array.isArray(discordConfig.GuildID)) channelIds.push(...discordConfig.GuildID);
+    else channelIds.push(discordConfig.GuildID);
   }
-  
-  // Filtruj puste wartości
   return channelIds.filter(id => id && id.trim() !== '');
 }
 
-/**
- * Pobiera wiadomości z pojedynczego kanału
- */
 async function fetchChannelMessages(channelId, discordConfig, httpClient) {
   const url = `https://discord.com/api/v9/channels/${channelId}/messages?limit=${discordConfig.Limit || 50}`;
   
   const headers = {
+    "authorization": discordConfig.Token,
     "accept": "*/*",
     "accept-language": "pl",
-    "authorization": discordConfig.Token,
-    "priority": "u=1, i",
-    "sec-ch-ua": '"Not:A-Brand";v="24", "Chromium";v="134"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    "x-debug-options": "bugReporterEnabled",
+    "referer": `https://discord.com/channels/${discordConfig.GuildID || 'unknown'}/${channelId}`,
     "x-discord-locale": "en-US",
     "x-discord-timezone": "Europe/Warsaw",
-    "x-super-properties": discordConfig["x-super-properties"],
     "cookie": discordConfig.cookie,
-    "referer": `https://discord.com/channels/${discordConfig.GuildID || 'unknown'}/${channelId}`,
-    "Referrer-Policy": "strict-origin-when-cross-origin"
+    "x-super-properties": discordConfig["x-super-properties"],
   };
 
-  const res = await httpClient.get(url, { 
-    headers, 
-    timeout: discordConfig.Timeout || 15000 
-  });
-
+  const res = await httpClient.get(url, { headers, timeout: discordConfig.Timeout || 15000 });
   const channelMessages = [];
-  
+
   for (const msg of res.data) {
-    // Pobierz obrazki z załączników
     let imageUrl = null;
     if (msg.attachments && msg.attachments.length > 0) {
-      const imageAttachment = msg.attachments.find(att => 
-        att.content_type && att.content_type.startsWith('image/')
-      );
-      if (imageAttachment) {
-        imageUrl = imageAttachment.url;
-      }
+      const imageAttachment = msg.attachments.find(att => att.content_type && att.content_type.startsWith('image/'));
+      if (imageAttachment) imageUrl = imageAttachment.url;
     }
-    
-    // Pobierz obrazki z embedów
-    if (!imageUrl && msg.embeds && msg.embeds.length > 0) {
-      const imageEmbed = msg.embeds.find(embed => 
-        embed.thumbnail || embed.image
-      );
-      if (imageEmbed) {
-        imageUrl = imageEmbed.thumbnail?.url || imageEmbed.image?.url;
-      }
+
+    if (!imageUrl) {
+      const thumb = extractEmbedThumbnail(msg);
+      if (thumb) imageUrl = thumb;
     }
 
     channelMessages.push({
       guid: msg.id,
-      title: msg.content ? 
-        (msg.content.length > 80 ? msg.content.substring(0, 80) + '...' : msg.content) 
+      title: msg.content
+        ? (msg.content.length > 80 ? msg.content.substring(0, 80) + "..." : msg.content)
         : `Wiadomość od ${msg.author.global_name || msg.author.username}`,
       link: `https://discord.com/channels/${discordConfig.GuildID}/${msg.channel_id}/${msg.id}`,
       contentSnippet: msg.content || "(brak treści)",
       isoDate: msg.timestamp || new Date().toISOString(),
       author: msg.author.global_name || msg.author.username || "Unknown",
       enclosure: imageUrl,
+      embedThumbnail: extractEmbedThumbnail(msg),
       categories: ['discord'],
-      // Dodatkowe informacje
       discordData: {
         messageId: msg.id,
         channelId: msg.channel_id,
@@ -146,6 +102,17 @@ async function fetchChannelMessages(channelId, discordConfig, httpClient) {
   }
 
   return channelMessages;
+}
+
+/** ✅ Obsługa thumbnail z embeda (YT, Twitter itp.) */
+function extractEmbedThumbnail(msg) {
+  if (msg.embeds && msg.embeds.length > 0) {
+    const embed = msg.embeds.find(e => e.thumbnail || e.image);
+    if (embed) {
+      return embed.thumbnail?.url || embed.image?.url || null;
+    }
+  }
+  return null;
 }
 
 module.exports = { parseDiscord };

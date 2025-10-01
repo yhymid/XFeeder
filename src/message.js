@@ -83,40 +83,140 @@ async function sendMessage(webhookUrl, threadId, entry) {
       return;
     }
 
-    // --- DISCORD MESSAGE (parseDiscord result) z załącznikami ---
-    if (entry.attachments && Array.isArray(entry.attachments) && entry.attachments.length > 0) {
-      // Nagłówek: autor + treść (Text Display)
+// --- DISCORD MESSAGE (parseDiscord result) ---
+if (entry.attachments || entry.content || entry.referenced) {
+  const username = entry.author?.username || "Użytkownik";
+  const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString("pl-PL") : "";
+
+  // Nagłówek zamiast kopiowanego tytułu
+  container.components.push({
+    type: 10,
+    content: `💬 Wykryto nową wiadomość od **${username}**`
+  });
+
+  // Treść wiadomości (jeśli jest)
+  if (entry.content) {
+    container.components.push({
+      type: 10,
+      content: entry.content
+    });
+  }
+
+  // Załączniki
+  if (entry.attachments && entry.attachments.length > 0) {
+    container.components.push({
+      type: 12,
+      items: entry.attachments.slice(0, 10).map((url) => ({
+        media: { url },
+        description: username
+      }))
+    });
+  }
+
+  // Odpowiedź do kogoś
+  if (entry.referenced) {
+    container.components.push({
+      type: 10,
+      content: `↪️ *Odpowiedź do: ${entry.referenced.author || "Anonim"} — "${truncate(entry.referenced.content, 100)}"*`
+    });
+  }
+
+  // Stopka (data)
+  container.components.push({
+    type: 10,
+    content: `👤 ${username} • 🕒 ${timestamp}`
+  });
+
+  // Przycisk do oryginalnej wiadomości (jeśli masz URL)
+  if (entry.link) {
+    container.components.push({
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 5,
+          label: "Otwórz",
+          url: entry.link
+        }
+      ]
+    });
+  }
+
+  const payload = {
+    flags: 1 << 15,
+    components: [container]
+  };
+
+  await postToWebhook(urlObj.toString(), payload);
+  console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
+  return;
+}
+
+
+
+    // ------------------------
+    // DISCORD MESSAGE (Opcja 2A!)
+    // ------------------------
+    if (entry.categories?.includes("discord")) {
+      const username = entry.author || "Użytkownik";
+      const timestamp = entry.isoDate ? new Date(entry.isoDate).toLocaleString("pl-PL") : "";
+
       container.components.push({
         type: 10,
-        content: `💬 **${entry.author?.username || "Nowa wiadomość"}**\n${entry.content || "(brak treści)"}`
+        content: `💬 Wykryto nową wiadomość od **${username}**`
       });
 
-      // Media Gallery - ogranicz do 10 elementów (limit)
       container.components.push({
-        type: 12,
-        items: entry.attachments.slice(0, 10).map((url) => ({
-          media: { url },
-          description: entry.author?.username || ""
-        }))
+        type: 10,
+        content: entry.contentSnippet ? entry.contentSnippet : "(załącznik)"
       });
 
-      // Jeśli wiadomość odnosi się do innej wiadomości, pokaż krótki ref
-      if (entry.referenced) {
-        container.components.push({
-          type: 10,
-          content: `↪️ Odniesienie: ${entry.referenced.author || "Anonim"} — ${truncate(entry.referenced.content, 200)}`
+      const mediaItems = [];
+      if (entry.enclosure) {
+        mediaItems.push({
+          media: { url: entry.enclosure },
+          description: username
         });
       }
 
-      const payload = {
-        flags: 1 << 15,
-        components: [container]
-      };
+      if (entry.discordData?.embeds && entry.discordData.embeds > 0 && entry.embedThumbnail) {
+        mediaItems.push({
+          media: { url: entry.embedThumbnail },
+          description: "Embed"
+        });
+      }
 
-      await postToWebhook(urlObj.toString(), payload);
-      console.log(`[ComponentsV2] Wysłano (Discord message) od ${entry.author?.username || "?"}`);
+      if (mediaItems.length > 0) {
+        container.components.push({
+          type: 12,
+          items: mediaItems
+        });
+      }
+
+      container.components.push({
+        type: 10,
+        content: `👤 ${username} • 🕒 ${timestamp}`
+      });
+
+      if (entry.link) {
+        container.components.push({
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 5,
+              label: "Otwórz",
+              url: entry.link
+            }
+          ]
+        });
+      }
+
+      await postToWebhook(urlObj.toString(), { flags: 1 << 15, components: [container] });
+      console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
       return;
     }
+
 
     // --- RSS / ATOM / JSON (artykuły, commity, newsy) ---
     // Tytuł
@@ -177,27 +277,16 @@ async function sendMessage(webhookUrl, threadId, entry) {
     await postToWebhook(urlObj.toString(), payload);
     console.log(`[ComponentsV2] Wysłano: ${entry.title || entry.link || "(brak tytułu)"}`);
   } catch (err) {
-    // Wyłap szczegóły błędu z axiosa
     if (err.response) {
-      console.error(`[ComponentsV2] Błąd przy wysyłaniu wpisu "${entry?.title}": ${err.response.status} ${err.response.statusText}`);
-      try {
-        console.error("Body:", JSON.stringify(err.response.data));
-      } catch (e) {}
+      console.error(`[ComponentsV2] Błąd przy wysyłaniu wpisu: ${err.response.status}`, err.response.data);
     } else {
-      console.error(`[ComponentsV2] Błąd przy wysyłaniu wpisu "${entry?.title}":`, err.message);
+      console.error(`[ComponentsV2] Błąd:`, err.message);
     }
   }
 }
 
-/** helper: wyślij POST do webhooka przez axios i sprawdź odpowiedź */
 async function postToWebhook(url, payload) {
-  const res = await axios.post(url, payload, {
-    headers: {
-      "Content-Type": "application/json"
-    },
-    timeout: 15000
-  });
-  return res;
+  return axios.post(url, payload, { headers: { "Content-Type": "application/json" } });
 }
 
 /** helper: skracanie tekstu */

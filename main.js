@@ -2,6 +2,7 @@
 const fs = require("fs");
 const axios = require("axios");
 const { sendMessage } = require("./src/message");
+const { refetchAllFeeds } = require("./src/fetch");
 
 // ----------------------------------------------------------------------
 // IMPORT WSZYSTKICH PARSERÓW
@@ -170,21 +171,52 @@ async function checkFeedsForChannel(channelIndex, channelConfig) {
 // ----------------------------------------------------------------------
 // START SYSTEMU
 // ----------------------------------------------------------------------
-config.channels.forEach((channelConfig, index) => {
-    const intervalMs = (channelConfig.TimeChecker || channelConfig.Discord?.TimeChecker || 30) * 60 * 1000;
 
-    console.log(`[Kanał ${index + 1}] Start. Sprawdzanie co ${intervalMs / 60000} minut.`);
+// Zbierz wszystkie kanały (channels, channels2, channels3 itd.)
+let allChannels = [];
+for (const key of Object.keys(config)) {
+  if (key.startsWith("channels")) {
+    allChannels = allChannels.concat(config[key]);
+  }
+}
 
-    setInterval(() => {
-        checkFeedsForChannel(index, channelConfig).catch(error => {
-            console.error(`[Kanał ${index + 1}] Błąd w setInterval:`, error);
-        });
-    }, intervalMs);
+console.log(`[System] Łącznie kanałów do obsługi: ${allChannels.length}`);
 
-    checkFeedsForChannel(index, channelConfig).catch(error => {
-        console.error(`[Kanał ${index + 1}] Błąd przy starcie:`, error);
-    });
-});
+// Zapamiętujemy kiedy ostatni raz sprawdzano kanał
+let lastCheck = new Array(allChannels.length).fill(0); // timestampy
+
+let currentIndex = 0;
+const delayBetweenChannels = 30000; // 30 sekund między kolejnymi kanałami
+
+async function processNextChannel() {
+  const channelConfig = allChannels[currentIndex];
+  const now = Date.now();
+
+  // Pobierz TimeChecker dla danego kanału (domyślnie 30 minut)
+  const minutes = channelConfig.TimeChecker || channelConfig.Discord?.TimeChecker || 30;
+  const minDelay = minutes * 60 * 1000;
+
+  if (now - lastCheck[currentIndex] >= minDelay) {
+    console.log(`[Kolejka] Sprawdzam kanał ${currentIndex + 1}/${allChannels.length} (co ${minutes} min)`);
+
+    try {
+      await checkFeedsForChannel(currentIndex, channelConfig);
+      lastCheck[currentIndex] = Date.now(); // aktualizacja ostatniego sprawdzenia
+    } catch (err) {
+      console.error(`[Kolejka] Błąd w kanale ${currentIndex + 1}:`, err.message);
+    }
+  } else {
+    console.log(`[Kolejka] Pomijam kanał ${currentIndex + 1}, jeszcze nie czas (czekam ${minutes} min)`);
+  }
+
+  currentIndex = (currentIndex + 1) % allChannels.length; // kolejny kanał
+
+  setTimeout(processNextChannel, delayBetweenChannels);
+}
+
+// Start
+processNextChannel();
+
 
 // ----------------------------------------------------------------------
 // ZAMYKANIE

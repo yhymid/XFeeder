@@ -2,4 +2,6 @@ cache.json
 config.json
 package-lock.json
 node_modules/
-src/fetch.js
+src/parsers/workshop/
+src/parsers/workshop/Information.txt
+src/parsers/workshop/test.js

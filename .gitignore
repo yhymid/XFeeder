@@ -3,5 +3,3 @@ config.json
 package-lock.json
 node_modules/
 src/parsers/workshop/
-src/parsers/workshop/Information.txt
-src/parsers/workshop/test.js

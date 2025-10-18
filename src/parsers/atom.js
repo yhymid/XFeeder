@@ -1,100 +1,101 @@
 // src/parsers/atom.js
-const xml2js = require('xml2js');
-const { stripHtml } = require("string-strip-html"); 
-const { parseDate } = require("./utils"); 
+const xml2js = require("xml2js");
+const { stripHtml } = require("string-strip-html");
+const { parseDate } = require("./utils");
 
-// Konfiguracja dla xml2js
-const parser = new xml2js.Parser({ 
-    explicitArray: false, 
-    ignoreAttrs: false, 
-    attrkey: "ATTR", 
-    charkey: "VALUE", 
-    valueProcessers: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans]
+const parser = new xml2js.Parser({
+  explicitArray: false,
+  ignoreAttrs: false,
+  attrkey: "ATTR",
+  charkey: "VALUE",
+  valueProcessors: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans],
 });
 
 /**
- * Parsuje kanał w formacie Atom, włączając rozszerzenia Media RSS.
- * @param {string} feedUrl URL feeda.
- * @param {object} httpClient Instancja axios.
- * @returns {Array} Lista przetworzonych wpisów.
+ * Parser Atom 1.0 (GitHub, Steam, Feedburner, StackOverflow, etc.)
+ * @param {string} feedUrl - URL kanału Atom
+ * @param {object} httpClient - instancja axios
+ * @returns {Promise<Array>} Lista wpisów
  */
 async function parseAtom(feedUrl, httpClient) {
-    // Specjalna obsługa YouTube jest w osobnym parserze
-    if (feedUrl.includes("youtube.com") || feedUrl.includes("yt:")) return [];
+  if (feedUrl.includes("youtube.com") || feedUrl.includes("yt:")) return [];
 
-    try {
-        const res = await httpClient.get(feedUrl);
-        const xml = res.data;
-        
-        const data = await parser.parseStringPromise(xml);
-        
-        if (!data.feed || !data.feed.entry) {
-            return [];
-        }
+  try {
+    const res = await httpClient.get(feedUrl, { timeout: 15000 });
+    const xml = res.data;
+    const data = await parser.parseStringPromise(xml);
 
-        const rawEntries = Array.isArray(data.feed.entry) 
-            ? data.feed.entry 
-            : [data.feed.entry];
+    if (!data.feed || !data.feed.entry) return [];
 
-        const items = rawEntries.map(entry => {
-            
-            const title = entry.title ? stripHtml(entry.title.VALUE || entry.title).result : 'Brak tytułu';
-            const isoDate = parseDate(entry.updated || entry.published);
-            const author = entry.author?.name?.VALUE || entry.author?.name || null;
-            
-            const links = Array.isArray(entry.link) ? entry.link : (entry.link ? [entry.link] : []);
-            
-            // 1. Znajdź link główny (rel="alternate")
-            let link = entry.link?.ATTR?.href || null; 
-            const alternateLink = links.find(l => l.ATTR && l.ATTR.rel === 'alternate');
-            if (alternateLink) {
-                link = alternateLink.ATTR.href;
-            } else if (links.length > 0 && links[0].ATTR.href) {
-                link = links[0].ATTR.href;
-            }
+    const entries = Array.isArray(data.feed.entry)
+      ? data.feed.entry
+      : [data.feed.entry];
 
-            // 2. Pobierz obrazek (Media RSS, enclosure)
-            let image = null;
-            
-            // a) <media:thumbnail> (np. GitHub)
-            if (entry['media:thumbnail'] && entry['media:thumbnail'].ATTR && entry['media:thumbnail'].ATTR.url) {
-                image = entry['media:thumbnail'].ATTR.url;
-            }
-            // b) <link rel="enclosure" type="image/...">
-            if (!image) {
-                const enclosureLink = links.find(l => 
-                    l.ATTR && 
-                    l.ATTR.rel === 'enclosure' && 
-                    l.ATTR.type && 
-                    l.ATTR.type.startsWith('image/')
-                );
-                if (enclosureLink) image = enclosureLink.ATTR.href;
-            }
+    const items = entries.map((entry) => {
+      const title = entry.title
+        ? stripHtml(entry.title.VALUE || entry.title).result.trim()
+        : "Brak tytułu";
 
-            // 3. Wyczyść opis/treść
-            const rawDescription = entry.summary 
-                ? (entry.summary.VALUE || entry.summary)
-                : (entry.content ? (entry.content.VALUE || entry.content) : '');
-                
-            const contentSnippet = stripHtml(rawDescription).result.trim();
-            
-            return {
-                title,
-                link,
-                contentSnippet: contentSnippet.substring(0, 500),
-                isoDate,
-                enclosure: image,
-                author,
-                guid: entry.id,
-                categories: [],
-            };
-        });
+      const isoDate = parseDate(entry.updated || entry.published);
+      const author =
+        entry.author?.name?.VALUE || entry.author?.name || data.feed?.author?.name || null;
 
-        return items;
-        
-    } catch (error) {
-        return []; 
-    }
+      // --- LINK ---
+      let link = null;
+      if (Array.isArray(entry.link)) {
+        const alt = entry.link.find((l) => l.ATTR?.rel === "alternate");
+        if (alt) link = alt.ATTR.href;
+      } else if (entry.link?.ATTR?.href) {
+        link = entry.link.ATTR.href;
+      }
+
+      // --- MEDIA / OBRAZKI ---
+      let image = null;
+
+      if (entry["media:thumbnail"]?.ATTR?.url) {
+        image = entry["media:thumbnail"].ATTR.url;
+      } else if (entry["media:content"]?.ATTR?.url) {
+        image = entry["media:content"].ATTR.url;
+      } else if (Array.isArray(entry.link)) {
+        const imgLink = entry.link.find(
+          (l) =>
+            l.ATTR?.rel === "enclosure" &&
+            l.ATTR?.type?.startsWith("image/")
+        );
+        if (imgLink) image = imgLink.ATTR.href;
+      }
+
+      // --- OPIS / TREŚĆ ---
+      const rawDescription =
+        entry.summary?.VALUE ||
+        entry.summary ||
+        entry.content?.VALUE ||
+        entry.content ||
+        "";
+
+      const contentSnippet = stripHtml(rawDescription).result.trim().substring(0, 500);
+
+      return {
+        title,
+        link,
+        contentSnippet,
+        isoDate,
+        enclosure: image,
+        author,
+        guid: entry.id || link || title,
+        categories: entry.category
+          ? Array.isArray(entry.category)
+            ? entry.category
+            : [entry.category]
+          : [],
+      };
+    });
+
+    return items.filter((i) => i.link || i.title);
+  } catch (err) {
+    console.warn(`[Atom Parser] Błąd dla ${feedUrl}: ${err.message}`);
+    return [];
+  }
 }
 
 module.exports = { parseAtom };

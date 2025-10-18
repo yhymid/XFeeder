@@ -1,125 +1,135 @@
-// src/parsers/xml.js
-const xml2js = require('xml2js');
-const { stripHtml } = require("string-strip-html"); 
-const { parseDate } = require("./utils"); 
+// src/parsers/xml.js — Uniwersalny parser XML (RSS + Atom)
+const xml2js = require("xml2js");
+const { stripHtml } = require("string-strip-html");
+const { parseDate } = require("./utils");
 
 /**
- * Funkcja pomocnicza do znajdowania pierwszego URL obrazka w treści HTML.
- * @param {string} htmlContent Kod HTML do przeszukania.
- * @returns {string|null} Znaleziony URL obrazka lub null.
+ * Pomocnicza funkcja do znajdowania pierwszego URL obrazka w HTML.
  */
-function extractImageFromHTML(htmlContent) {
-    if (!htmlContent) return null;
-    
-    // Szukanie pierwszego tagu <img> z atrybutem src
-    const imgMatch = htmlContent.match(/<img\s+(?:[^>]*?\s+)?src=(["'])(.*?)\1/i);
-    if (imgMatch && imgMatch[2]) {
-        return imgMatch[2];
-    }
-    
-    return null;
+function extractImageFromHTML(html) {
+  if (!html) return null;
+  const imgMatch = html.match(/<img\s+[^>]*src=["']([^"']+)["']/i);
+  return imgMatch ? imgMatch[1] : null;
 }
 
-// Konfiguracja dla xml2js
-const parser = new xml2js.Parser({ 
-    explicitArray: false, // Konwertuj tablice jednoelementowe na obiekty
-    ignoreAttrs: false,   // Atrybuty są potrzebne dla enclosure, media:content
-    attrkey: "ATTR",      // Klucz dla atrybutów
-    charkey: "VALUE",     // Klucz dla wartości tekstowych w tagach
-    valueProcessors: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans]
+// Konfiguracja xml2js
+const parser = new xml2js.Parser({
+  explicitArray: false,
+  ignoreAttrs: false,
+  attrkey: "ATTR",
+  charkey: "VALUE",
+  valueProcessors: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans],
 });
 
-
 /**
- * Parsuje kanały w formacie RSS 2.0 i ogólne XML przy użyciu xml2js.
- * @param {string} feedUrl URL feeda.
- * @param {object} httpClient Instancja axios.
- * @returns {Array} Lista przetworzonych wpisów.
+ * Parsuje kanały RSS/Atom/XML — automatycznie wykrywa strukturę.
+ * @param {string} feedUrl
+ * @param {object} httpClient (axios)
+ * @returns {Promise<Array>}
  */
 async function parseXML(feedUrl, httpClient) {
-    try {
-        const res = await httpClient.get(feedUrl);
-        const xml = res.data;
-        
-        const data = await parser.parseStringPromise(xml);
-        
-        // Weryfikacja struktury RSS 2.0
-        if (!data.rss || !data.rss.channel || !data.rss.channel.item) {
-            return []; 
-        }
+  try {
+    const res = await httpClient.get(feedUrl, {
+      headers: {
+        Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9,*/*;q=0.8",
+      },
+      timeout: 15000,
+    });
 
-        const rawItems = Array.isArray(data.rss.channel.item) 
-            ? data.rss.channel.item 
-            : [data.rss.channel.item];
+    const xml = res.data;
+    const data = await parser.parseStringPromise(xml);
 
-        const items = rawItems.map(item => {
-            
-            const title = item.title ? stripHtml(item.title).result : 'Brak tytułu';
-            const link = item.link;
-            const isoDate = parseDate(item.pubDate);
-            const author = item['dc:creator'] || item.author || null;
+    // --- WYKRYWANIE STRUKTURY ---
+    let entries = [];
+    let type = "unknown";
 
-            // --- EKSTRAKCJA OBRAZKA (4-stopniowa hierarchia) ---
-            let image = null;
-
-            // 1. enclosure (prosty standard RSS)
-            if (item.enclosure && item.enclosure.ATTR && item.enclosure.ATTR.url && item.enclosure.ATTR.type?.startsWith('image/')) {
-                image = item.enclosure.ATTR.url;
-            }
-            
-            // 2. media:content lub media:thumbnail
-            if (!image && item['media:content'] && item['media:content'].ATTR && item['media:content'].ATTR.url && item['media:content'].ATTR.type?.startsWith('image/')) {
-                 image = item['media:content'].ATTR.url;
-            }
-            if (!image && item['media:thumbnail'] && item['media:thumbnail'].ATTR && item['media:thumbnail'].ATTR.url) {
-                 image = item['media:thumbnail'].ATTR.url;
-            }
-
-            // --- Ekstrakcja treści do szukania obrazka/opisu ---
-            const contentEncodedValue = item['content:encoded'] 
-                ? (item['content:encoded'].VALUE || item['content:encoded'])
-                : '';
-            const descriptionValue = item.description 
-                ? (item.description.VALUE || item.description) 
-                : '';
-
-            // 3. content:encoded (szukamy obrazka w pełnej treści HTML)
-            if (!image && contentEncodedValue) {
-                image = extractImageFromHTML(contentEncodedValue);
-            }
-            
-            // 4. description (ostatnia próba znalezienia obrazka)
-            if (!image && descriptionValue) {
-                image = extractImageFromHTML(descriptionValue);
-            }
-
-            // --- EKSTRAKCJA OPISU (priorytet content:encoded) ---
-            const rawDescription = contentEncodedValue || descriptionValue;
-            const contentSnippet = stripHtml(rawDescription).result.trim();
-            
-            // Konwersja kategorii na tablicę, jeśli to konieczne
-            const categories = item.category 
-                ? (Array.isArray(item.category) ? item.category : [item.category]) 
-                : [];
-
-            return {
-                title,
-                link,
-                contentSnippet: contentSnippet.substring(0, 500),
-                isoDate,
-                enclosure: image,
-                author,
-                guid: item.guid,
-                categories,
-            };
-        });
-
-        return items;
-        
-    } catch (error) {
-        // Ignorujemy błędy i zwracamy pustą tablicę, by uruchomił się kolejny parser (np. regex fallback)
-        return []; 
+    if (data?.rss?.channel?.item) {
+      // RSS 2.0
+      type = "RSS";
+      entries = Array.isArray(data.rss.channel.item)
+        ? data.rss.channel.item
+        : [data.rss.channel.item];
+    } else if (data?.feed?.entry) {
+      // Atom
+      type = "Atom";
+      entries = Array.isArray(data.feed.entry) ? data.feed.entry : [data.feed.entry];
+    } else if (data?.channel?.item) {
+      // Niektóre serwisy pomijają <rss>
+      type = "RSS (no-root)";
+      entries = Array.isArray(data.channel.item)
+        ? data.channel.item
+        : [data.channel.item];
     }
+
+    if (!entries.length) {
+      console.warn(`[XML Parser] Nie wykryto elementów w ${feedUrl}`);
+      return [];
+    }
+
+    // --- MAPOWANIE WPISÓW ---
+    const items = entries.map((entry) => {
+      const title = stripHtml(entry.title?.VALUE || entry.title || "Brak tytułu").result;
+      const link =
+        entry.link?.ATTR?.href || entry.link?.VALUE || entry.link || feedUrl;
+      const author =
+        entry.author?.name ||
+        entry.author?.VALUE ||
+        entry["dc:creator"] ||
+        entry.creator ||
+        null;
+      const pubDate =
+        entry.pubDate || entry.published || entry.updated || entry.created || null;
+
+      // Priorytet treści
+      const rawContent =
+        entry["content:encoded"]?.VALUE ||
+        entry["content:encoded"] ||
+        entry.content?.VALUE ||
+        entry.content ||
+        entry.summary?.VALUE ||
+        entry.summary ||
+        entry.description?.VALUE ||
+        entry.description ||
+        "";
+
+      // Obrazek — kolejność priorytetu
+      let image =
+        entry.enclosure?.ATTR?.url ||
+        entry["media:content"]?.ATTR?.url ||
+        entry["media:thumbnail"]?.ATTR?.url ||
+        extractImageFromHTML(rawContent) ||
+        null;
+
+      // Kategorie (jeśli występują)
+      const categories = Array.isArray(entry.category)
+        ? entry.category
+        : entry.category
+        ? [entry.category]
+        : [];
+
+      const contentSnippet = stripHtml(rawContent).result
+        .replace(/\s+/g, " ")
+        .trim()
+        .substring(0, 500);
+
+      return {
+        title,
+        link,
+        contentSnippet,
+        isoDate: parseDate(pubDate || new Date().toISOString()),
+        enclosure: image,
+        author,
+        guid: entry.guid?.VALUE || entry.guid || link,
+        categories,
+      };
+    });
+
+    console.log(`[XML Parser] Sukces (${items.length}) [${type}] → ${feedUrl}`);
+    return items;
+  } catch (error) {
+    console.warn(`[XML Parser] Błąd przy pobieraniu ${feedUrl}: ${error.message}`);
+    return [];
+  }
 }
 
 module.exports = { parseXML };

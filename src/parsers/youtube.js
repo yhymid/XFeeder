@@ -1,93 +1,102 @@
-// src/parsers/youtube.js
-const xml2js = require('xml2js');
-const { stripHtml } = require("string-strip-html"); 
-const { parseDate } = require("./utils"); 
+// src/parsers/youtube.js — dedykowany parser YouTube Atom Feed
+const xml2js = require("xml2js");
+const { stripHtml } = require("string-strip-html");
+const { parseDate } = require("./utils");
 
-// Konfiguracja dla xml2js (specjalna dla Atom/YouTube)
-const parser = new xml2js.Parser({ 
-    explicitArray: false, 
-    ignoreAttrs: false, 
-    attrkey: "ATTR", 
-    charkey: "VALUE", 
-    valueProcessors: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans]
+// Konfiguracja xml2js dla Atom/YouTube
+const parser = new xml2js.Parser({
+  explicitArray: false,
+  ignoreAttrs: false,
+  attrkey: "ATTR",
+  charkey: "VALUE",
+  valueProcessors: [xml2js.processors.parseNumbers, xml2js.processors.parseBooleans],
 });
 
-
 /**
- * Parsuje kanały Atom od YouTube.
- * @param {string} feedUrl URL feeda YouTube.
- * @param {object} httpClient Instancja axios.
- * @returns {Array} Lista przetworzonych wpisów.
+ * Parsuje kanały Atom z YouTube (feeds/videos.xml)
+ * @param {string} feedUrl URL feeda YouTube
+ * @param {object} httpClient instancja axios
+ * @returns {Array} lista przetworzonych wpisów
  */
 async function parseYouTube(feedUrl, httpClient) {
-    // 1. Szybkie sprawdzenie, czy to jest URL feeda YouTube
-    if (!feedUrl.includes("youtube.com/feeds/") && !feedUrl.includes("yt:")) {
-        return [];
-    }
+  // Weryfikacja, czy to YouTube Feed
+  if (!feedUrl.includes("youtube.com/feeds/") && !feedUrl.includes("youtu")) {
+    return [];
+  }
 
-    try {
-        const res = await httpClient.get(feedUrl);
-        const xml = res.data;
-        
-        const data = await parser.parseStringPromise(xml);
-        
-        if (!data.feed || !data.feed.entry) {
-            return [];
+  try {
+    const res = await httpClient.get(feedUrl, {
+      headers: { Accept: "application/atom+xml, application/xml;q=0.9,*/*;q=0.8" },
+      timeout: 15000,
+    });
+
+    const xml = res.data;
+    const data = await parser.parseStringPromise(xml);
+
+    if (!data?.feed?.entry) return [];
+
+    const entries = Array.isArray(data.feed.entry)
+      ? data.feed.entry
+      : [data.feed.entry];
+
+    const items = entries.map((entry) => {
+      const title = stripHtml(entry.title?.VALUE || entry.title || "Brak tytułu").result;
+      const isoDate = parseDate(entry.published || entry.updated || new Date());
+      const author = entry.author?.name || entry["author"]?.VALUE || "Nieznany autor";
+
+      // Identyfikator i link
+      const videoId = entry["yt:videoId"];
+      const link =
+        entry.link?.ATTR?.href ||
+        (videoId ? `https://www.youtube.com/watch?v=${videoId}` : feedUrl);
+
+      // Opis — preferuj media:description
+      const mediaGroup = entry["media:group"];
+      const rawDescription =
+        mediaGroup?.["media:description"] ||
+        entry.summary?.VALUE ||
+        entry.summary ||
+        "";
+
+      // Miniaturka (YouTube zawsze ma co najmniej kilka rozdzielczości)
+      let image = null;
+      if (mediaGroup?.["media:thumbnail"]) {
+        const thumb = mediaGroup["media:thumbnail"];
+        if (Array.isArray(thumb)) {
+          // Weź najwyższą rozdzielczość (ostatni element)
+          image = thumb[thumb.length - 1].ATTR?.url || thumb[0].ATTR?.url;
+        } else if (thumb.ATTR?.url) {
+          image = thumb.ATTR.url;
         }
+      }
+      // Fallback na statyczny link
+      if (!image && videoId) {
+        image = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+      }
 
-        const rawEntries = Array.isArray(data.feed.entry) 
-            ? data.feed.entry 
-            : [data.feed.entry];
+      const contentSnippet = stripHtml(rawDescription).result
+        .replace(/\s+/g, " ")
+        .trim()
+        .substring(0, 500);
 
-        const items = rawEntries.map(entry => {
-            
-            const title = entry.title ? stripHtml(entry.title).result : 'Brak tytułu';
-            const isoDate = parseDate(entry.published || entry.updated);
-            const author = entry.author?.name || null;
-            
-            // Linki i identyfikatory
-            const videoId = entry['yt:videoId'];
-            // Link musi być linkiem "alternate" lub skonstruowanym
-            const link = entry.link?.ATTR?.href || `https://www.youtube.com/watch?v=${videoId}`;
-            
-            // --- EKSTRAKCJA OBRAZKA (specyficzna dla YouTube) ---
-            let image = null;
+      return {
+        title,
+        link,
+        contentSnippet,
+        isoDate,
+        enclosure: image,
+        author,
+        guid: entry.id || videoId || link,
+        categories: [],
+      };
+    });
 
-            // 1. Szukaj w media:group
-            const mediaGroup = entry['media:group'];
-            if (mediaGroup && mediaGroup['media:thumbnail'] && mediaGroup['media:thumbnail'].ATTR && mediaGroup['media:thumbnail'].ATTR.url) {
-                image = mediaGroup['media:thumbnail'].ATTR.url;
-            }
-            // 2. Fallback na standardowe formaty URL miniatur (jeśli videoId jest dostępne)
-            else if (videoId) {
-                image = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-            }
-
-            // Opis (z media:group, ponieważ entry.summary jest często puste)
-            const rawDescription = mediaGroup && mediaGroup['media:description'] 
-                ? mediaGroup['media:description'] 
-                : entry.summary;
-                
-            const contentSnippet = stripHtml(rawDescription || '').result.trim();
-            
-            return {
-                title,
-                link,
-                contentSnippet: contentSnippet.substring(0, 500),
-                isoDate,
-                enclosure: image,
-                author,
-                guid: entry.id || videoId,
-                categories: [],
-            };
-        });
-
-        return items;
-        
-    } catch (error) {
-        // Zwracamy pustą listę, aby kolejny parser (np. parseAtom) mógł spróbować.
-        return []; 
-    }
+    console.log(`[YouTube Parser] Sukces (${items.length}) → ${feedUrl}`);
+    return items;
+  } catch (error) {
+    console.warn(`[YouTube Parser] Błąd przy pobieraniu ${feedUrl}: ${error.message}`);
+    return [];
+  }
 }
 
 module.exports = { parseYouTube };

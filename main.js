@@ -1,9 +1,9 @@
-// main.js - Główny plik aplikacji XFeeder
+// main.js - Główny plik aplikacji XFeeder (Moduły → Axios → RSSParser → Error)
 const fs = require("fs");
-const axios = require("axios");
 const { sendMessage } = require("./src/message");
+const { getWithFallback } = require("./src/client");
 
-// Import modułów parserów
+// Import parserów
 const { parseRSS } = require("./src/parsers/rss");
 const { parseAtom } = require("./src/parsers/atom");
 const { parseYouTube } = require("./src/parsers/youtube");
@@ -37,30 +37,87 @@ function saveCache() {
 }
 
 // ------------------------------------------------------------
-// GLOBALNE USTAWIENIA AXIOS
-// ------------------------------------------------------------
-axios.defaults.timeout = 15000;
-axios.defaults.headers.common["User-Agent"] =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/1.2";
-axios.defaults.headers.common["Accept"] =
-  "application/rss+xml,application/atom+xml,application/xml,application/json;q=0.9,*/*;q=0.8";
-
-// ------------------------------------------------------------
-// FUNKCJA GŁÓWNA: Pobieranie feeda
+// FUNKCJA GŁÓWNA: Pobieranie feeda (Moduły → Axios → RSSParser → Error)
 // ------------------------------------------------------------
 const Parser = require("rss-parser");
 const parser = new Parser({
   timeout: 10000,
   headers: {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/1.2",
-    "Accept": "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept":
+      "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
   },
 });
 
 async function fetchFeed(url) {
   let items = [];
 
-  // 1️⃣ RSS Parser
+  // 1️⃣ Moduły
+  const parsers = [
+    parseYouTube,
+    parseAtom,
+    parseXML,
+    parseJSON,
+    parseApiX,
+    parseRSS,
+    parseFallback,
+  ];
+
+  for (const p of parsers) {
+    try {
+      const parsed = await p(url, { get: getWithFallback });
+      if (parsed && parsed.length) {
+        console.log(`[Parser:${p.name}] Sukces (${parsed.length}) → ${url}`);
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[Parser:${p.name}] Błąd: ${err.message}`);
+    }
+  }
+
+  // 2️⃣ Axios fallback (prosty regexowy parser RSS)
+  try {
+    const res = await getWithFallback(url);
+    if (
+      res &&
+      res.status === 200 &&
+      typeof res.data === "string" &&
+      res.data.includes("<item")
+    ) {
+      const matches = [...res.data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+      items = matches.map((m) => {
+        const getTag = (tag) =>
+          (
+            m[1].match(
+              new RegExp(
+                `<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`,
+                "i"
+              )
+            )?.[1] || ""
+          ).trim();
+        return {
+          title: getTag("title") || "Brak tytułu",
+          link: getTag("link"),
+          contentSnippet: getTag("description")
+            .replace(/<[^>]+>/g, "")
+            .substring(0, 400),
+          isoDate: getTag("pubDate") || null,
+          enclosure: null,
+          author: getTag("author") || "",
+          guid: getTag("guid") || getTag("link"),
+          categories: [],
+        };
+      });
+      if (items.length) {
+        console.log(`[Axios-regex] Sukces (${items.length}) → ${url}`);
+        return items;
+      }
+    }
+  } catch (err) {
+    console.warn(`[Axios-regex] Błąd dla ${url}: ${err.message}`);
+  }
+
+  // 3️⃣ RSS Parser (ostatnia próba)
   try {
     const feed = await parser.parseURL(url);
     if (feed?.items?.length) {
@@ -81,62 +138,8 @@ async function fetchFeed(url) {
     console.warn(`[RSSParser] Błąd dla ${url}: ${err.message}`);
   }
 
-  // 2️⃣ Axios
-  try {
-    const res = await axios.get(url, { timeout: 15000 });
-    if (res.status === 200 && typeof res.data === "string" && res.data.includes("<item")) {
-      const matches = [...res.data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-      items = matches.map((m) => {
-        const getTag = (tag) =>
-          (m[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] || "").trim();
-        return {
-          title: getTag("title"),
-          link: getTag("link"),
-          contentSnippet: getTag("description").replace(/<[^>]+>/g, "").substring(0, 400),
-          isoDate: getTag("pubDate") || null,
-          enclosure: null,
-          author: getTag("author") || "",
-          guid: getTag("guid") || getTag("link"),
-          categories: [],
-        };
-      });
-      if (items.length) {
-        console.log(`[Axios] Sukces (${items.length}) → ${url}`);
-        return items;
-      }
-    }
-  } catch (err) {
-    console.warn(`[Axios] Błąd dla ${url}: ${err.message}`);
-  }
-
-  // 3️⃣ Moduły
-  const parsers = [
-    parseYouTube,
-    parseAtom,
-    parseXML,
-    parseJSON,
-    parseApiX,
-    parseRSS,
-    parseFallback,
-  ];
-
-  for (const p of parsers) {
-    try {
-      const parsed = await p(url, axios);
-      if (parsed && parsed.length) {
-        console.log(`[${p.name}] Sukces (${parsed.length}) → ${url}`);
-        return parsed;
-      }
-    } catch (err) {
-      console.warn(`[${p.name}] Błąd: ${err.message}`);
-    }
-  }
-
-  // 4️⃣ Komunikat o błędzie (jeśli wszystkie próby zawiodły)
-  console.error(`[RSS Error] Brak danych z ${url}
-  • możliwe: 403/Cloudflare, brak feeda lub błędny format,
-  • feed wygasł, wymaga logowania lub API key.
-  • sprawdź adres w przeglądarce lub proxy.`);
+  // 4️⃣ Error
+  console.error(`⚠️ Brak danych z ${url}`);
   return [];
 }
 
@@ -171,7 +174,9 @@ async function checkFeedsForChannel(index, channelConfig) {
           ...cache[index].discord,
         ];
         saveCache();
-        console.log(`[Kanał ${index + 1}] Wysłano ${toSend.length} wiadomości z Discorda.`);
+        console.log(
+          `[Kanał ${index + 1}] Wysłano ${toSend.length} (Discord).`
+        );
       }
     } catch (err) {
       console.error(`[Kanał ${index + 1}] Discord Error:`, err.message);
@@ -193,7 +198,11 @@ async function checkFeedsForChannel(index, channelConfig) {
         if (newItems.length > 0) {
           const toSend = newItems.slice(0, channelConfig.RequestSend || 5);
           for (const entry of toSend.reverse()) {
-            await sendMessage(channelConfig.Webhook, channelConfig.Thread, entry);
+            await sendMessage(
+              channelConfig.Webhook,
+              channelConfig.Thread,
+              entry
+            );
           }
 
           cache[index][feedUrl] = [
@@ -201,10 +210,15 @@ async function checkFeedsForChannel(index, channelConfig) {
             ...cache[index][feedUrl],
           ];
           saveCache();
-          console.log(`[Kanał ${index + 1}] Wysłano ${toSend.length} nowych wpisów z ${feedUrl}.`);
+          console.log(
+            `[Kanał ${index + 1}] Wysłano ${toSend.length} wpisów z ${feedUrl}.`
+          );
         }
       } catch (err) {
-        console.error(`[Kanał ${index + 1}] Błąd RSS ${feedUrl}:`, err.message);
+        console.error(
+          `[Kanał ${index + 1}] Błąd RSS ${feedUrl}:`,
+          err.message
+        );
       }
     }
   }
@@ -218,7 +232,7 @@ for (const key of Object.keys(config)) {
   if (key.startsWith("channels")) allChannels = allChannels.concat(config[key]);
 }
 
-console.log(`[System] Łącznie kanałów do obsługi: ${allChannels.length}`);
+console.log(`[System] Kanałów do obsługi: ${allChannels.length}`);
 
 let lastCheck = new Array(allChannels.length).fill(0);
 let currentIndex = 0;
@@ -231,12 +245,17 @@ async function processNextChannel() {
   const minDelay = minutes * 60 * 1000;
 
   if (now - lastCheck[currentIndex] >= minDelay) {
-    console.log(`[Kolejka] Sprawdzam kanał ${currentIndex + 1}/${allChannels.length}`);
+    console.log(
+      `[Kolejka] Sprawdzam kanał ${currentIndex + 1}/${allChannels.length}`
+    );
     try {
       await checkFeedsForChannel(currentIndex, channel);
       lastCheck[currentIndex] = Date.now();
     } catch (err) {
-      console.error(`[Kolejka] Błąd kanału ${currentIndex + 1}:`, err.message);
+      console.error(
+        `[Kolejka] Błąd kanału ${currentIndex + 1}:`,
+        err.message
+      );
     }
   }
 

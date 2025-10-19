@@ -42,6 +42,10 @@
 }
 ```
 
+# Recommended Versions
+Versions that are very stable
+Versions: 1.3
+
 # How to launch it?
 `npm install` <br>
 `node main.js`

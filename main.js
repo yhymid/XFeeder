@@ -1,9 +1,9 @@
-// main.js - Główny plik aplikacji XFeeder (Moduły → Axios → RSSParser → Error)
+// main.js - Główny plik aplikacji XFeeder
 const fs = require("fs");
 const { sendMessage } = require("./src/message");
 const { getWithFallback } = require("./src/client");
 
-// Import parserów
+// Import parserów wbudowanych
 const { parseRSS } = require("./src/parsers/rss");
 const { parseAtom } = require("./src/parsers/atom");
 const { parseYouTube } = require("./src/parsers/youtube");
@@ -12,6 +12,13 @@ const { parseJSON } = require("./src/parsers/json");
 const { parseApiX } = require("./src/parsers/api_x");
 const { parseFallback } = require("./src/parsers/fallback");
 const { parseDiscord } = require("./src/parsers/discord");
+
+// Workshop (loader)
+const { loadWorkshop } = require("./src/workshop/loader");
+
+// Utils do XFeederAPI
+const { stripHtml } = require("string-strip-html");
+const { parseDate } = require("./src/parsers/utils");
 
 // ------------------------------------------------------------
 // KONFIGURACJA
@@ -37,35 +44,76 @@ function saveCache() {
 }
 
 // ------------------------------------------------------------
-// FUNKCJA GŁÓWNA: Pobieranie feeda (Moduły → Axios → RSSParser → Error)
+// XFeederAPI + WORKSHOP
+// ------------------------------------------------------------
+const XFeederAPI = {
+  get: getWithFallback,
+  send: sendMessage,
+  utils: { parseDate, stripHtml },
+  config,
+};
+
+const workshopEnabled = config.Workshop?.Enabled !== false;
+const workshopDir = "src/workshop";
+
+let workshopParsers = [];
+if (workshopEnabled) {
+  try {
+    const loaded = loadWorkshop(
+      { get: getWithFallback, send: sendMessage, utils: { parseDate, stripHtml }, config },
+      workshopDir
+    );
+    workshopParsers = loaded.parsers || [];
+  } catch (e) {
+    console.warn(`[Workshop] Błąd inicjalizacji: ${e.message}`);
+  }
+} else {
+  console.log("[Workshop] Wyłączony w configu.");
+}
+
+// ------------------------------------------------------------
+// FUNKCJA GŁÓWNA: Pobieranie feeda (Workshop → Wbudowane → Axios → RSSParser → Error)
 // ------------------------------------------------------------
 const Parser = require("rss-parser");
 const parser = new Parser({
   timeout: 10000,
   headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/1.2",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/1.3",
     "Accept":
       "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
   },
 });
 
-async function fetchFeed(url) {
-  let items = [];
-
-  // 1️⃣ Moduły
-  const parsers = [
-    parseYouTube,
-    parseAtom,
-    parseXML,
-    parseJSON,
-    parseApiX,
-    parseRSS,
-    parseFallback,
+/** Kolejka parserów (pluginy + wbudowane) posortowane po priority */
+function buildParsersPipeline() {
+  const builtins = [
+    { name: "parseYouTube", priority: 10, parse: (u, ctx) => parseYouTube(u, { get: ctx.get }) },
+    { name: "parseAtom", priority: 20, parse: (u, ctx) => parseAtom(u, { get: ctx.get }) },
+    { name: "parseXML", priority: 30, parse: (u, ctx) => parseXML(u, { get: ctx.get }) },
+    { name: "parseJSON", priority: 40, parse: (u, ctx) => parseJSON(u, { get: ctx.get }) },
+    { name: "parseApiX", priority: 50, parse: (u, ctx) => parseApiX(u, { get: ctx.get }) },
+    { name: "parseRSS", priority: 60, parse: (u, ctx) => parseRSS(u, { get: ctx.get }) },
+    { name: "parseFallback", priority: 90, parse: (u, ctx) => parseFallback(u, { get: ctx.get }) },
   ];
 
+  const combined = [...workshopParsers, ...builtins].sort(
+    (a, b) => (a.priority ?? 50) - (b.priority ?? 50)
+  );
+  return combined;
+}
+
+async function fetchFeed(url) {
+  const ctx = { get: getWithFallback, api: XFeederAPI };
+  const parsers = buildParsersPipeline();
+
+  // 1️⃣ Pipeline: pluginy + wbudowane
   for (const p of parsers) {
     try {
-      const parsed = await p(url, { get: getWithFallback });
+      if (typeof p.test === "function") {
+        const ok = await p.test(url, ctx);
+        if (!ok) continue;
+      }
+      const parsed = await p.parse(url, ctx);
       if (parsed && parsed.length) {
         console.log(`[Parser:${p.name}] Sukces (${parsed.length}) → ${url}`);
         return parsed;
@@ -85,20 +133,17 @@ async function fetchFeed(url) {
       res.data.includes("<item")
     ) {
       const matches = [...res.data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-      items = matches.map((m) => {
+      const items = matches.map((m) => {
         const getTag = (tag) =>
           (
             m[1].match(
-              new RegExp(
-                `<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`,
-                "i"
-              )
+              new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i")
             )?.[1] || ""
           ).trim();
         return {
           title: getTag("title") || "Brak tytułu",
           link: getTag("link"),
-          contentSnippet: getTag("description")
+          contentSnippet: (getTag("description") || "")
             .replace(/<[^>]+>/g, "")
             .substring(0, 400),
           isoDate: getTag("pubDate") || null,
@@ -121,7 +166,7 @@ async function fetchFeed(url) {
   try {
     const feed = await parser.parseURL(url);
     if (feed?.items?.length) {
-      items = feed.items.map((entry) => ({
+      const items = feed.items.map((entry) => ({
         title: entry.title || "Brak tytułu",
         link: entry.link,
         contentSnippet: entry.contentSnippet || entry.content || "",
@@ -183,7 +228,7 @@ async function checkFeedsForChannel(index, channelConfig) {
     }
   }
 
-  // --- RSS/ATOM/YT ---
+  // --- RSS/ATOM/YT/JSON/API ---
   if (channelConfig.RSS && Array.isArray(channelConfig.RSS)) {
     for (const feedUrl of channelConfig.RSS) {
       try {
@@ -239,6 +284,12 @@ let currentIndex = 0;
 const delayBetweenChannels = 30000;
 
 async function processNextChannel() {
+  if (!allChannels.length) {
+    console.warn("[Kolejka] Brak kanałów w configu. Czekam 30s...");
+    setTimeout(processNextChannel, delayBetweenChannels);
+    return;
+  }
+
   const channel = allChannels[currentIndex];
   const now = Date.now();
   const minutes = channel.TimeChecker || 30;

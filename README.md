@@ -1,56 +1,69 @@
-# Requirements
-- Node.js
-- Webhook URL
-- Thread ID (Optional)
-- RSSUrls
-
-# Config
-![Config](config.json.exemple)
-```json
 {
+  "Settings": {
+    "Logs": false
+  },
+
+  "Auth": {
+    "Token": "Discord Account Token Here",
+    "x-super-properties": "x-super-properties Here",
+    "cookie": "cookie Here"
+  },
+
+  "Workshop": {
+    "Enabled": false,
+    "Dir": "src/workshop"
+  },
+
+  "Proxy": {
+    "Enabled": false,
+    "Url": "http://127.0.0.1:8080"
+  },
+
   "channels": [
     {
-      "Webhook": "Webhook URL Here",
-      "Thread": "ThreadID Here",
+      "Webhook": "https://discord.com/api/webhooks/XXX/YYY",
+      "Thread": "111111111111111111",
       "RSS": [
-        "URL1",
-        "URL2",
-        "URL3"
+        "https://boop.pl/rss",
+        "https://wiadomosci.onet.pl/.feed",
+        "https://lowcygier.pl/rss"
       ],
       "TimeChecker": 30,
       "RequestSend": 5
+    }
+  ],
+
+  "channels2": [
+    {
+      "Webhook": "https://discord.com/api/webhooks/XXX/YYY",
+      "Thread": "222222222222222222",
+      "RSS": [
+        "https://git.marmak.net.pl/yhymid.rss",
+        "https://git.marmak.net.pl/Olek47.rss",
+        "https://git.marmak.net.pl/MARMAK/mirror.rss"
+      ],
+      "TimeChecker": 60,
+      "RequestSend": 2
     },
     {
       "Discord": {
-        "Webhook": "Webhook URL Here",
-        "Thread": "ThreadID Here",
-        "Token": "Discord Account Token Here",
-        "x-super-properties": "x-super-properties Here",
-        "cookie": "cookie Here",
-        "Limit": 50,
         "GuildID": "Guild ID Here",
-        "ChannelIDs": [
-          "ID1",
-          "ID2",
-          "ID3"
-        ],
-      "TimeChecker": 30,
-      "RequestSend": 1
+        "Webhook": "https://discord.com/api/webhooks/XXX/YYY",
+        "Thread": "333333333333333333",
+        "Limit": 5,
+        "ChannelIDs": ["ID1", "ID2", "ID3"],
+        "TimeChecker": 30,
+        "RequestSend": 1
+      },
+      "Discord2": {
+        "GuildID": "Guild ID Here",
+        "Webhook": "https://discord.com/api/webhooks/XXX/YYY",
+        "Thread": "444444444444444444",
+        "Limit": 5,
+        "ChannelIDs": ["ID4", "ID5"],
+        "TimeChecker": 15,
+        "RequestSend": 1
       }
     }
   ]
 }
-```
-
-# Recommended Versions
-Versions that are very stable
-Versions: 1.3
-
-# How to launch it?
-`npm install` <br>
-`node main.js`
-
-# Preview
-![Preview1](Preview/image.png)
-![Preview2](Preview/image2.png)
-![Preview3](Preview/image3.png)

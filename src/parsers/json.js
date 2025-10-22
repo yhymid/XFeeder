@@ -2,32 +2,21 @@
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
 
-/**
- * Parsuje kanały JSON Feed (https://jsonfeed.org/) oraz uproszczone konwersje RSS→JSON.
- * Obsługuje też RSS2JSON, Medium API i inne zbliżone struktury.
- * @param {string} feedUrl URL feeda JSON
- * @param {object} httpClient Instancja axios
- * @returns {Promise<Array>} Lista ustandaryzowanych wpisów
- */
 async function parseJSON(feedUrl, httpClient) {
   try {
     const res = await httpClient.get(feedUrl, {
       headers: {
         Accept: "application/feed+json, application/json, text/json;q=0.9,*/*;q=0.8",
-        "User-Agent": "XFeeder/1.2 (JSON Parser)",
+        "User-Agent": "XFeeder/1.3 (JSON Parser)",
       },
       timeout: 15000,
     });
 
     const data = res.data;
-
     if (!data) return [];
 
     let items = [];
 
-    // ------------------------------------------------------------
-    // 1️⃣ Standard JSON Feed (https://jsonfeed.org/version/1)
-    // ------------------------------------------------------------
     if (data.version && data.items && Array.isArray(data.items)) {
       items = data.items.map((item) => {
         const title = item.title || "Brak tytułu";
@@ -36,7 +25,6 @@ async function parseJSON(feedUrl, httpClient) {
         const image = item.image || item.banner_image || null;
         const author = item.author?.name || data.author?.name || null;
 
-        // Priorytet: content_text → summary → content_html
         let rawDescription =
           item.content_text ||
           item.summary ||
@@ -60,9 +48,6 @@ async function parseJSON(feedUrl, httpClient) {
       return items;
     }
 
-    // ------------------------------------------------------------
-    // 2️⃣ RSS2JSON / API / niestandardowy JSON z "items"/"entries"/"posts"
-    // ------------------------------------------------------------
     const list =
       data.items ||
       data.entries ||
@@ -110,9 +95,6 @@ async function parseJSON(feedUrl, httpClient) {
       return items;
     }
 
-    // ------------------------------------------------------------
-    // 3️⃣ Jeśli nic nie pasuje — brak danych
-    // ------------------------------------------------------------
     console.warn(`[JSON Parser] Nie rozpoznano struktury JSON dla ${feedUrl}`);
     return [];
   } catch (err) {

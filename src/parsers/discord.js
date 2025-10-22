@@ -1,3 +1,4 @@
+// src/parsers/discord.js
 const axios = require("axios");
 
 /**
@@ -65,28 +66,40 @@ async function fetchChannelMessages(channelId, discordConfig, httpClient) {
   const channelMessages = [];
 
   for (const msg of res.data) {
-    let imageUrl = null;
-    if (msg.attachments && msg.attachments.length > 0) {
-      const imageAttachment = msg.attachments.find(att => att.content_type && att.content_type.startsWith('image/'));
-      if (imageAttachment) imageUrl = imageAttachment.url;
-    }
+    // Załączniki (pełne URL-e)
+    const attachmentsUrls = (msg.attachments || []).map(a => a?.url).filter(Boolean);
 
-    if (!imageUrl) {
-      const thumb = extractEmbedThumbnail(msg);
-      if (thumb) imageUrl = thumb;
+    // Wyciągnij miniaturę z embeda
+    const embedThumb = extractEmbedThumbnail(msg);
+
+    // Obraz wybrany jako enclosure
+    let imageUrl = null;
+    if (attachmentsUrls.length) {
+      // jeśli jest załącznik obrazkowy, użyj pierwszego
+      const imgAttach = (msg.attachments || []).find(a => a?.content_type?.startsWith('image/'));
+      imageUrl = imgAttach?.url || null;
     }
+    if (!imageUrl && embedThumb) imageUrl = embedThumb;
+
+    // Odpowiedź (referenced)
+    const referenced = msg.referenced_message ? {
+      author: msg.referenced_message.author?.global_name || msg.referenced_message.author?.username,
+      content: msg.referenced_message.content
+    } : undefined;
 
     channelMessages.push({
       guid: msg.id,
       title: msg.content
         ? (msg.content.length > 80 ? msg.content.substring(0, 80) + "..." : msg.content)
-        : `Wiadomość od ${msg.author.global_name || msg.author.username}`,
-      link: `https://discord.com/channels/${discordConfig.GuildID}/${msg.channel_id}/${msg.id}`,
+        : `Wiadomość od ${msg.author?.global_name || msg.author?.username}`,
+      link: `https://discord.com/channels/${msg.guild_id || discordConfig.GuildID}/${msg.channel_id}/${msg.id}`,
       contentSnippet: msg.content || "(brak treści)",
       isoDate: msg.timestamp || new Date().toISOString(),
-      author: msg.author.global_name || msg.author.username || "Unknown",
+      author: msg.author?.global_name || msg.author?.username || "Unknown",
       enclosure: imageUrl,
-      embedThumbnail: extractEmbedThumbnail(msg),
+      embedThumbnail: embedThumb,
+      attachments: attachmentsUrls,      // <-- dodane
+      referenced,                        // <-- dodane
       categories: ['discord'],
       discordData: {
         messageId: msg.id,

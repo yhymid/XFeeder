@@ -86,4 +86,3 @@ Versions: 1.3
 ![Preview1](Preview/image.png)
 ![Preview2](Preview/image2.png)
 ![Preview3](Preview/image3.png)
-}

@@ -3,39 +3,47 @@
 
 const axios = require("axios");
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+const { HttpProxyAgent } = require("http-proxy-agent");
 
-// ============ PROXY ============
+// ============ CONFIG / PREFERENCJE ============
 
-let proxyEnabled = false;
-let proxyUrl = null;
-
-// Wczytanie config.json w celu pobrania ustawień Proxy
+let CONFIG = {};
 try {
-  const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
-  if (config.Proxy && config.Proxy.Enabled && config.Proxy.Url) {
-    proxyEnabled = true;
-    proxyUrl = config.Proxy.Url;
-  }
+  CONFIG = JSON.parse(fs.readFileSync("./config.json", "utf8"));
 } catch {
-  console.warn("[HTTP] Brak lub błąd w config.json → Proxy pominięte.");
+  console.warn("[HTTP] Brak lub błąd w config.json – używam domyślnych.");
 }
 
-// Konfiguracja bazowa axios
+// ============ PROXY + KEEP-ALIVE ============
+
+let proxyEnabled = !!(CONFIG.Proxy && CONFIG.Proxy.Enabled && CONFIG.Proxy.Url);
+let proxyUrl = proxyEnabled ? CONFIG.Proxy.Url : null;
+
+// Bazowa konfiguracja axios
+const DEFAULT_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 const agentConfig = {
   timeout: 15000,
   headers: {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": DEFAULT_UA,
     Accept:
       "application/rss+xml,application/atom+xml,application/xml,application/json;q=0.9,*/*;q=0.8",
+    "Accept-Encoding": CONFIG?.Http?.AcceptEncoding || "gzip, deflate, br",
   },
+  // Keep-Alive dla non-proxy
+  httpAgent: proxyEnabled ? undefined : new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 100 }),
+  httpsAgent: proxyEnabled ? undefined : new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 100 }),
 };
 
-// Proxy jeśli włączony
+// Proxy jeśli włączony (v7 API)
 if (proxyEnabled && proxyUrl) {
   agentConfig.proxy = false;
-  agentConfig.httpsAgent = require("https-proxy-agent")(proxyUrl);
-  agentConfig.httpAgent = require("http-proxy-agent")(proxyUrl);
+  agentConfig.httpsAgent = new HttpsProxyAgent(proxyUrl);
+  agentConfig.httpAgent = new HttpProxyAgent(proxyUrl);
   console.log(`[HTTP] Proxy włączony: ${proxyUrl}`);
 } else {
   console.log("[HTTP] Proxy wyłączone.");
@@ -46,9 +54,9 @@ const httpClient = axios.create(agentConfig);
 // ============ FALLBACK UA ============
 
 const UA_FALLBACKS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0",
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-  "FeedFetcher-Google",
+  "FeedFetcher-Google"
 ];
 
 // ============ PER-HOST COOLDOWN (circuit breaker) ============
@@ -64,21 +72,23 @@ const UA_FALLBACKS = [
 */
 const hostCooldowns = new Map();
 
-function getHostFromUrl(url) { try { return new URL(url).host; } catch { return null; } }
+function getHostFromUrl(url) {
+  try { return new URL(url).host; } catch { return null; }
+}
 
 function isHostOnCooldown(hostOrUrl) {
-  const host = hostOrUrl.includes("://") ? getHostFromUrl(hostOrUrl) : hostOrUrl;
+  const host = (typeof hostOrUrl === "string" && hostOrUrl.includes("://")) ? getHostFromUrl(hostOrUrl) : hostOrUrl;
   const cd = host ? hostCooldowns.get(host) : null;
   return !!(cd && cd.until > Date.now());
 }
 
 function getHostCooldown(hostOrUrl) {
-  const host = hostOrUrl.includes("://") ? getHostFromUrl(hostOrUrl) : hostOrUrl;
+  const host = (typeof hostOrUrl === "string" && hostOrUrl.includes("://")) ? getHostFromUrl(hostOrUrl) : hostOrUrl;
   return host ? hostCooldowns.get(host) || null : null;
 }
 
 function clearCooldown(hostOrUrl) {
-  const host = hostOrUrl.includes("://") ? getHostFromUrl(hostOrUrl) : hostOrUrl;
+  const host = (typeof hostOrUrl === "string" && hostOrUrl.includes("://")) ? getHostFromUrl(hostOrUrl) : hostOrUrl;
   if (host) hostCooldowns.delete(host);
 }
 
@@ -96,7 +106,6 @@ function computeBaseCooldownMs(status, err) {
   if (status >= 500 && status < 600) return 60 * 1000; // 1 min
   if (status >= 400 && status < 500) return 5 * 60 * 1000; // 5 min
 
-  // sieć/time-outy
   const code = err?.code;
   if (["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN"].includes(code)) return 30 * 1000;
 
@@ -124,25 +133,88 @@ function setCooldown(host, status, reason, err) {
   console.warn(`[HTTP] Cooldown hosta ${host} na ${sec}s (status: ${status || "n/a"}, reason: ${reason || "n/a"}, strikes: ${strikes})`);
 }
 
-// ============ NAGŁÓWKI SPECJALNE PER-DOMENA/ŚCIEŻKA ============
+// ============ CONDITIONAL (ETag / Last-Modified) CACHE ============
+
+const COND_CACHE_FILE = "./http-meta.json";
+let condCache = {};
+try {
+  if (fs.existsSync(COND_CACHE_FILE)) {
+    condCache = JSON.parse(fs.readFileSync(COND_CACHE_FILE, "utf8")) || {};
+  }
+} catch {
+  condCache = {};
+}
+
+let _metaSaveTimer = null;
+function saveCondCache() {
+  clearTimeout(_metaSaveTimer);
+  _metaSaveTimer = setTimeout(() => {
+    try { fs.writeFileSync(COND_CACHE_FILE, JSON.stringify(condCache, null, 2), "utf8"); }
+    catch (e) { console.warn("[HTTP] Nie mogę zapisać http-meta.json:", e?.message); }
+  }, 300);
+}
+
+// ============ PREFERENCJE PER-DOMENA / NAGŁÓWKI ============
+
+function getConfiguredCookie(host) {
+  try {
+    const jar = CONFIG?.Http?.Cookies || {};
+    return jar[host] || null;
+  } catch {
+    return null;
+  }
+}
+
+function getExtraHeadersForUrl(url) {
+  const out = {};
+  const map = CONFIG?.Http?.ExtraHeaders || {};
+  try {
+    for (const [pattern, headers] of Object.entries(map)) {
+      if (typeof pattern !== "string" || !headers) continue;
+      if (url.includes(pattern)) Object.assign(out, headers);
+    }
+  } catch {}
+  return out;
+}
 
 function domainSpecificHeaders(url) {
   let u;
   try { u = new URL(url); } catch { return {}; }
 
-  // lowcygier.pl → dla /rss i /feed/ używamy nagłówków podobnych do przeglądarki
-  if (u.hostname === "lowcygier.pl" && (u.pathname === "/rss" || u.pathname.startsWith("/feed"))) {
-    return {
+  // boop.pl → symulacja przeglądarki dla /rss oraz /feed
+  if (u.hostname === "boop.pl" && (u.pathname === "/rss" || u.pathname.startsWith("/feed"))) {
+    const h = {
       "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.5",
+      "Accept-Encoding": CONFIG?.Http?.AcceptEncoding || "gzip, deflate, br",
       "Sec-GPC": "1",
       "Upgrade-Insecure-Requests": "1",
       "Sec-Fetch-Dest": "document",
       "Sec-Fetch-Mode": "navigate",
       "Sec-Fetch-Site": "cross-site",
       Priority: "u=0, i",
-      // Użyj naturalnego referera dla hosta
+      "Alt-Used": u.hostname,
+      Referer: `https://${u.hostname}/`
+    };
+    const cookie = getConfiguredCookie(u.hostname);
+    if (cookie) h["Cookie"] = cookie;
+    return h;
+  }
+
+  // lowcygier.pl — “przeglądarkowe” dla /rss /feed
+  if (u.hostname === "lowcygier.pl" && (u.pathname === "/rss" || u.pathname.startsWith("/feed"))) {
+    return {
+      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.5",
+      "Accept-Encoding": CONFIG?.Http?.AcceptEncoding || "gzip, deflate, br",
+      "Sec-GPC": "1",
+      "Upgrade-Insecure-Requests": "1",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "cross-site",
+      Priority: "u=0, i",
       Referer: `https://${u.hostname}/`,
     };
   }
@@ -150,12 +222,20 @@ function domainSpecificHeaders(url) {
   return {};
 }
 
-// ============ GŁÓWNA FUNKCJA GET Z FALLBACK UA + PER-HOST COOLDOWN ============
-
-async function getWithFallback(url, attempt = 0, forcedUA = null) {
+// ============ GŁÓWNA FUNKCJA GET (rozszerzona) ============
+//
+// getWithFallback(url, options?)
+// options.headers          → dodatkowe nagłówki
+// options.timeout          → ms
+// options.responseType     → np. "arraybuffer"
+// options.method           → "GET" (domyślnie)
+// options.conditionalKey   → klucz do ETag/Last-Modified (domyślnie url)
+//
+async function getWithFallback(url, options = {}) {
   const host = getHostFromUrl(url);
+  const attempt = options.__attempt || 0;
 
-  // Jeśli host jest na cooldownie — przerwij od razu
+  // Cooldown
   if (host && isHostOnCooldown(url)) {
     const cd = getHostCooldown(url);
     const sec = Math.ceil((cd.until - Date.now()) / 1000);
@@ -166,30 +246,71 @@ async function getWithFallback(url, attempt = 0, forcedUA = null) {
     throw err;
   }
 
-  // Bazowe nagłówki per request
   const origin = (() => { try { return new URL(url).origin; } catch { return undefined; } })();
   const baseHeaders = {
     "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": CONFIG?.Http?.AcceptEncoding || "gzip, deflate, br",
     ...(origin ? { Referer: origin } : {}),
   };
 
-  // Specjalne nagłówki dla niektórych domen/ścieżek
   const special = domainSpecificHeaders(url);
+  const extras = getExtraHeadersForUrl(url);
 
-  // Ewentualny wymuszony UA (z fallbacków)
+  // Conditional headers (ETag / Last-Modified) – jeśli brak w extras
+  const condKey = options.conditionalKey || url;
+  const cond = condCache[condKey] || {};
+  const condHeaders = {};
+  if (!("If-None-Match" in extras) && cond.etag) {
+    condHeaders["If-None-Match"] = cond.etag;
+  }
+  if (!("If-Modified-Since" in extras) && cond.lastModified) {
+    condHeaders["If-Modified-Since"] = cond.lastModified;
+  }
+
+  const forcedUA = options.forceUA || (attempt > 0 ? UA_FALLBACKS[Math.min(attempt - 1, UA_FALLBACKS.length - 1)] : null);
   const uaHdr = forcedUA ? { "User-Agent": forcedUA } : {};
+  const userHeaders = options.headers || {};
 
-  // Kolejność: bazowe → specjalne → forcedUA
-  const headers = Object.keys(special).length
-    ? { ...baseHeaders, ...special, ...uaHdr }
-    : { ...baseHeaders, ...uaHdr };
+  // Finalne nagłówki (kolejność: base → special → cond → extras → UA → user)
+  const headers = Object.assign({}, baseHeaders, special, condHeaders, extras, uaHdr, userHeaders);
+
+  const reqConfig = {
+    url,
+    method: options.method || "GET",
+    headers,
+    timeout: options.timeout ?? agentConfig.timeout,
+    responseType: options.responseType,
+    httpAgent: httpClient.defaults.httpAgent,
+    httpsAgent: httpClient.defaults.httpsAgent,
+    validateStatus: (s) => s >= 200 && s < 300 // 304 pójdzie w catch
+  };
 
   try {
-    const res = await httpClient.get(url, { headers });
-    if (host) clearCooldown(host); // sukces resetuje cooldown
+    const res = await httpClient.request(reqConfig);
+
+    // Sukces → wyczyść cooldown + aktualizuj ETag/Last-Modified
+    if (host) clearCooldown(host);
+    try {
+      const etag = res.headers?.etag;
+      const lm = res.headers?.["last-modified"];
+      if (etag || lm) {
+        condCache[condKey] = Object.assign({}, condCache[condKey] || {}, {
+          ...(etag ? { etag } : {}),
+          ...(lm ? { lastModified: lm } : {})
+        });
+        saveCondCache();
+      }
+    } catch {}
+
     return res;
   } catch (err) {
     const status = err?.response?.status;
+
+    // 304 Not Modified — axios rzuca wyjątek → zwracamy response
+    if (status === 304 && err.response) {
+      if (host) clearCooldown(host);
+      return err.response;
+    }
 
     // Twarde odrzucenia → ustaw cooldown i zakończ
     if (host && (status === 401 || status === 403 || status === 429)) {
@@ -202,7 +323,7 @@ async function getWithFallback(url, attempt = 0, forcedUA = null) {
       const newUA = UA_FALLBACKS[attempt];
       console.warn(`[HTTP] Próba fallback UA: ${newUA} dla ${url} (attempt ${attempt + 1})`);
       await new Promise((r) => setTimeout(r, 400 + Math.random() * 600));
-      return getWithFallback(url, attempt + 1, newUA);
+      return getWithFallback(url, Object.assign({}, options, { __attempt: attempt + 1, forceUA: newUA }));
     }
 
     // Wyczerpane próby → ustaw cooldown “miękki”

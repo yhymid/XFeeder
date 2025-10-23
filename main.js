@@ -1,11 +1,11 @@
-// main.js - Główny plik aplikacji XFeeder 1.3 z Workshop, zaawansowanym logowaniem i obsługą nowego config.json
+// main.js - Główny plik aplikacji XFeeder 1.3 (Core Stability Pack)
 "use strict";
 
 const fs = require("fs");
 const path = require("path");
 const { sendMessage } = require("./src/message");
 
-// Import klienta HTTP z fallbackiem + opcjonalny per-host cooldown
+// Import klienta HTTP z fallbackiem + per-host cooldown
 const clientMod = require("./src/client");
 const getWithFallback = clientMod.getWithFallback;
 const isHostOnCooldown = clientMod.isHostOnCooldown || (() => false);
@@ -219,7 +219,6 @@ console.error = (...args) => {
 let config;
 try {
   config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
-  // Ustawienie LOG_ENABLED wg Settings.Logs (domyślnie true)
   LOG_ENABLED = config.Settings?.Logs !== false;
 } catch (e) {
   Logger.crash("Nie udało się wczytać config.json", e, { file: "./config.json" });
@@ -251,6 +250,62 @@ function saveCache() {
 }
 
 // ------------------------------------------------------------
+// USTAWIENIA STABILNOŚCI + HELPERY
+// ------------------------------------------------------------
+const MAX_CACHE_PER_KEY = config.Settings?.MaxCachePerKey ?? 2000;
+const SEND_DELAY_MS = config.Settings?.DelayBetweenSendsMs ?? 350;
+const PARSER_TIMEOUT_MS = config.Settings?.ParserTimeoutMs ?? 15000;
+const FETCH_CONCURRENCY = config.Settings?.FetchConcurrency ?? 3;
+const delayBetweenChannels = config.Settings?.DelayBetweenChannelsMs ?? 30000;
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+function withTimeout(promise, ms, label = "operation") {
+  let t;
+  const err = new Error(`Timeout: ${label} > ${ms}ms`);
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => (t = setTimeout(() => rej(err), ms))),
+  ]).finally(() => clearTimeout(t));
+}
+
+function normalizeLink(u) {
+  try {
+    const url = new URL(u);
+    url.hash = "";
+    const rm = new Set(["utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_name","fbclid","gclid","yclid","mc_cid","mc_eid","ref"]);
+    for (const k of Array.from(url.searchParams.keys())) {
+      if (k.toLowerCase().startsWith("utm_") || rm.has(k)) url.searchParams.delete(k);
+    }
+    return url.toString();
+  } catch {
+    return u;
+  }
+}
+
+function pushCache(list, ids) {
+  const prev = Array.isArray(list) ? list : [];
+  const merged = [...ids, ...prev];
+  if (merged.length > MAX_CACHE_PER_KEY) merged.length = MAX_CACHE_PER_KEY;
+  return merged;
+}
+
+async function mapWithLimit(arr, limit, iteratee) {
+  const ret = new Array(arr.length);
+  let i = 0;
+  const workers = new Array(Math.min(limit, arr.length)).fill(0).map(async () => {
+    while (true) {
+      const idx = i++;
+      if (idx >= arr.length) break;
+      try { ret[idx] = await iteratee(arr[idx], idx); }
+      catch (e) { ret[idx] = e; }
+    }
+  });
+  await Promise.allSettled(workers);
+  return ret;
+}
+
+// ------------------------------------------------------------
 // XFeederAPI + WORKSHOP
 // ------------------------------------------------------------
 const XFeederAPI = {
@@ -261,7 +316,6 @@ const XFeederAPI = {
 };
 
 const workshopEnabled = config.Workshop?.Enabled !== false;
-// Wymuszone źródło pluginów: src/workshop (zgodnie z wymaganiem)
 const workshopDir = "src/workshop";
 
 let workshopParsers = [];
@@ -286,7 +340,6 @@ function getDiscordBlocks(channelConfig) {
   const out = [];
   if (!channelConfig || typeof channelConfig !== "object") return out;
 
-  // Klucz "Discord": obiekt lub tablica obiektów
   if (channelConfig.Discord) {
     if (Array.isArray(channelConfig.Discord)) {
       out.push(...channelConfig.Discord);
@@ -294,7 +347,6 @@ function getDiscordBlocks(channelConfig) {
       out.push(channelConfig.Discord);
     }
   }
-  // Dodatkowe klucze Discord2, Discord3, ...
   for (const key of Object.keys(channelConfig)) {
     if (/^Discord\d+$/i.test(key) && channelConfig[key] && typeof channelConfig[key] === "object") {
       out.push(channelConfig[key]);
@@ -304,7 +356,6 @@ function getDiscordBlocks(channelConfig) {
 }
 
 function mergeAuth(discordBlock) {
-  // Domerguj globalne Auth tylko dla brakujących pól
   return {
     ...discordBlock,
     Token: discordBlock.Token || GLOBAL_AUTH.Token,
@@ -323,7 +374,7 @@ function discordCacheKey(block) {
 }
 
 // ------------------------------------------------------------
-// FUNKCJA GŁÓWNA: Pobieranie feeda (Workshop → Wbudowane → Axios → RSSParser → Error)
+// RSS Parser (używany tylko do parseString)
 // ------------------------------------------------------------
 const Parser = require("rss-parser");
 const rssParser = new Parser({
@@ -335,6 +386,9 @@ const rssParser = new Parser({
   },
 });
 
+// ------------------------------------------------------------
+// PIPELINE PARSERÓW
+// ------------------------------------------------------------
 function buildParsersPipeline() {
   const builtins = [
     { name: "parseYouTube", priority: 10, parse: (u, ctx) => parseYouTube(u, { get: ctx.get }) },
@@ -351,8 +405,10 @@ function buildParsersPipeline() {
   return combined;
 }
 
+// ------------------------------------------------------------
+// POBIERANIE FEEDA (z timeoutami, conditional i fallbackami)
+// ------------------------------------------------------------
 async function fetchFeed(url) {
-  // Short-circuit: jeśli host na cooldownie (wymaga wsparcia z src/client.js)
   try {
     const host = new URL(url).host;
     if (host && isHostOnCooldown(url)) {
@@ -365,21 +421,19 @@ async function fetchFeed(url) {
       });
       return [];
     }
-  } catch {
-    // ignore invalid URL
-  }
+  } catch {}
 
   const ctx = { get: getWithFallback, api: XFeederAPI };
   const parsers = buildParsersPipeline();
 
-  // 1) Pipeline parserów (pluginy + wbudowane)
+  // 1) Pluginy + wbudowane (z timeoutem)
   for (const p of parsers) {
     try {
       if (typeof p.test === "function") {
-        const ok = await p.test(url, ctx);
+        const ok = await withTimeout(p.test(url, ctx), PARSER_TIMEOUT_MS, `test:${p.name}`);
         if (!ok) continue;
       }
-      const parsed = await p.parse(url, ctx);
+      const parsed = await withTimeout(p.parse(url, ctx), PARSER_TIMEOUTMS, `parse:${p.name}`);
       if (parsed && parsed.length) {
         origConsole.log(`[Parser:${p.name}] Sukces (${parsed.length}) → ${url}`);
         return parsed;
@@ -393,28 +447,21 @@ async function fetchFeed(url) {
     }
   }
 
-  // 2) Axios-regex fallback (prosty RSS)
+  // 2) Axios-regex fallback
   try {
-    const res = await getWithFallback(url);
-    if (
-      res &&
-      res.status === 200 &&
-      typeof res.data === "string" &&
-      res.data.includes("<item")
-    ) {
+    const res = await getWithFallback(url, {
+      headers: { Accept: "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8" },
+      timeout: 15000
+    });
+    if (res && res.status === 200 && typeof res.data === "string" && res.data.includes("<item")) {
       const matches = [...res.data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
       const items = matches.map((m) => {
         const getTag = (tag) =>
-          (
-            m[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))
-              ?.[1] || ""
-          ).trim();
+          (m[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] || "").trim();
         return {
           title: getTag("title") || "Brak tytułu",
           link: getTag("link"),
-          contentSnippet: (getTag("description") || "")
-            .replace(/<[^>]+>/g, "")
-            .substring(0, 400),
+          contentSnippet: (getTag("description") || "").replace(/<[^>]+>/g, "").substring(0, 400),
           isoDate: getTag("pubDate") || null,
           enclosure: null,
           author: getTag("author") || "",
@@ -434,42 +481,43 @@ async function fetchFeed(url) {
     });
   }
 
-  // 3) rss-parser (ostatnia próba)
+  // 3) rss-parser (bez własnego HTTP) — parseString
   try {
-    const feed = await rssParser.parseURL(url);
-    if (feed?.items?.length) {
-      const items = feed.items.map((entry) => ({
-        title: entry.title || "Brak tytułu",
-        link: entry.link,
-        contentSnippet: entry.contentSnippet || entry.content || "",
-        isoDate: entry.isoDate || entry.pubDate || null,
-        enclosure: entry.enclosure?.url || null,
-        author: entry.creator || entry.author || null,
-        guid: entry.guid || entry.link,
-        categories: entry.categories || [],
-      }));
-      origConsole.log(`[RSSParser] Sukces (${items.length}) → ${url}`);
-      return items;
+    const res = await getWithFallback(url, {
+      headers: { Accept: "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8" },
+      timeout: 15000
+    });
+    if (res && typeof res.data === "string") {
+      const feed = await rssParser.parseString(res.data);
+      if (feed?.items?.length) {
+        const items = feed.items.map((entry) => ({
+          title: entry.title || "Brak tytułu",
+          link: entry.link,
+          contentSnippet: entry.contentSnippet || entry.content || "",
+          isoDate: entry.isoDate || entry.pubDate || null,
+          enclosure: entry.enclosure?.url || null,
+          author: entry.creator || entry.author || null,
+          guid: entry.guid || entry.link,
+          categories: entry.categories || [],
+        }));
+        origConsole.log(`[RSSParser] Sukces (${items.length}) → ${url}`);
+        return items;
+      }
     }
   } catch (err) {
-    Logger.error(`[RSSParser] Błąd parseURL`, {
-      url,
-      error: pickHttpError(err),
-    });
+    Logger.error(`[RSSParser] Błąd parseString`, { url, error: pickHttpError(err) });
   }
 
-  // 4) Brak danych
   Logger.warn("Brak danych z feeda", { url, reason: "Wszystkie parsery zwróciły pusty wynik" });
   return [];
 }
 
 // ------------------------------------------------------------
-// SPRAWDZANIE KANAŁU (RSS + wiele bloków Discord)
+// SPRAWDZANIE KANAŁU
 // ------------------------------------------------------------
 async function checkFeedsForChannel(index, channelConfig) {
   if (!cache[index]) cache[index] = {};
 
-  // Walidacja bazowa
   if (channelConfig.RSS && !channelConfig.Webhook) {
     Logger.warn("Brak Webhook dla kanału z RSS — nic nie zostanie wysłane", {
       channelIndex: index,
@@ -481,14 +529,16 @@ async function checkFeedsForChannel(index, channelConfig) {
     });
   }
 
-  // --- Discord (obsługa wielu bloków: Discord, Discord2, ...) ---
   const discordBlocks = getDiscordBlocks(channelConfig);
+  // HTTP adapter dla Discord parsera (wspólny client z cooldownem/proxy)
+  const discordHttp = { get: (url, opts = {}) => getWithFallback(url, opts) };
+
   for (const dBlockRaw of discordBlocks) {
     const dBlock = mergeAuth(dBlockRaw);
     const cacheKey = discordCacheKey(dBlock);
 
     try {
-      const discordMsgs = await parseDiscord(dBlock);
+      const discordMsgs = await parseDiscord(dBlock, discordHttp);
       if (!Array.isArray(discordMsgs)) continue;
 
       if (!cache[index][cacheKey]) cache[index][cacheKey] = [];
@@ -506,6 +556,7 @@ async function checkFeedsForChannel(index, channelConfig) {
               dBlock.Thread || channelConfig.Thread,
               entry
             );
+            await sleep(SEND_DELAY_MS);
           } catch (err) {
             Logger.error("Nie udało się wysłać wiadomości Discord (blok DiscordX)", {
               channelIndex: index,
@@ -518,10 +569,10 @@ async function checkFeedsForChannel(index, channelConfig) {
           }
         }
 
-        cache[index][cacheKey] = [
-          ...newMsgs.map((m) => m.guid),
-          ...cache[index][cacheKey],
-        ];
+        cache[index][cacheKey] = pushCache(
+          cache[index][cacheKey],
+          newMsgs.map((m) => m.guid)
+        );
         saveCache();
         origConsole.log(`[Kanał ${index + 1}] Wysłano ${toSend.length} (Discord blok: ${cacheKey}).`);
       } else {
@@ -546,8 +597,10 @@ async function checkFeedsForChannel(index, channelConfig) {
   }
 
   // --- RSS/ATOM/YT/JSON/API ---
-  if (channelConfig.RSS && Array.isArray(channelConfig.RSS)) {
-    for (const feedUrl of channelConfig.RSS) {
+  if (channelConfig.RSS && Array.isArray(channelConfig.RSS) && channelConfig.RSS.length) {
+    const list = channelConfig.RSS.slice();
+
+    await mapWithLimit(list, FETCH_CONCURRENCY, async (feedUrl) => {
       try {
         const items = await fetchFeed(feedUrl);
         if (!items.length) {
@@ -556,11 +609,15 @@ async function checkFeedsForChannel(index, channelConfig) {
             feedUrl,
             reason: "fetchFeed zwrócił []",
           });
-          continue;
+          return;
         }
 
         if (!cache[index][feedUrl]) cache[index][feedUrl] = [];
-        const newItems = items.filter((i) => !cache[index][feedUrl].includes(i.link));
+
+        const newItems = items.filter((i) => {
+          const key = normalizeLink(i.link || i.guid || "");
+          return key && !cache[index][feedUrl].includes(key);
+        });
 
         if (newItems.length > 0) {
           const reqSend = channelConfig.RequestSend ?? 5;
@@ -581,6 +638,7 @@ async function checkFeedsForChannel(index, channelConfig) {
                 channelConfig.Thread,
                 entry
               );
+              await sleep(SEND_DELAY_MS);
             } catch (err) {
               Logger.error("Nie udało się wysłać wpisu na Discord (RSS/Atom/API)", {
                 channelIndex: index,
@@ -598,17 +656,14 @@ async function checkFeedsForChannel(index, channelConfig) {
             }
           }
 
-          cache[index][feedUrl] = [
-            ...newItems.map((i) => i.link),
-            ...cache[index][feedUrl],
-          ];
+          cache[index][feedUrl] = pushCache(
+            cache[index][feedUrl],
+            newItems.map((i) => normalizeLink(i.link || i.guid || ""))
+          );
           saveCache();
           origConsole.log(
             `[Kanał ${index + 1}] Wysłano ${toSend.length} wpisów z ${feedUrl}.`
           );
-        } else {
-          // (wyciszone) brak nowych wpisów po deduplikacji — bez logowania
-          // zostawiamy no-op, żeby nie spamować logów
         }
       } catch (err) {
         Logger.error("Błąd obsługi feeda RSS/ATOM/JSON", {
@@ -617,7 +672,7 @@ async function checkFeedsForChannel(index, channelConfig) {
           error: pickHttpError(err),
         });
       }
-    }
+    });
   }
 }
 
@@ -633,7 +688,6 @@ origConsole.log(`[System] Kanałów do obsługi: ${allChannels.length}`);
 
 let lastCheck = new Array(allChannels.length).fill(0);
 let currentIndex = 0;
-const delayBetweenChannels = 30000;
 
 async function processNextChannel() {
   if (!allChannels.length) {

@@ -3,3 +3,7 @@ config.json
 package-lock.json
 node_modules/
 data.txt
+errorlog.txt
+http-meta.json
+warnlog.txt
+src/workshop/workshop-cache.json

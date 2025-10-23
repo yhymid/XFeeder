@@ -4,6 +4,7 @@ const axios = require("axios");
 /**
  * Parser wiadomości z kanału Discord.
  * @param {object} discordConfig konfiguracja z config.json
+ * @param {object} httpClient klient HTTP z metodą .get (domyślnie axios; w core przekazywany jest getWithFallback)
  * @returns {Promise<Array>} lista wiadomości w formacie feeda
  */
 async function parseDiscord(discordConfig, httpClient = axios) {
@@ -16,7 +17,7 @@ async function parseDiscord(discordConfig, httpClient = axios) {
 
   const channelIds = getChannelIds(discordConfig);
   if (channelIds.length === 0) {
-    console.error('[Discord parser] Brak channelIDs w konfiguracji');
+    console.error('[Discord parser] Brak ChannelIDs; dodaj "ChannelIDs" (GuildID nie jest ID kanału).');
     return [];
   }
 
@@ -37,15 +38,16 @@ async function parseDiscord(discordConfig, httpClient = axios) {
 
 function getChannelIds(discordConfig) {
   const channelIds = [];
-  if (discordConfig.ChannelIDs) {
-    if (Array.isArray(discordConfig.ChannelIDs)) channelIds.push(...discordConfig.ChannelIDs);
-    else if (typeof discordConfig.ChannelIDs === 'string') channelIds.push(discordConfig.ChannelIDs);
+  if (Array.isArray(discordConfig.ChannelIDs)) {
+    channelIds.push(...discordConfig.ChannelIDs.filter((x) => typeof x === "string" && x.trim()));
+  } else if (typeof discordConfig.ChannelIDs === "string" && discordConfig.ChannelIDs.trim()) {
+    channelIds.push(discordConfig.ChannelIDs.trim());
   }
-  if (discordConfig.GuildID && channelIds.length === 0) {
-    if (Array.isArray(discordConfig.GuildID)) channelIds.push(...discordConfig.GuildID);
-    else channelIds.push(discordConfig.GuildID);
+  // Opcjonalnie wspieraj singular "ChannelID"
+  if (!channelIds.length && typeof discordConfig.ChannelID === "string" && discordConfig.ChannelID.trim()) {
+    channelIds.push(discordConfig.ChannelID.trim());
   }
-  return channelIds.filter(id => id && id.trim() !== '');
+  return channelIds;
 }
 
 async function fetchChannelMessages(channelId, discordConfig, httpClient) {
@@ -66,22 +68,16 @@ async function fetchChannelMessages(channelId, discordConfig, httpClient) {
   const channelMessages = [];
 
   for (const msg of res.data) {
-    // Załączniki (pełne URL-e)
     const attachmentsUrls = (msg.attachments || []).map(a => a?.url).filter(Boolean);
-
-    // Wyciągnij miniaturę z embeda
     const embedThumb = extractEmbedThumbnail(msg);
 
-    // Obraz wybrany jako enclosure
     let imageUrl = null;
     if (attachmentsUrls.length) {
-      // jeśli jest załącznik obrazkowy, użyj pierwszego
       const imgAttach = (msg.attachments || []).find(a => a?.content_type?.startsWith('image/'));
       imageUrl = imgAttach?.url || null;
     }
     if (!imageUrl && embedThumb) imageUrl = embedThumb;
 
-    // Odpowiedź (referenced)
     const referenced = msg.referenced_message ? {
       author: msg.referenced_message.author?.global_name || msg.referenced_message.author?.username,
       content: msg.referenced_message.content
@@ -98,8 +94,8 @@ async function fetchChannelMessages(channelId, discordConfig, httpClient) {
       author: msg.author?.global_name || msg.author?.username || "Unknown",
       enclosure: imageUrl,
       embedThumbnail: embedThumb,
-      attachments: attachmentsUrls,      // <-- dodane
-      referenced,                        // <-- dodane
+      attachments: attachmentsUrls,
+      referenced,
       categories: ['discord'],
       discordData: {
         messageId: msg.id,

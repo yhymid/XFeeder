@@ -3,15 +3,14 @@ const axios = require("axios");
 
 /**
  * Wysyła wpis do kanału Discord poprzez webhook (Components V2).
- * Zamiast embedów korzystamy z Container (type:17) i Text Display / Media Gallery.
+ * Gdy Components V2 zwróci błąd 4xx/5xx — fallback do klasycznych embedów.
  *
- * @param {string} webhookUrl - pełny URL webhooka
- * @param {string|null} threadId - id wątku lub "null"
- * @param {object} entry - ustandaryzowany obiekt wpisu (title, link, contentSnippet, enclosure, attachments, author, timestamp, etc.)
+ * @param {string} webhookUrl
+ * @param {string|null} threadId
+ * @param {object} entry
  */
 async function sendMessage(webhookUrl, threadId, entry) {
   try {
-    // Przygotuj URL webhooka i query params
     let urlObj;
     try {
       urlObj = new URL(webhookUrl);
@@ -45,7 +44,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
       });
 
       const payload = { flags: 1 << 15, components: [container] };
-      await postToWebhook(urlObj.toString(), payload);
+      await trySendWithFallback(urlObj.toString(), payload, entry);
       console.log(`[ComponentsV2] Wysłano (YouTube): ${entry.title}`);
       return;
     }
@@ -93,7 +92,8 @@ async function sendMessage(webhookUrl, threadId, entry) {
         });
       }
 
-      await postToWebhook(urlObj.toString(), { flags: 1 << 15, components: [container] });
+      const payload = { flags: 1 << 15, components: [container] };
+      await trySendWithFallback(urlObj.toString(), payload, entry);
       console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
       return;
     }
@@ -133,7 +133,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
       }
 
       const payload = { flags: 1 << 15, components: [container] };
-      await postToWebhook(urlObj.toString(), payload);
+      await trySendWithFallback(urlObj.toString(), payload, entry);
       console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
       return;
     }
@@ -167,13 +167,46 @@ async function sendMessage(webhookUrl, threadId, entry) {
     }
 
     const payload = { flags: 1 << 15, components: [container] };
-    await postToWebhook(urlObj.toString(), payload);
+    await trySendWithFallback(urlObj.toString(), payload, entry);
     console.log(`[ComponentsV2] Wysłano: ${entry.title || entry.link || "(brak tytułu)"}`);
   } catch (err) {
     if (err.response) {
       console.error(`[ComponentsV2] Błąd przy wysyłaniu wpisu: ${err.response.status}`, err.response.data);
     } else {
       console.error(`[ComponentsV2] Błąd:`, err.message);
+    }
+  }
+}
+
+async function trySendWithFallback(url, payload, entry) {
+  try {
+    await postToWebhook(url, payload);
+  } catch (e) {
+    const status = e?.response?.status;
+    if (status && status >= 400) {
+      const embedPayload = {
+        content: entry.link || "",
+        embeds: [{
+          title: entry.title || "Nowy wpis",
+          description: truncate(entry.contentSnippet, 2000) || undefined,
+          url: entry.link || undefined,
+          image: entry.enclosure ? { url: entry.enclosure } : undefined,
+          timestamp: entry.isoDate || undefined,
+          author: entry.author ? { name: entry.author } : undefined
+        }]
+      };
+      try {
+        await postToWebhook(url, embedPayload);
+        console.log(`[Embeds] Fallback wysłany: ${entry.title || entry.link || "(brak tytułu)"}`);
+      } catch (e2) {
+        if (e2.response) {
+          console.error(`[Embeds] Fallback błąd: ${e2.response.status}`, e2.response.data);
+        } else {
+          console.error(`[Embeds] Fallback błąd:`, e2.message);
+        }
+      }
+    } else {
+      throw e;
     }
   }
 }

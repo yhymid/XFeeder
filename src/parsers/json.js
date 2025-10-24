@@ -4,15 +4,15 @@ const { stripHtml } = require("string-strip-html");
 
 async function parseJSON(feedUrl, httpClient) {
   try {
-    const res = await httpClient.get(feedUrl, {
-      headers: {
-        Accept: "application/feed+json, application/json, text/json;q=0.9,*/*;q=0.8",
-        "User-Agent": "XFeeder/1.3 (JSON Parser)",
-      },
-      timeout: 15000,
-    });
-
-    const data = res.data;
+      const res = await httpClient.get(feedUrl, {
+        headers: {
+          Accept: "application/feed+json, application/json, text/json;q=0.9,*/*;q=0.8",
+          "User-Agent": "XFeeder/1.2 (JSON Parser)",
+        },
+        timeout: 15000,
+      });
+      if (res?.status === 304) return [];
+      const data = res.data;
     if (!data) return [];
 
     let items = [];

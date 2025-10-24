@@ -29,14 +29,14 @@ const parser = new xml2js.Parser({
  */
 async function parseXML(feedUrl, httpClient) {
   try {
-    const res = await httpClient.get(feedUrl, {
-      headers: {
-        Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9,*/*;q=0.8",
-      },
-      timeout: 15000,
-    });
-
-    const xml = res.data;
+      const res = await httpClient.get(feedUrl, {
+        headers: {
+          Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9,*/*;q=0.8",
+        },
+        timeout: 15000,
+      });
+      if (res?.status === 304) return [];
+      const xml = res.data;
     const data = await parser.parseStringPromise(xml);
 
     // --- WYKRYWANIE STRUKTURY ---

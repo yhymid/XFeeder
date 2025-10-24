@@ -3,11 +3,11 @@ const axios = require("axios");
 
 /**
  * Wysyła wpis do kanału Discord poprzez webhook (Components V2).
- * Gdy Components V2 zwróci błąd 4xx/5xx — fallback do klasycznych embedów.
+ * Brak fallbacku do embedów (embedy usunięte w całości).
  *
- * @param {string} webhookUrl
- * @param {string|null} threadId
- * @param {object} entry
+ * @param {string} webhookUrl - pełny URL webhooka
+ * @param {string|null} threadId - id wątku lub "null"
+ * @param {object} entry - ustandaryzowany obiekt wpisu (title, link, contentSnippet, enclosure, attachments, author, timestamp, etc.)
  */
 async function sendMessage(webhookUrl, threadId, entry) {
   try {
@@ -44,7 +44,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
       });
 
       const payload = { flags: 1 << 15, components: [container] };
-      await trySendWithFallback(urlObj.toString(), payload, entry);
+      await postToWebhook(urlObj.toString(), payload);
       console.log(`[ComponentsV2] Wysłano (YouTube): ${entry.title}`);
       return;
     }
@@ -61,20 +61,14 @@ async function sendMessage(webhookUrl, threadId, entry) {
       }
 
       const mediaItems = [];
-      if (entry.enclosure) {
-        mediaItems.push({ media: { url: entry.enclosure }, description: username });
-      }
-      if (entry.embedThumbnail) {
-        mediaItems.push({ media: { url: entry.embedThumbnail }, description: "Embed" });
-      }
+      if (entry.enclosure) mediaItems.push({ media: { url: entry.enclosure }, description: username });
+      if (entry.embedThumbnail) mediaItems.push({ media: { url: entry.embedThumbnail }, description: "Embed" });
       if (Array.isArray(entry.attachments) && entry.attachments.length > 0) {
         mediaItems.push(...entry.attachments.slice(0, 10).map((url) => ({
           media: { url }, description: username
         })));
       }
-      if (mediaItems.length > 0) {
-        container.components.push({ type: 12, items: mediaItems });
-      }
+      if (mediaItems.length > 0) container.components.push({ type: 12, items: mediaItems });
 
       if (entry.referenced) {
         container.components.push({
@@ -92,22 +86,19 @@ async function sendMessage(webhookUrl, threadId, entry) {
         });
       }
 
-      const payload = { flags: 1 << 15, components: [container] };
-      await trySendWithFallback(urlObj.toString(), payload, entry);
+      await postToWebhook(urlObj.toString(), { flags: 1 << 15, components: [container] });
       console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
       return;
     }
 
-    // --- DISCORD MESSAGE (generyczne, fallback) ---
+    // --- DISCORD MESSAGE (generyczne, fallback treści – nadal Components) ---
     if (entry.attachments || entry.content || entry.referenced) {
       const username = entry.author?.username || entry.author || "Użytkownik";
       const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString("pl-PL") : "";
 
       container.components.push({ type: 10, content: `💬 Wykryto nową wiadomość od **${username}**` });
 
-      if (entry.content) {
-        container.components.push({ type: 10, content: entry.content });
-      }
+      if (entry.content) container.components.push({ type: 10, content: entry.content });
 
       if (Array.isArray(entry.attachments) && entry.attachments.length > 0) {
         container.components.push({
@@ -133,12 +124,12 @@ async function sendMessage(webhookUrl, threadId, entry) {
       }
 
       const payload = { flags: 1 << 15, components: [container] };
-      await trySendWithFallback(urlObj.toString(), payload, entry);
+      await postToWebhook(urlObj.toString(), payload);
       console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
       return;
     }
 
-    // --- RSS / ATOM / JSON (artykuły, commity, newsy) ---
+    // --- RSS / ATOM / JSON ---
     container.components.push({ type: 10, content: `📰 **${entry.title || "Nowy wpis"}**` });
 
     if (entry.contentSnippet) {
@@ -167,47 +158,11 @@ async function sendMessage(webhookUrl, threadId, entry) {
     }
 
     const payload = { flags: 1 << 15, components: [container] };
-    await trySendWithFallback(urlObj.toString(), payload, entry);
+    await postToWebhook(urlObj.toString(), payload);
     console.log(`[ComponentsV2] Wysłano: ${entry.title || entry.link || "(brak tytułu)"}`);
   } catch (err) {
-    if (err.response) {
-      console.error(`[ComponentsV2] Błąd przy wysyłaniu wpisu: ${err.response.status}`, err.response.data);
-    } else {
-      console.error(`[ComponentsV2] Błąd:`, err.message);
-    }
-  }
-}
-
-async function trySendWithFallback(url, payload, entry) {
-  try {
-    await postToWebhook(url, payload);
-  } catch (e) {
-    const status = e?.response?.status;
-    if (status && status >= 400) {
-      const embedPayload = {
-        content: entry.link || "",
-        embeds: [{
-          title: entry.title || "Nowy wpis",
-          description: truncate(entry.contentSnippet, 2000) || undefined,
-          url: entry.link || undefined,
-          image: entry.enclosure ? { url: entry.enclosure } : undefined,
-          timestamp: entry.isoDate || undefined,
-          author: entry.author ? { name: entry.author } : undefined
-        }]
-      };
-      try {
-        await postToWebhook(url, embedPayload);
-        console.log(`[Embeds] Fallback wysłany: ${entry.title || entry.link || "(brak tytułu)"}`);
-      } catch (e2) {
-        if (e2.response) {
-          console.error(`[Embeds] Fallback błąd: ${e2.response.status}`, e2.response.data);
-        } else {
-          console.error(`[Embeds] Fallback błąd:`, e2.message);
-        }
-      }
-    } else {
-      throw e;
-    }
+    if (err.response) console.error(`[ComponentsV2] Błąd przy wysyłaniu wpisu: ${err.response.status}`, err.response.data);
+    else console.error(`[ComponentsV2] Błąd:`, err.message);
   }
 }
 

@@ -22,6 +22,7 @@ async function parseAtom(feedUrl, httpClient) {
 
   try {
     const res = await httpClient.get(feedUrl, { timeout: 15000 });
+    if (res?.status === 304) return [];
     const xml = res.data;
     const data = await parser.parseStringPromise(xml);
 

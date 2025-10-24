@@ -36,12 +36,12 @@ function getAttr(block, tag, attr) {
  */
 async function parseRSS(feedUrl, httpClient) {
   try {
-    const res = await httpClient.get(feedUrl, {
-      headers: { Accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.8" },
-      timeout: 15000,
-    });
-
-    const data = res.data;
+      const res = await httpClient.get(feedUrl, {
+        headers: { Accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.8" },
+        timeout: 15000,
+      });
+      if (res?.status === 304) return [];
+      const data = res.data;
 
     if (!data || typeof data !== "string") {
       console.warn(`[RSS Parser] Brak danych lub niepoprawny format: ${feedUrl}`);

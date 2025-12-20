@@ -1,0 +1,67 @@
+{
+  "Settings": {
+    "Logs": false
+  },
+
+  "Auth": {
+    "Token": "YOUR_DISCORD_USER_TOKEN_HERE",
+    "x-super-properties": "YOUR_X_SUPER_PROPERTIES_HERE",
+    "cookie": "YOUR_COOKIE_HERE"
+  },
+
+  "Workshop": {
+    "Enabled": false,
+    "Dir": "src/workshop"
+  },
+
+  "Proxy": {
+    "Enabled": false,
+    "Url": "http://127.0.0.1:8080"
+  },
+
+  "FreshRSS": {
+    "Enabled": false,
+    "Url": "https://your-freshrss-instance.com",
+    "Username": "your_username",
+    "Password": "your_password",
+    "feverKey": "your_fever_api_key_here"
+  },
+
+  "channels": [
+    {
+      "Webhook": "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
+      "Thread": null,
+      "RSS": [
+        "https://example.com/rss",
+        "https://example.org/feed.xml",
+        "https://www.youtube.com/feeds/videos.xml?channel_id=UC_CHANNEL_ID"
+      ],
+      "TimeChecker": 30,
+      "RequestSend": 5
+    }
+  ],
+
+  "channels2": [
+    {
+      "Webhook": "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
+      "Thread": null,
+      "RSS": [
+        "https://github.com/user/repo/commits.atom",
+        "freshrss://all"
+      ],
+      "TimeChecker": 60,
+      "RequestSend": 2
+    },
+    {
+      "Discord": {
+        "GuildID": "YOUR_GUILD_ID",
+        "Webhook": "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
+        "Thread": null,
+        "Limit": 5,
+        "ChannelIDs": ["CHANNEL_ID_1", "CHANNEL_ID_2"],
+        "TimeChecker": 30,
+        "RequestSend": 1
+      }
+    }
+  ]
+}

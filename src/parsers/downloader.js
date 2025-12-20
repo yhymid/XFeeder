@@ -1,10 +1,15 @@
-// src/parsers/Downloader.js
+// src/parsers/downloader.js - HTTP downloader for unified fetching
 "use strict";
 
 const { getWithFallback } = require("../client");
 
+/**
+ * Builds Accept header based on content type hint
+ * 
+ * @param {string} accept - Content type hint: 'auto', 'xml', 'rss', 'atom', 'json', 'html'
+ * @returns {string} Accept header value
+ */
 function buildAccept(accept) {
-  // Proste profile Accept — wybór nagłówka wg wskazania
   switch ((accept || "auto").toLowerCase()) {
     case "xml":
     case "rss":
@@ -21,16 +26,16 @@ function buildAccept(accept) {
 }
 
 /**
- * Downloader — pobiera zawartość URL (bez żadnych plików tymczasowych).
- *  - Obsługuje 304 (brak zmian) jako sukces notModified: true
- *  - Dla schematów nie-http/https zwraca ok:false i reason: "UNSUPPORTED_PROTOCOL"
+ * Downloads URL content (no temporary files).
+ * - Handles 304 (not modified) as success with notModified: true
+ * - For non-http/https schemes returns ok:false with reason: "UNSUPPORTED_PROTOCOL"
  *
- * @param {string} url
- * @param {{accept?: 'auto'|'xml'|'json'|'html', headers?: object, timeout?: number}} opts
- * @returns {Promise<{ok:boolean, status?:number, headers?:object, data?:any, contentType?:string, notModified?:boolean, reason?:string, error?:Error}>}
+ * @param {string} url - URL to download
+ * @param {object} opts - Options: accept, headers, timeout
+ * @returns {Promise<object>} Result object with ok, status, headers, data, contentType, notModified, reason, error
  */
 async function download(url, opts = {}) {
-  // Guard: schematy nie-http/https
+  // Guard: non-http/https schemes
   let u;
   try {
     u = new URL(url);
@@ -38,7 +43,7 @@ async function download(url, opts = {}) {
       return { ok: false, reason: "UNSUPPORTED_PROTOCOL" };
     }
   } catch {
-    // nieprawidłowy URL -> pozwólmy getWithFallback wyrzucić czytelny błąd
+    // Invalid URL -> let getWithFallback throw a readable error
   }
 
   const headers = {
@@ -48,9 +53,16 @@ async function download(url, opts = {}) {
 
   try {
     const res = await getWithFallback(url, { headers, timeout: opts.timeout });
-    // 304 traktujemy jako brak zmian (bez błędu)
+    
+    // Treat 304 as "no changes" (not an error)
     if (res?.status === 304) {
-      return { ok: true, status: 304, headers: res.headers || {}, data: "", notModified: true };
+      return {
+        ok: true,
+        status: 304,
+        headers: res.headers || {},
+        data: "",
+        notModified: true
+      };
     }
 
     const ct = (res?.headers?.["content-type"] || res?.headers?.["Content-Type"] || "").toString();
@@ -62,7 +74,11 @@ async function download(url, opts = {}) {
       contentType: ct,
     };
   } catch (err) {
-    return { ok: false, error: err, status: err?.response?.status };
+    return {
+      ok: false,
+      error: err,
+      status: err?.response?.status
+    };
   }
 }
 

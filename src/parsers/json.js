@@ -1,25 +1,35 @@
-// src/parsers/json.js - Parser JSON Feed / RSS2JSON / API
+// src/parsers/json.js - JSON Feed / RSS2JSON / API parser
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
 
+/**
+ * Parses JSON Feed (jsonfeed.org) and generic JSON APIs
+ * 
+ * @param {string} feedUrl - Feed URL
+ * @param {object} httpClient - HTTP client with get method
+ * @returns {Promise<Array>} Array of parsed items
+ */
 async function parseJSON(feedUrl, httpClient) {
   try {
-      const res = await httpClient.get(feedUrl, {
-        headers: {
-          Accept: "application/feed+json, application/json, text/json;q=0.9,*/*;q=0.8",
-          "User-Agent": "XFeeder/1.2 (JSON Parser)",
-        },
-        timeout: 15000,
-      });
-      if (res?.status === 304) return [];
-      const data = res.data;
+    const res = await httpClient.get(feedUrl, {
+      headers: {
+        Accept: "application/feed+json, application/json, text/json;q=0.9,*/*;q=0.8",
+        "User-Agent": "XFeeder/2.0 (JSON Parser)",
+      },
+      timeout: 15000,
+    });
+    
+    if (res?.status === 304) return [];
+    
+    const data = res.data;
     if (!data) return [];
 
     let items = [];
 
+    // JSON Feed format (version + items array)
     if (data.version && data.items && Array.isArray(data.items)) {
       items = data.items.map((item) => {
-        const title = item.title || "Brak tytułu";
+        const title = item.title || "No title";
         const link = item.url || item.external_url || null;
         const isoDate = parseDate(item.date_published || item.date_modified);
         const image = item.image || item.banner_image || null;
@@ -44,10 +54,11 @@ async function parseJSON(feedUrl, httpClient) {
         };
       });
 
-      console.log(`[JSONFeed] Sukces (${items.length}) → ${feedUrl}`);
+      console.log(`[JSONFeed] Success (${items.length}) → ${feedUrl}`);
       return items;
     }
 
+    // Generic JSON API format
     const list =
       data.items ||
       data.entries ||
@@ -58,7 +69,7 @@ async function parseJSON(feedUrl, httpClient) {
 
     if (Array.isArray(list) && list.length > 0) {
       items = list.map((entry) => {
-        const title = entry.title || entry.name || "Brak tytułu";
+        const title = entry.title || entry.name || "No title";
         const link = entry.link || entry.url || null;
         const isoDate = parseDate(entry.pubDate || entry.published || entry.updated);
         const image =
@@ -91,14 +102,14 @@ async function parseJSON(feedUrl, httpClient) {
         };
       });
 
-      console.log(`[JSON API] Sukces (${items.length}) → ${feedUrl}`);
+      console.log(`[JSON API] Success (${items.length}) → ${feedUrl}`);
       return items;
     }
 
-    console.warn(`[JSON Parser] Nie rozpoznano struktury JSON dla ${feedUrl}`);
+    console.warn(`[JSON Parser] Unrecognized JSON structure for ${feedUrl}`);
     return [];
   } catch (err) {
-    console.warn(`[JSON Parser] Błąd przy pobieraniu ${feedUrl}: ${err.message}`);
+    console.warn(`[JSON Parser] Error fetching ${feedUrl}: ${err.message}`);
     return [];
   }
 }

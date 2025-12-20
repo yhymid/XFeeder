@@ -1,30 +1,56 @@
 // src/workshop/quest-tracking.plugin.js
-// All-in-one: Quest Tracking (wysyła Components V2 bez zmian w core).
-// Użycie: dodaj "quest://@me" do RSS w kanale. Ustaw Auth.Token (user token) w config.json.
-// Uwaga: user token = self-bot (łamie ToS Discorda).
+// Discord Quest Tracking Plugin
+// Sends Components V2 notifications for new Discord Quests.
+// 
+// Usage: Add "quest://@me" to RSS in channel config.
+// Requires: Auth.Token (user token) in config.json
+// Warning: User token = self-bot (violates Discord ToS)
 
 const axios = require("axios");
 
 module.exports = {
   id: "quest-tracking",
   enabled: true,
+  
   init(api) {
     const pluginCfg = api.config?.Workshop?.Plugins?.["quest-tracking"] || {};
     const endpointDefault = pluginCfg.Endpoint || "https://discord.com/api/v9/quests/@me";
-    const locale = pluginCfg.Locale || "pl-PL";
+    const locale = pluginCfg.Locale || "en-US";
     const timezone = pluginCfg.Timezone || "Europe/Warsaw";
     const CDN_ASSETS_BASE = (pluginCfg.CdnBase || "https://cdn.discordapp.com/quests/assets/").replace(/\/+$/, "") + "/";
 
+    // Feature flags mapping
     const FEATURES_MAP = {
-      3: "QUEST_BAR_V2", 8: "FEATURE_8", 9: "REWARD_HIGHLIGHTING",
-      13: "DISMISSAL_SURVEY", 14: "MOBILE_QUEST_DOCK", 15: "QUESTS_CDN",
-      16: "PACING_CONTROLLER", 18: "VIDEO_QUEST_FORCE_HLS_VIDEO",
+      3: "QUEST_BAR_V2",
+      8: "FEATURE_8",
+      9: "REWARD_HIGHLIGHTING",
+      13: "DISMISSAL_SURVEY",
+      14: "MOBILE_QUEST_DOCK",
+      15: "QUESTS_CDN",
+      16: "PACING_CONTROLLER",
+      18: "VIDEO_QUEST_FORCE_HLS_VIDEO",
       19: "VIDEO_QUEST_FORCE_END_CARD_CTA_SWAP",
-      23: "MOBILE_ONLY_QUEST_PUSH_TO_MOBILE", 26: "FEATURE_26"
+      23: "MOBILE_ONLY_QUEST_PUSH_TO_MOBILE",
+      26: "FEATURE_26"
     };
-    // Dopasowane do Twojego “Raw”
-    const REWARD_TYPE = { 1: "Reward Code", 3: "Collectible", 4: "Virtual Currency" };
-    const PLATFORMS = { 0: "Cross Platform", 1: "PC", 2: "Xbox", 3: "PlayStation", 4: "Mobile" };
+    
+    // Reward type mapping
+    const REWARD_TYPE = {
+      1: "Reward Code",
+      3: "Collectible",
+      4: "Virtual Currency"
+    };
+    
+    // Platform mapping
+    const PLATFORMS = {
+      0: "Cross Platform",
+      1: "PC",
+      2: "Xbox",
+      3: "PlayStation",
+      4: "Mobile"
+    };
+    
+    // Task name mapping
     const TASK_NAME = {
       WATCH_VIDEO: "Watch video",
       WATCH_VIDEO_ON_MOBILE: "Watch video on mobile",
@@ -39,11 +65,16 @@ module.exports = {
       name: "quest-tracking",
       priority: 25,
       test: (url) => typeof url === "string" && url.startsWith("quest://"),
+      
       parse: async (url /*, ctx */) => {
         const token = pluginCfg.Token || api.config?.Auth?.Token || null;
         const superProps = pluginCfg["x-super-properties"] || api.config?.Auth?.["x-super-properties"] || null;
         const cookie = pluginCfg.cookie || api.config?.Auth?.cookie || null;
-        if (!token) { api.warn("[quest-tracking] Brak Auth.Token – pomijam."); return []; }
+        
+        if (!token) {
+          api.warn("[quest-tracking] Missing Auth.Token — skipping.");
+          return [];
+        }
 
         let endpoint = endpointDefault;
         try {
@@ -53,8 +84,12 @@ module.exports = {
         } catch {}
 
         const targets = findTargets(api.config, url);
-        if (!targets.length) { api.warn("[quest-tracking] Brak kanału z tym feedem.", { feedUrl: url }); return []; }
+        if (!targets.length) {
+          api.warn("[quest-tracking] No channel found with this feed.", { feedUrl: url });
+          return [];
+        }
 
+        // Build request headers
         const headers = {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0",
           "Authorization": token,
@@ -64,12 +99,13 @@ module.exports = {
         if (superProps) headers["X-Super-Properties"] = superProps;
         if (cookie) headers["cookie"] = cookie;
 
+        // Fetch quests
         let data;
         try {
           const res = await axios.get(endpoint, { headers, timeout: 15000 });
           data = res.data;
         } catch (err) {
-          api.warn("[quest-tracking] Błąd pobrania", { status: err?.response?.status, msg: err?.message });
+          api.warn("[quest-tracking] Fetch error", { status: err?.response?.status, msg: err?.message });
           return [];
         }
 
@@ -91,20 +127,24 @@ module.exports = {
             if (already) continue;
 
             try {
+              // Send role mention if configured
               if (t.mentionRole) {
                 await sendRoleMention(t.webhook, t.thread, t.mentionRole);
                 await sleep(200);
               }
 
               await sendToWebhook(t.webhook, t.thread, card);
+              
               if (!Array.isArray(sent[key])) sent[key] = [];
               sent[key].unshift(questId);
               if (sent[key].length > 2000) sent[key].length = 2000;
               api.kv.set("sent", sent);
               sentCount++;
             } catch (err) {
-              api.error("[quest-tracking] Błąd wysyłki", {
-                webhookTail: tail(t.webhook), thread: t.thread || null, questId,
+              api.error("[quest-tracking] Send error", {
+                webhookTail: tail(t.webhook),
+                thread: t.thread || null,
+                questId,
                 msg: err?.response?.data || err?.message
               });
             }
@@ -112,13 +152,16 @@ module.exports = {
           }
         }
 
-        if (sentCount) api.log(`[quest-tracking] Wysłano ${sentCount} powiadomień.`);
-        return []; // wysyłamy sami
+        if (sentCount) api.log(`[quest-tracking] Sent ${sentCount} notifications.`);
+        return []; // We send manually
       }
     });
 
-    // =============== Helpers ===============
+    // =============== Helper Functions ===============
 
+    /**
+     * Finds target channels for this feed URL
+     */
     function findTargets(cfg, feedUrl) {
       const out = [];
       for (const key of Object.keys(cfg || {})) {
@@ -139,6 +182,9 @@ module.exports = {
       return out;
     }
 
+    /**
+     * Builds quest card data from API response
+     */
     function buildCard(q, questId) {
       const cfg = q?.config || {};
       const assets = cfg.assets || {};
@@ -149,21 +195,22 @@ module.exports = {
       const reward = rewards[0] || null;
 
       const features = Array.isArray(cfg.features)
-        ? cfg.features.map(n => FEATURES_MAP[n] || `FEATURE_${n}`) : [];
+        ? cfg.features.map(n => FEATURES_MAP[n] || `FEATURE_${n}`)
+        : [];
 
       const tasks = extractTasks(cfg);
 
       const platforms = Array.isArray(rewardsCfg.platforms) && rewardsCfg.platforms.length
-        ? rewardsCfg.platforms.map(p => PLATFORMS[p] || `Platform_${p}`) : ["Cross Platform"];
+        ? rewardsCfg.platforms.map(p => PLATFORMS[p] || `Platform_${p}`)
+        : ["Cross Platform"];
 
       const rewardType = reward ? (REWARD_TYPE[reward.type] || `Type_${reward.type}`) : null;
       const rewardSku = reward?.sku_id || null;
       const rewardName = reward?.messages?.name || reward?.name || null;
       const rewardExpiresIso = reward?.expires_at || rewardsCfg?.rewards_expire_at || null;
-      const rewardCollectibleId =
-        reward?.avatar_decoration_id || reward?.collectible_item_id || reward?.item_id || null;
+      const rewardCollectibleId = reward?.avatar_decoration_id || reward?.collectible_item_id || reward?.item_id || null;
 
-      // Orbs kwota: orb_quantity (plus fallbacki)
+      // Orbs amount (with fallbacks)
       const rewardOrbsAmount =
         reward?.orb_quantity || reward?.orbs_amount || reward?.amount || reward?.quantity ||
         (typeof rewardName === "string" ? (rewardName.match(/\b(\d{1,6})\s*orbs?/i)?.[1] || null) : null);
@@ -172,7 +219,7 @@ module.exports = {
       const rewardImage = firstMatch(rewardAssetCandidates, isImage);
       const rewardVideo = pickBestVideo(rewardAssetCandidates);
 
-      // Promo video: hero/quest_bar/video_metadata + fallback z zadań
+      // Promo video: hero/quest_bar/video_metadata + task fallback
       const promoCandidates = addMp4Guesses(expandHlsCandidates([
         ...resolveAssetMulti(assets.hero_video, questId),
         ...resolveAssetMulti(assets.quest_bar_hero_video, questId),
@@ -182,7 +229,7 @@ module.exports = {
       ]));
       const promoVideo = pickBestVideo(promoCandidates);
 
-      // Obrazy do galerii (tylko prawdziwe obrazki)
+      // Images for gallery (only actual images)
       const images = collectImages(cfg, questId, rewardImage);
 
       return {
@@ -193,12 +240,19 @@ module.exports = {
           name: app.name || "Unknown",
           link: (app.link || "").trim() || null
         },
-        game: { title: messages.game_title || null, publisher: messages.game_publisher || null },
-        duration: {
-          startIso: cfg.starts_at || null, endIso: cfg.expires_at || null,
-          startEpoch: isoToEpoch(cfg.starts_at), endEpoch: isoToEpoch(cfg.expires_at)
+        game: {
+          title: messages.game_title || null,
+          publisher: messages.game_publisher || null
         },
-        features, tasks, platforms,
+        duration: {
+          startIso: cfg.starts_at || null,
+          endIso: cfg.expires_at || null,
+          startEpoch: isoToEpoch(cfg.starts_at),
+          endEpoch: isoToEpoch(cfg.expires_at)
+        },
+        features,
+        tasks,
+        platforms,
         reward: reward ? {
           typeLabel: rewardType,
           skuId: rewardSku,
@@ -207,16 +261,21 @@ module.exports = {
           collectibleId: rewardCollectibleId || null,
           orbsAmount: rewardOrbsAmount || null
         } : null,
-        images,              // lista obrazów (pierwszy = hero)
-        rewardImage,         // obraz do accessory (jeśli dostępny)
-        rewardVideo,         // not used w layoucie (zostawiam)
-        promoVideo,          // MP4/HLS promo (type 12)
+        images,
+        rewardImage,
+        rewardVideo,
+        promoVideo,
         questLink: `https://discord.com/quests/${q?.id || cfg?.id}`
       };
     }
 
+    /**
+     * Extracts tasks from quest config
+     */
     function extractTasks(cfg) {
       const list = [];
+      
+      // Try v2 tasks first
       if (cfg.task_config_v2?.tasks && typeof cfg.task_config_v2.tasks === "object") {
         for (const t of Object.values(cfg.task_config_v2.tasks)) {
           const type = t.type || t.event_name;
@@ -226,6 +285,8 @@ module.exports = {
         }
         return list;
       }
+      
+      // Fall back to v1 tasks
       if (cfg.task_config?.tasks && typeof cfg.task_config.tasks === "object") {
         for (const t of Object.values(cfg.task_config.tasks)) {
           const type = t.event_name || t.type;
@@ -234,9 +295,13 @@ module.exports = {
           list.push({ label, seconds: target });
         }
       }
+      
       return list;
     }
 
+    /**
+     * Collects all images from quest config
+     */
     function collectImages(cfg, questId, rewardImage) {
       const a = cfg.assets || {};
       const vm = cfg.video_metadata || {};
@@ -255,7 +320,7 @@ module.exports = {
         ...resolveAssetMulti(vmAssets.quest_bar_preview_thumbnail, questId)
       ];
 
-      // miniatury zadań video (v2)
+      // Task video thumbnails (v2)
       if (cfg.task_config_v2?.tasks) {
         for (const t of Object.values(cfg.task_config_v2.tasks)) {
           const v = t?.assets?.video;
@@ -264,7 +329,8 @@ module.exports = {
           candidates.push(...resolveAssetMulti(vLow?.thumbnail, questId));
         }
       }
-      // miniatury zadań video (v1)
+      
+      // Task video thumbnails (v1)
       if (cfg.task_config?.tasks) {
         for (const t of Object.values(cfg.task_config.tasks)) {
           const v = t?.assets?.video;
@@ -276,15 +342,21 @@ module.exports = {
 
       if (rewardImage) candidates.push(rewardImage);
 
-      // Tylko obrazki, dedup, max 10
+      // Only images, deduplicated, max 10
       const images = [...new Set(candidates.filter(isImage))].slice(0, 10);
       return images;
     }
 
+    /**
+     * Collects video URLs from task configs
+     */
     function collectTaskVideos(cfg, questId) {
       const urls = [];
-      const push = (u) => { if (u) urls.push(...resolveAssetMulti(u, questId)); };
-      // v2
+      const push = (u) => {
+        if (u) urls.push(...resolveAssetMulti(u, questId));
+      };
+      
+      // v2 tasks
       if (cfg.task_config_v2?.tasks) {
         for (const t of Object.values(cfg.task_config_v2.tasks)) {
           const a = t?.assets || {};
@@ -293,7 +365,8 @@ module.exports = {
           push(a.video_hls?.url);
         }
       }
-      // v1
+      
+      // v1 tasks
       if (cfg.task_config?.tasks) {
         for (const t of Object.values(cfg.task_config.tasks)) {
           const a = t?.assets || {};
@@ -302,10 +375,13 @@ module.exports = {
           push(a.video_hls?.url);
         }
       }
+      
       return expandHlsCandidates(urls);
     }
 
-    // Preferuj scoped (/quests/<questId>/...) nad assets/ (kolejność kandydatów!)
+    /**
+     * Resolves asset path to full URLs (prefers scoped /quests/<questId>/...)
+     */
     function resolveAssetMulti(val, questId) {
       if (!val) return [];
       const raw = String(val).trim();
@@ -321,6 +397,9 @@ module.exports = {
       return urls;
     }
 
+    /**
+     * Returns first URL matching predicate
+     */
     function firstMatch(urls, pred) {
       for (const u of urls || []) {
         if (pred(u)) return u;
@@ -328,19 +407,32 @@ module.exports = {
       return null;
     }
 
+    /**
+     * Strips query string from URL
+     */
     function stripQuery(u) {
       return (u || "").split("?")[0];
     }
+
+    /**
+     * Checks if URL is an image
+     */
     function isImage(u) {
       const s = stripQuery(u);
       return !!s && /\.(png|jpe?g|webp|gif)$/i.test(s);
     }
+
+    /**
+     * Checks if URL is a video
+     */
     function isVideo(u) {
       const s = stripQuery(u);
       return !!s && /\.(mp4|webm|mov|m4v|m3u8|ts)$/i.test(s);
     }
 
-    // Jeżeli trafia się segment .ts w stylu *_mx1080h0000000005.ts, spróbuj dodać kandydat playlisty *_mx1080h.m3u8
+    /**
+     * Expands HLS segment URLs to playlist candidates
+     */
     function expandHlsCandidates(urls) {
       const out = [];
       for (const u of urls || []) {
@@ -355,11 +447,14 @@ module.exports = {
       return out;
     }
 
-    // Z m3u8 lub segmentów .ts wyprowadź możliwe pełne MP4 (_1080 i _720)
+    /**
+     * Generates MP4 URL guesses from m3u8/ts URLs
+     */
     function addMp4Guesses(urls) {
       const out = new Set(urls || []);
       for (const u of urls || []) {
         const s = stripQuery(u);
+        
         // m3u8: /quests/<questId>/<assetId>.m3u8
         let m = s.match(/\/quests\/(\d+)\/(\d+)\.m3u8$/i);
         if (m) {
@@ -368,6 +463,7 @@ module.exports = {
           out.add(`https://cdn.discordapp.com/quests/${qid}/${aid}_720.mp4`);
           continue;
         }
+        
         // ts: /quests/<questId>/<assetId>_mx1080h0000000005.ts
         m = s.match(/\/quests\/(\d+)\/(\d+)_mx\d{3,4}h\d+\.ts$/i);
         if (m) {
@@ -381,7 +477,9 @@ module.exports = {
       return Array.from(out);
     }
 
-    // Wybierz najlepszy link wideo wg preferencji
+    /**
+     * Picks best video URL by preference order
+     */
     function pickBestVideo(urls) {
       const uniq = Array.from(new Set(urls || []));
       const order = [
@@ -401,22 +499,47 @@ module.exports = {
       return uniq.find(isVideo) || null;
     }
 
+    /**
+     * Prettifies task name (snake_case to Title Case)
+     */
     function prettify(name) {
       if (!name) return "Task";
       return name.toLowerCase().replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
     }
 
+    /**
+     * Converts ISO date string to Unix epoch
+     */
     function isoToEpoch(iso) {
       if (!iso) return null;
       const d = new Date(iso);
       return isNaN(d.getTime()) ? null : Math.floor(d.getTime() / 1000);
     }
 
-    function tail(u) { return u ? String(u).slice(-10) : ""; }
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    /**
+     * Returns last N characters of string (for logging)
+     */
+    function tail(u) {
+      return u ? String(u).slice(-10) : "";
+    }
 
-    function divider() { return { type: 14, spacing: 1, divider: true }; }
+    /**
+     * Sleep utility
+     */
+    function sleep(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
 
+    /**
+     * Creates divider component
+     */
+    function divider() {
+      return { type: 14, spacing: 1, divider: true };
+    }
+
+    /**
+     * Formats seconds to human-readable string
+     */
     function formatSeconds(totalSec) {
       const s = Math.max(0, Math.round(totalSec || 0));
       if (s === 0) return "0s";
@@ -434,8 +557,11 @@ module.exports = {
       return m > 0 ? `${m}m${r}s` : `${s} seconds`;
     }
 
-    // =============== Wysyłka do webhooka ===============
+    // =============== Discord Webhook Functions ===============
 
+    /**
+     * Sends role mention message
+     */
     async function sendRoleMention(webhookUrl, threadId, roleId) {
       if (!roleId) return;
       const u = new URL(webhookUrl);
@@ -445,14 +571,20 @@ module.exports = {
       await axios.post(finalUrl, payload, { headers: { "Content-Type": "application/json" } });
     }
 
+    /**
+     * Sends quest card to webhook
+     */
     async function sendToWebhook(webhookUrl, threadId, q) {
       const components = [];
       const container = { type: 17, components: [] };
 
-      // Nagłówek
-      container.components.push({ type: 10, content: `## **New Quest** - [${q.name}](${q.questLink})` });
+      // Header
+      container.components.push({
+        type: 10,
+        content: `## **New Quest** - [${q.name}](${q.questLink})`
+      });
 
-      // Hero (pierwszy obraz)
+      // Hero image (first from images array)
       const hero = Array.isArray(q.images) && q.images.length ? q.images[0] : null;
       if (hero) {
         container.components.push({
@@ -461,29 +593,35 @@ module.exports = {
         });
       }
 
-      // Divider
       container.components.push(divider());
 
       // Quest Info
       const dur = (q.duration?.startEpoch && q.duration?.endEpoch)
         ? `<t:${q.duration.startEpoch}:d> - <t:${q.duration.endEpoch}:d>`
         : `${q.duration?.startIso || ""} - ${q.duration?.endIso || ""}`;
-      const platformsText = Array.isArray(q.platforms) && q.platforms.length ? q.platforms.join(", ") : "Cross Platform";
+      const platformsText = Array.isArray(q.platforms) && q.platforms.length
+        ? q.platforms.join(", ")
+        : "Cross Platform";
       const gameLabel = [q.game?.title, q.game?.publisher].filter(Boolean).join(" (") + (q.game?.publisher ? ")" : "");
-      const appLink = q.application?.link ? `[${q.application?.name}](${q.application?.link})` : (q.application?.name || "Unknown");
+      const appLink = q.application?.link
+        ? `[${q.application?.name}](${q.application?.link})`
+        : (q.application?.name || "Unknown");
       const appId = q.application?.id ? ` (\`${q.application.id}\`)` : "";
-      const featuresLine = (q.features && q.features.length) ? q.features.map(f => `\`${f}\``).join(", ") : null;
+      const featuresLine = (q.features && q.features.length)
+        ? q.features.map(f => `\`${f}\``).join(", ")
+        : null;
+      
       const infoLines = [
         `# Quest Info`,
         `**Duration**: ${dur}`,
-        `**Reedemable Platforms**: ${platformsText}`, // pisownia jak w Twoim “Raw”
+        `**Redeemable Platforms**: ${platformsText}`,
         gameLabel ? `**Game**: ${gameLabel}` : null,
         `**Application**: ${appLink}${appId}`,
         featuresLine ? `**Features**: ${featuresLine}` : null
       ].filter(Boolean).join("\n");
+      
       container.components.push({ type: 10, content: infoLines });
 
-      // Divider
       container.components.push(divider());
 
       // Tasks
@@ -496,10 +634,9 @@ module.exports = {
       }
       container.components.push({ type: 10, content: [...tasksHeader, ...tasksBody].join("\n") });
 
-      // Divider
       container.components.push(divider());
 
-      // Rewards (wiersz z accessory)
+      // Rewards (row with accessory)
       let rewardsText = `# Rewards\n- (no reward)`;
       if (q.reward) {
         const expEpoch = q.reward.expiresIso ? isoToEpoch(q.reward.expiresIso) : null;
@@ -507,10 +644,16 @@ module.exports = {
           `# Rewards`,
           `**Reward Type**: ${q.reward.typeLabel || "-"}`,
           q.reward.skuId ? `**SKU ID**: \`${q.reward.skuId}\`` : null,
-          (q.reward.typeLabel === "Collectible" && q.reward.collectibleId) ? `**Avatar Decoration ID**: \`${q.reward.collectibleId}\`` : null,
-          (q.reward.typeLabel === "Virtual Currency" && q.reward.orbsAmount) ? `**Orbs Amount**: ${q.reward.orbsAmount}` : null,
+          (q.reward.typeLabel === "Collectible" && q.reward.collectibleId)
+            ? `**Avatar Decoration ID**: \`${q.reward.collectibleId}\``
+            : null,
+          (q.reward.typeLabel === "Virtual Currency" && q.reward.orbsAmount)
+            ? `**Orbs Amount**: ${q.reward.orbsAmount}`
+            : null,
           q.reward.name ? `**Name**: ${q.reward.name}` : null,
-          q.reward.expiresIso ? `**Expires**: ${expEpoch ? `<t:${expEpoch}:d>` : q.reward.expiresIso}` : null
+          q.reward.expiresIso
+            ? `**Expires**: ${expEpoch ? `<t:${expEpoch}:d>` : q.reward.expiresIso}`
+            : null
         ].filter(Boolean);
         rewardsText = rLines.join("\n");
       }
@@ -519,6 +662,7 @@ module.exports = {
         type: 9,
         components: [{ type: 10, content: rewardsText }]
       };
+      
       const accessoryUrl = q.rewardImage || resolveRewardAccessoryUrl(q);
       if (accessoryUrl) {
         rewardsRow.accessory = {
@@ -530,7 +674,7 @@ module.exports = {
       }
       container.components.push(rewardsRow);
 
-      // Promo video (type 12) - zamiast przycisku
+      // Promo video (type 12)
       if (q.promoVideo) {
         container.components.push(divider());
         container.components.push({
@@ -543,12 +687,13 @@ module.exports = {
         });
       }
 
-      // Divider + Stopka
+      // Footer
       container.components.push(divider());
       container.components.push({ type: 10, content: `Quest ID: \`${q.id}\`` });
 
       components.push(container);
 
+      // Build final URL
       const finalUrl = (() => {
         const u = new URL(webhookUrl);
         u.searchParams.set("with_components", "true");
@@ -556,25 +701,35 @@ module.exports = {
         return u.toString();
       })();
 
-      // 32769 – dopasowane do “Raw” (32768 + 1)
       const payload = { content: "", flags: 32769, components };
       await axios.post(finalUrl, payload, { headers: { "Content-Type": "application/json" } });
     }
 
-    // =============== Accessory heurystyki ===============
+    // =============== Accessory Heuristics ===============
+
+    /**
+     * Resolves reward accessory URL based on reward type
+     */
     function resolveRewardAccessoryUrl(q) {
       if (!q?.reward?.typeLabel) return null;
-      // Virtual Currency -> stała ikonka Orbs (jak w Raw)
+      
+      // Virtual Currency -> Orbs icon
       if (q.reward.typeLabel === "Virtual Currency") {
         return "https://cdn.discordapp.com/assets/content/eff35518172b971fa47c521ca21c7576d3a245433a669a6765f63b744b7b733a.webm?format=png";
       }
-      // Reward Code / Collectible -> fallback do pierwszego sensownego obrazka
+      
+      // Reward Code / Collectible -> fallback to first image
       return firstImageFrom(q.images);
     }
 
+    /**
+     * Returns first image URL from array
+     */
     function firstImageFrom(arr) {
       if (!Array.isArray(arr)) return null;
-      for (const u of arr) if (isImage(u)) return u;
+      for (const u of arr) {
+        if (isImage(u)) return u;
+      }
       return null;
     }
   }

@@ -1,44 +1,45 @@
-# XFeeder 1.3 Workshop — Jak pisać własne pluginy (prosto i krok po kroku)
+# XFeeder 2.0 Workshop — How to Write Custom Plugins
 
-Poniżej znajdziesz prostą, praktyczną instrukcję tworzenia pluginów do XFeeder. Zaczynamy od “Quick Start”, potem krótkie wytłumaczenie API, gotowe szablony i częste problemy. Wszystko tak, aby w 3–5 minut uruchomić pierwszy plugin.
-
----
-
-## Spis treści
-- 0) Szybki start (3 minuty)
-- 1) Gdzie wkleić pliki i jak działa loader
-- 2) Jak wygląda plugin i co dostajesz w api
-- 3) Jak zarejestrować parser (test + parse)
-- 4) Jaki obiekt zwraca parser (Item) — format
-- 5) Szablony do kopiuj-wklej
-- 6) Konfiguracja pluginu w config.json
-- 7) KV Storage (pamięć wtyczki)
-- 8) Wysyłka do Discorda (kiedy i jak)
-- 9) Dobre praktyki i debugowanie
-- 10) Zaawansowane: niestandardowe schematy URL (np. apix://)
-- 11) FAQ i najczęstsze problemy
+This guide provides a simple, practical tutorial for creating XFeeder plugins. Starting with "Quick Start", followed by API explanation, ready-to-use templates, and common troubleshooting. Everything designed to get your first plugin running in 3-5 minutes.
 
 ---
 
-## 0) Szybki start (3 minuty)
+## Table of Contents
 
-1. Utwórz plik w katalogu:
-   - src/workshop/hello.plugin.js
+- 0. Quick Start (3 minutes)
+- 1. File Location and Loader Behavior
+- 2. Plugin Structure and API
+- 3. Registering a Parser (test + parse)
+- 4. Item Object Format
+- 5. Copy-Paste Templates
+- 6. Plugin Configuration in config.json
+- 7. KV Storage (Plugin Memory)
+- 8. Sending to Discord (When and How)
+- 9. Best Practices and Debugging
+- 10. Advanced: Custom URL Schemes (e.g., apix://)
+- 11. FAQ and Common Issues
 
-2. Wklej szablon:
-```js
+---
+
+## 0. Quick Start (3 minutes)
+
+1. Create a file in directory:
+   src/workshop/hello.plugin.js
+
+2. Paste this template:
+
 module.exports = {
   id: "hello",
   enabled: true,
   init(api) {
     api.registerParser({
       name: "hello-parser",
-      priority: 55, // przed RSS(60), po JSON(40–50)
+      priority: 55, // before RSS(60), after JSON(40-50)
       test: (url) => url.includes("example.com/hello"),
       parse: async (url, ctx) => {
         const res = await ctx.get(url);
         const data = res.data || {};
-        const title = data.title || "Brak tytułu";
+        const title = data.title || "No title";
         return [{
           title,
           link: data.url || url,
@@ -53,10 +54,9 @@ module.exports = {
     });
   }
 };
-```
 
-3. W config.json dodaj adres pasujący do test:
-```json
+3. In config.json add a URL matching your test:
+
 {
   "channels": [
     {
@@ -68,102 +68,118 @@ module.exports = {
   ],
   "Workshop": { "Enabled": true }
 }
-```
 
-4. Odpal: node main.js
-- W logach zobaczysz załadowanie pluginu i próbę parsowania URL z kanału.
+4. Run: node main.js
+   In logs you'll see plugin loading and URL parsing attempts.
 
-To wszystko — masz działający plugin.
-
----
-
-## 1) Gdzie wkleić pliki i jak działa loader
-
-- Lokalizacja: wszystkie wtyczki umieszczamy w:
-  - src/workshop
-- Nazewnictwo: loader ładuje tylko pliki kończące się na:
-  - .plugin.js (np. twitter.plugin.js, apix-custom.plugin.js)
-- Pliki pomocnicze:
-  - Możesz mieć obok własne moduły (parser.js, utils.js) i importować je w pluginie: require("./parser")
-  - Loader automatycznie ładuje tylko .plugin.js
-- Jak działa:
-  - Nie tworzy katalogów i nie skanuje rekurencyjnie (tylko jeden poziom: src/workshop)
-  - Loguje: [Workshop] Załadowano plugin: <id> (<plik>)
-  - Możesz wyłączyć plugin ustawiając module.exports.enabled = false
-- Kolejka parserów:
-  - Najpierw parsery z pluginów (posortowane po priority), potem wbudowane:
-    - YouTube(10), Atom(20), XML(30), JSON(40), ApiX(50), RSS(60), Fallback(90)
+That's it — you have a working plugin.
 
 ---
 
-## 2) Jak wygląda plugin i co dostajesz w api
+## 1. File Location and Loader Behavior
 
-Plugin eksportuje obiekt lub funkcję. Najprościej:
+### Location:
+All plugins go in: src/workshop
 
-```js
+### Naming:
+Loader only loads files ending with: .plugin.js
+Examples: twitter.plugin.js, apix-custom.plugin.js
+
+### Helper Files:
+You can have helper modules alongside (parser.js, utils.js) and import them:
+require("./parser")
+
+Loader only auto-loads .plugin.js files.
+
+### How It Works:
+- Doesn't create directories, doesn't scan recursively (only one level: src/workshop)
+- Logs: [Workshop] Plugin loaded: <id> (<file>)
+- Disable a plugin by setting: module.exports.enabled = false
+
+### Parser Queue:
+Plugin parsers run first (sorted by priority), then built-in:
+YouTube(10), Atom(20), XML(30), JSON(40), ApiX(50), RSS(60), Fallback(90)
+
+---
+
+## 2. Plugin Structure and API
+
+A plugin exports an object or function. Simplest form:
+
 module.exports = {
   id: "my-plugin-id",
-  enabled: true,       // opcjonalne; domyślnie true
-  init(api) {          // lub: register(api), albo eksport funkcji zwracającej parser
-    // rejestracja parserów
+  enabled: true,       // optional; default true
+  init(api) {          // or: register(api), or export function returning parser
+    // register parsers here
   }
 };
-```
 
-W init(api) dostajesz:
-- api.id — identyfikator pluginu (z id albo z nazwy pliku)
-- api.http.get(url) — HTTP GET ze wspólnymi nagłówkami/proxy/fallbackami XFeedera
-- api.utils:
-  - parseDate(input) → ISO 8601 lub null
-  - stripHtml(html) → { result: "oczyszczony tekst" }
-- api.send(webhookUrl, threadId, entry) — ręczna wysyłka do Discorda (patrz sekcja 8)
-- api.config — cały config.json (tylko do odczytu)
-- api.log / api.warn / api.error — logi z prefiksem [WS:<pluginId>]
-- api.kv — prosty storage per-plugin (plik: src/workshop/workshop-cache.json)
-  - kv.get(key, default?)
-  - kv.set(key, value)
-  - kv.push(key, value, limit = 1000) — dopisz na początek z limitem
-- api.registerParser(def) — rejestracja parsera (patrz niżej)
+### In init(api) you receive:
 
-Obsługiwane formy pluginów (dowolna z poniższych):
-- { id, init(api) { … } }
-- { id, register(api) { … } }
-- { id, parsers: [ { parse()… }, … ] }
-- module.exports = (api) => ({ name, parse, … }) — funkcja zwracająca definicję parsera
+| Property | Description |
+|----------|-------------|
+| api.id | Plugin identifier (from id or filename) |
+| api.http.get(url) | HTTP GET with shared headers/proxy/fallbacks |
+| api.utils.parseDate(input) | Parse to ISO 8601 or null |
+| api.utils.stripHtml(html) | Returns { result: "clean text" } |
+| api.send(webhookUrl, threadId, entry) | Manual Discord send (see section 8) |
+| api.config | Full config.json (read-only) |
+| api.log / api.warn / api.error | Namespaced logging [WS:<pluginId>] |
+| api.kv | Simple per-plugin storage (file: src/workshop/workshop-cache.json) |
+| api.kv.get(key, default?) | Get value |
+| api.kv.set(key, value) | Set value |
+| api.kv.push(key, value, limit) | Prepend with limit (default 1000) |
+| api.registerParser(def) | Register parser (see below) |
+
+### Supported Plugin Forms (any of these):
+
+- { id, init(api) { ... } }
+- { id, register(api) { ... } }
+- { id, parsers: [ { parse()... }, ... ] }
+- module.exports = (api) => ({ name, parse, ... }) — function returning parser definition
 
 ---
 
-## 3) Jak zarejestrować parser (test + parse)
+## 3. Registering a Parser (test + parse)
 
-Rejestrujesz parser:
-```js
+Register a parser like this:
+
 api.registerParser({
-  name: "nazwa-do-logów",
-  priority: 50,          // mniejsza liczba = wcześniej w kolejce
-  test: (url, ctx) => true lub false (opcjonalne),
+  name: "name-for-logs",
+  priority: 50,          // lower number = earlier in queue
+  test: (url, ctx) => true or false (optional),
   parse: async (url, ctx) => [Item, Item, ...]
 });
-```
 
-- priority — użyj, aby “wyprzedzić” parsery wbudowane:
-  - < 60 wyprzedzisz RSS; > 90 staniesz się super-fallbackiem
-- test(url, ctx) — szybki filtr. Zwróć false, gdy URL Cię nie dotyczy (oszczędza czas)
-  - Tip: użyj new URL(url) w try/catch, bo nie każdy wpis w RSS to poprawny URL
-- parse(url, ctx) — tu robisz HTTP i mapujesz dane na Item
-  - ctx.get — to samo co api.http.get (HTTP GET ze wspólnymi nagłówkami/proxy/cooldownem)
-  - ctx.api — pełne XFeederAPI, jeśli potrzebujesz (kv/utils/send/config)
+### Priority:
+Use to "jump ahead" of built-in parsers:
+- < 60 runs before RSS
+- > 90 becomes super-fallback
 
-Kiedy Twój parser zwróci tablicę Itemów:
-- XFeeder je zdeduplikuje (po link dla feedów; po guid dla Discorda)
-- wyśle tyle wpisów, ile ustawia RequestSend w configu, do Webhook i Thread danego kanału
-- zapisze do cache (by nie wysyłać tego samego drugi raz)
+### test(url, ctx):
+Quick filter. Return false when URL doesn't apply (saves time).
+Tip: Use try/catch with new URL(url) — not every RSS entry is a valid URL.
+
+### parse(url, ctx):
+Do HTTP here and map data to Items.
+- ctx.get — same as api.http.get (HTTP GET with shared headers/proxy)
+- ctx.post — HTTP POST (for APIs)
+- ctx.api — full XFeeder API if needed (kv/utils/send/config)
+- ctx.body — body from Downloader (if HTTP/HTTPS, already fetched)
+- ctx.headers — headers from Downloader
+- ctx.status — status from Downloader
+
+### When Your Parser Returns Items:
+- XFeeder deduplicates them (by link for feeds; by guid for Discord)
+- Sends up to RequestSend items to channel's Webhook and Thread
+- Saves to cache (won't send same item twice)
 
 ---
 
-## 4) Jaki obiekt zwraca parser (Item) — format
+## 4. Item Object Format
 
-Każdy element w tablicy to obiekt:
-```json
+Each array element is an object:
+
 {
   "title": "string",
   "link": "string",
@@ -174,23 +190,25 @@ Każdy element w tablicy to obiekt:
   "guid": "string",
   "categories": ["string", "..."]
 }
-```
 
-Wskazówki:
-- title — jeśli nie masz, użyj "Brak tytułu"
-- link — WYMAGANY (dla feedów deduplikacja po link)
-- contentSnippet — bez HTML (użyj stripHtml), skróć do ~500–800 znaków
-- isoDate — normalizuj przez parseDate (obsłuży ISO/RFC/Unix)
-- guid — stabilny ID z API, a jeśli brak, użyj link
-- enclosure — miniatura/obrazek (opcjonalnie)
-- categories — tagi (opcjonalnie)
+### Guidelines:
+
+| Field | Notes |
+|-------|-------|
+| title | If missing, use "No title" |
+| link | REQUIRED (feeds deduplicate by link) |
+| contentSnippet | No HTML (use stripHtml), truncate to ~500-800 chars |
+| isoDate | Normalize via parseDate (handles ISO/RFC/Unix) |
+| guid | Stable ID from API, or fallback to link |
+| enclosure | Thumbnail/image (optional) |
+| categories | Tags (optional) |
 
 ---
 
-## 5) Szablony do kopiuj-wklej
+## 5. Copy-Paste Templates
 
-A) Minimalny plugin (JSON z listą items)
-```js
+### A) Minimal Plugin (JSON with items list)
+
 module.exports = {
   id: "my-custom",
   init(api) {
@@ -202,7 +220,7 @@ module.exports = {
         const res = await ctx.get(url);
         const list = Array.isArray(res.data?.items) ? res.data.items : [];
         return list.map((it) => ({
-          title: it.title || "Brak tytułu",
+          title: it.title || "No title",
           link: it.url || it.link,
           contentSnippet: api.utils.stripHtml(it.description || it.content || "").result.slice(0, 500),
           isoDate: api.utils.parseDate(it.date || it.published_at),
@@ -215,10 +233,9 @@ module.exports = {
     });
   }
 };
-```
 
-B) Parser z własnym schematem URL (apix://)
-```js
+### B) Parser with Custom URL Scheme (apix://)
+
 module.exports = {
   id: "apix-custom",
   init(api) {
@@ -233,7 +250,7 @@ module.exports = {
         const data = res.data || {};
         const items = Array.isArray(data.items) ? data.items : [];
         return items.map(entry => ({
-          title: entry.title || entry.name || "Brak tytułu",
+          title: entry.title || entry.name || "No title",
           link: entry.url || entry.link,
           contentSnippet: api.utils.stripHtml(entry.description || entry.summary || "").result.slice(0, 500),
           isoDate: api.utils.parseDate(entry.published_at || entry.updated_at),
@@ -246,10 +263,9 @@ module.exports = {
     });
   }
 };
-```
 
-C) Jeden plugin — wiele parserów
-```js
+### C) One Plugin — Multiple Parsers
+
 module.exports = {
   id: "multi",
   init(api) {
@@ -267,11 +283,11 @@ module.exports = {
     });
   }
 };
-```
 
-D) Logika w osobnym pliku
-- src/workshop/my-parser.js
-```js
+### D) Logic in Separate File
+
+File: src/workshop/my-parser.js
+
 module.exports.build = (api) => ({
   name: "my-separated-parser",
   priority: 52,
@@ -281,7 +297,7 @@ module.exports.build = (api) => ({
     const data = res.data || {};
     const list = Array.isArray(data.items) ? data.items : [];
     return list.map((it) => ({
-      title: it.title || "Brak tytułu",
+      title: it.title || "No title",
       link: it.url || it.link,
       contentSnippet: api.utils.stripHtml(it.description || "").result.slice(0, 500),
       isoDate: api.utils.parseDate(it.date),
@@ -292,10 +308,9 @@ module.exports.build = (api) => ({
     })).filter(x => x.link);
   }
 });
-```
 
-- src/workshop/my-separated.plugin.js
-```js
+File: src/workshop/my-separated.plugin.js
+
 const builder = require("./my-parser");
 module.exports = {
   id: "my-separated",
@@ -303,21 +318,19 @@ module.exports = {
     api.registerParser(builder.build(api));
   }
 };
-```
 
 ---
 
-## 6) Konfiguracja pluginu w config.json
+## 6. Plugin Configuration in config.json
 
-- Własne ustawienia pluginu trzymaj w:
-  - config.Workshop.Plugins.<pluginId>
-- Odczyt w pluginie:
-```js
+### Store custom settings in:
+config.Workshop.Plugins.<pluginId>
+
+### Read in plugin:
 const myCfg = api.config?.Workshop?.Plugins?.["my-custom"] || {};
-```
 
-Przykład (fragment config.json):
-```json
+### Example (config.json fragment):
+
 {
   "Workshop": {
     "Enabled": true,
@@ -329,65 +342,89 @@ Przykład (fragment config.json):
     }
   }
 }
-```
 
 ---
 
-## 7) KV Storage (pamięć wtyczki)
+## 7. KV Storage (Plugin Memory)
 
-- Automatyczny magazyn w pliku: src/workshop/workshop-cache.json
-- Użycie:
-```js
-const lastRun = api.kv.get("last_run_at");          // odczyt
-api.kv.set("last_run_at", Date.now());              // zapis
-api.kv.push("recent_ids", someId, 500);             // FIFO z limitem
-```
+### Automatic storage in file:
+src/workshop/workshop-cache.json
 
-Kiedy używać:
-- historia GUID-ów/ID, microlocki, timery, drobne metadane. Nie trzymać dużych datasetów.
+### Usage:
+
+const lastRun = api.kv.get("last_run_at");          // read
+api.kv.set("last_run_at", Date.now());              // write
+api.kv.push("recent_ids", someId, 500);             // FIFO with limit
+
+### When to Use:
+- GUID/ID history
+- Micro-locks
+- Timers
+- Small metadata
+
+Don't store large datasets.
 
 ---
 
-## 8) Wysyłka do Discorda (kiedy i jak)
+## 8. Sending to Discord (When and How)
 
-- Standardowo parser TYLKO zwraca Itemy — XFeeder sam wyśle (szanując cache, RequestSend, Thread).
-- Ręczna wysyłka (rzadkie przypadki: “watcher” spoza kolejki, np. cs2-blog-watcher):
-```js
+### Standard Flow:
+Parser ONLY returns Items — XFeeder handles sending (respects cache, RequestSend, Thread).
+
+### Manual Sending (rare cases: "watcher" outside queue, e.g., cs2-blog-watcher):
+
 await api.send(webhookUrl, threadIdOrNull, entryObject);
-```
-- entryObject powinien mieć to samo pole “Item” co wyżej (title/link/contentSnippet/…).
-- Uwaga: używanie tokenów użytkownika (self-bot) i wywołań API Discorda poza webhookiem łamie ToS — robisz to na własną odpowiedzialność.
+
+- entryObject should have same fields as Item (title/link/contentSnippet/...)
+
+### Warning:
+Using user tokens (self-bot) and Discord API calls outside webhooks violates ToS — do this at your own risk.
 
 ---
 
-## 9) Dobre praktyki i debugowanie
+## 9. Best Practices and Debugging
 
-- test(url) filtruj agresywnie (szybszy pipeline)
-- Zawsze zwracaj tablicę: [] nawet przy błędzie (złap try/catch)
-- Stabilny link/guid — podstawa deduplikacji (unikaj losowych query; jak trzeba — ustaw stały guid)
-- contentSnippet bez HTML (stripHtml) i przytnij do ~500–800
-- isoDate przez parseDate
-- ctx.get zamiast własnego axios — masz proxy, fallback UA, per-host cooldown
-- Logi: api.log/warn/error opisuj sensownie — łatwiej diagnozować
-- Nie zwracaj tysięcy elementów naraz (50–200 wystarczy)
-- Priorytety:
-  - < 60 jeśli chcesz przechwycić feed przed RSS
-  - > 90 jeśli to ostatnia deska ratunku (po Fallback)
-- Debug:
-  - sprawdź, czy URL z configu trafia w test(url)
-  - loguj długość listy po pobraniu (np. api.log("items:", list.length))
-  - jeśli nic nie przychodzi — odpal feed w przeglądarce/curl i zobacz surowe dane
+### Performance:
+- Filter aggressively in test(url) (faster pipeline)
+- Always return array: [] even on error (use try/catch)
+
+### Deduplication:
+- Stable link/guid is key (avoid random query params; set fixed guid if needed)
+
+### Content:
+- contentSnippet: no HTML (stripHtml), truncate to ~500-800
+- isoDate: use parseDate
+
+### HTTP:
+- Use ctx.get instead of raw axios — gets proxy, UA fallback, per-host handling
+- Use ctx.body if Downloader already fetched (fewer requests)
+
+### Logging:
+- Use api.log/warn/error with meaningful descriptions — easier debugging
+
+### Items:
+- Don't return thousands at once (50-200 is enough)
+
+### Priority:
+- < 60 to intercept feed before RSS
+- > 90 as last resort (after Fallback)
+
+### Debug Tips:
+- Check if config URL hits your test(url)
+- Log list length after fetch: api.log("items:", list.length)
+- If nothing comes through — test feed in browser/curl and check raw data
 
 ---
 
-## 10) Zaawansowane: niestandardowe schematy URL (np. apix://)
+## 10. Advanced: Custom URL Schemes (e.g., apix://)
 
-- Możesz wymusić konkretny parser poprzez własny schemat:
-  - test: url.startsWith("apix://")
-  - parse: zdekoduj do https:// i dopiero ctx.get
+### You can force specific parser via custom scheme:
 
-Przykład:
-```js
+test: url.startsWith("apix://")
+parse: decode to https:// then ctx.get
+
+### Example:
+
 test: (url) => url.startsWith("apix://"),
 parse: async (url, ctx) => {
   let target = decodeURIComponent(url.replace("apix://", ""));
@@ -395,38 +432,71 @@ parse: async (url, ctx) => {
   const res = await ctx.get(target);
   // ...
 }
-```
 
 ---
 
-## 11) FAQ i najczęstsze problemy
+## 11. FAQ and Common Issues
 
-- Plugin nie ładuje się
-  - Czy plik kończy się na .plugin.js?
-  - Czy leży bezpośrednio w src/workshop (brak skanowania podkatalogów)?
-  - Czy exports.enabled nie jest false?
-  - Logi: [Workshop] Załadowano plugin: …
+### Plugin Doesn't Load
 
-- test(url) nigdy nie trafia
-  - Czy dodałeś dokładnie taki URL do channels[*].RSS w config.json?
-  - Użyj try/catch przy new URL(url); niektóre wpisy nie są pełnymi URL-ami
-  - Dodaj tymczasowo api.log("url", url), by zobaczyć co wpada
+- Does file end with .plugin.js?
+- Is it directly in src/workshop (no subdirectory scanning)?
+- Is exports.enabled not false?
+- Check logs: [Workshop] Plugin loaded: ...
 
-- Deduplikacja nie działa
-  - Dla feedów deduplikacja jest po link — upewnij się, że link jest stabilny (usuń utm_* po swojej stronie, jeśli możesz)
-  - W krytycznych przypadkach ustaw stabilny guid
+### test(url) Never Matches
 
-- Jak dodać konfigurację tylko dla pluginu?
-```js
-const cfg = api.config?.Workshop?.Plugins?.["twoj-plugin-id"] || {};
-```
+- Did you add exact URL to channels[*].RSS in config.json?
+- Use try/catch with new URL(url) — some entries aren't full URLs
+- Add temporary api.log("url", url) to see what's coming in
 
-- Mogę mieć wiele parserów w jednym pluginie?
-  - Tak — wywołaj api.registerParser(...) kilka razy
+### Deduplication Not Working
 
-- Czy mogę wysyłać samodzielnie (bez zwracania Itemów)?
-  - Możesz, ale to wyjątek (np. ciągłe “watchery”). Standardowo zwracaj Itemy — core zrobi resztę.
+- Feeds deduplicate by link — ensure link is stable (remove utm_* on your side if possible)
+- For critical cases, set a stable guid
+
+### How to Add Plugin-Only Config?
+
+const cfg = api.config?.Workshop?.Plugins?.["your-plugin-id"] || {};
+
+### Can I Have Multiple Parsers in One Plugin?
+
+Yes — call api.registerParser(...) multiple times.
+
+### Can I Send Manually (Without Returning Items)?
+
+You can, but it's an exception (e.g., continuous "watchers"). Normally return Items — core handles the rest.
 
 ---
 
-To wszystko — powodzenia! Jeśli chcesz, podejrzyj istniejące wbudowane parsery (src/parsers/*) i pluginy w src/workshop, żeby zobaczyć, jak mapują różne typy danych do wspólnego formatu Item.
+## Quick Reference: Parser Priority
+
+| Priority | Parser |
+|----------|--------|
+| 10 | YouTube |
+| 20 | Atom |
+| 30 | XML |
+| 40 | JSON |
+| 50 | ApiX |
+| 55 | Your Plugin (recommended) |
+| 60 | RSS |
+| 90 | Fallback |
+
+---
+
+## Quick Reference: Item Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| title | string | Yes | Entry title |
+| link | string | Yes | Entry URL (dedup key) |
+| contentSnippet | string | No | Plain text description |
+| isoDate | string/null | No | ISO 8601 date |
+| enclosure | string/null | No | Image/thumbnail URL |
+| author | string/null | No | Author name |
+| guid | string | Yes | Unique identifier |
+| categories | array | No | Tags/categories |
+
+---
+
+That's everything — good luck! Check existing built-in parsers (src/parsers/*) and plugins in src/workshop to see how various data types map to the common Item format.

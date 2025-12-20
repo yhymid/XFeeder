@@ -1,9 +1,12 @@
-// src/parsers/rss.js - Hybrydowy parser RSS/Atom (Regex + heurystyki)
+// src/parsers/rss.js - Hybrid RSS/Atom parser (Regex + heuristics)
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
 
 /**
- * Usuwa CDATA i niepotrzebne znaki.
+ * Removes CDATA wrappers and trims string
+ * 
+ * @param {string} str - Input string
+ * @returns {string} Cleaned string
  */
 function cleanCDATA(str) {
   if (!str) return "";
@@ -11,7 +14,11 @@ function cleanCDATA(str) {
 }
 
 /**
- * Pobiera zawartość z tagu XML, z uwzględnieniem CDATA.
+ * Extracts content from XML tag, handling CDATA
+ * 
+ * @param {string} block - XML block to search in
+ * @param {string} tag - Tag name to find
+ * @returns {string} Tag content or empty string
  */
 function getTag(block, tag) {
   const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
@@ -20,7 +27,12 @@ function getTag(block, tag) {
 }
 
 /**
- * Pobiera wartość atrybutu z tagu (np. <enclosure url="...">)
+ * Extracts attribute value from XML tag
+ * 
+ * @param {string} block - XML block to search in
+ * @param {string} tag - Tag name
+ * @param {string} attr - Attribute name
+ * @returns {string|null} Attribute value or null
  */
 function getAttr(block, tag, attr) {
   const regex = new RegExp(`<${tag}[^>]*${attr}="([^"]+)"[^>]*>`, "i");
@@ -29,44 +41,47 @@ function getAttr(block, tag, attr) {
 }
 
 /**
- * Parsuje kanały RSS/Atom używając prostego regexowego fallbacka.
- * @param {string} feedUrl URL feeda
- * @param {object} httpClient axios
- * @returns {Promise<Array>} Lista wpisów
+ * Parses RSS/Atom feeds using simple regex fallback.
+ * 
+ * @param {string} feedUrl - Feed URL
+ * @param {object} httpClient - HTTP client with get method
+ * @returns {Promise<Array>} Array of parsed items
  */
 async function parseRSS(feedUrl, httpClient) {
   try {
-      const res = await httpClient.get(feedUrl, {
-        headers: { Accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.8" },
-        timeout: 15000,
-      });
-      if (res?.status === 304) return [];
-      const data = res.data;
+    const res = await httpClient.get(feedUrl, {
+      headers: { Accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.8" },
+      timeout: 15000,
+    });
+    
+    if (res?.status === 304) return [];
+    
+    const data = res.data;
 
     if (!data || typeof data !== "string") {
-      console.warn(`[RSS Parser] Brak danych lub niepoprawny format: ${feedUrl}`);
+      console.warn(`[RSS Parser] No data or invalid format: ${feedUrl}`);
       return [];
     }
 
-    // 1️⃣ Najpierw spróbuj RSS (<item>)
+    // 1) Try RSS (<item>) first
     let blocks = [...data.matchAll(/<item>([\s\S]*?)<\/item>/gi)];
     let type = "RSS";
 
-    // 2️⃣ Jeśli nie ma <item>, spróbuj Atom (<entry>)
+    // 2) If no <item>, try Atom (<entry>)
     if (blocks.length === 0) {
       blocks = [...data.matchAll(/<entry>([\s\S]*?)<\/entry>/gi)];
       type = "Atom";
     }
 
     if (blocks.length === 0) {
-      console.warn(`[RSS Parser] Nie znaleziono elementów <item> ani <entry> dla ${feedUrl}`);
+      console.warn(`[RSS Parser] No <item> or <entry> elements found for ${feedUrl}`);
       return [];
     }
 
     const items = blocks.map((match) => {
       const block = match[1];
 
-      const title = getTag(block, "title") || "Brak tytułu";
+      const title = getTag(block, "title") || "No title";
       const link = getTag(block, "link") || getAttr(block, "link", "href") || feedUrl;
       const description =
         getTag(block, "content:encoded") ||
@@ -74,7 +89,7 @@ async function parseRSS(feedUrl, httpClient) {
         getTag(block, "summary") ||
         "";
 
-      // 🖼️ Znajdź obrazek: enclosure, media, img w HTML
+      // Find image: enclosure, media, img in HTML
       let image =
         getAttr(block, "enclosure", "url") ||
         getAttr(block, "media:content", "url") ||
@@ -115,10 +130,10 @@ async function parseRSS(feedUrl, httpClient) {
       };
     });
 
-    console.log(`[RSS Parser] Sukces (${items.length}) [${type}] → ${feedUrl}`);
+    console.log(`[RSS Parser] Success (${items.length}) [${type}] → ${feedUrl}`);
     return items;
   } catch (error) {
-    console.warn(`[RSS Parser] Błąd przy pobieraniu ${feedUrl}: ${error.message}`);
+    console.warn(`[RSS Parser] Error fetching ${feedUrl}: ${error.message}`);
     return [];
   }
 }

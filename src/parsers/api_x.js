@@ -1,12 +1,13 @@
-// src/parsers/api_x.js
+// src/parsers/api_x.js - Generic API JSON parser
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
 
 /**
- * Konwertuje pojedynczy wpis z dowolnego API JSON na ustandaryzowany format.
- * Działa uniwersalnie — wystarczy, że API zwraca obiekty z typowymi polami (title, url, content itp.)
- * @param {object} rawEntry Surowy obiekt wpisu z API.
- * @returns {object} Ustandaryzowany obiekt wpisu.
+ * Converts a single API entry to standardized format.
+ * Works universally - just needs objects with typical fields (title, url, content, etc.)
+ * 
+ * @param {object} rawEntry - Raw entry object from API
+ * @returns {object|null} Standardized entry object or null
  */
 function standardizeEntry(rawEntry) {
   if (!rawEntry || typeof rawEntry !== "object") return null;
@@ -16,7 +17,7 @@ function standardizeEntry(rawEntry) {
     rawEntry.name ||
     rawEntry.headline ||
     rawEntry.caption ||
-    "Brak tytułu";
+    "No title";
 
   const link =
     rawEntry.url ||
@@ -59,7 +60,7 @@ function standardizeEntry(rawEntry) {
   const contentSnippet =
     typeof description === "string"
       ? stripHtml(description).result.substring(0, 500).trim()
-      : "Brak opisu.";
+      : "No description.";
 
   return {
     title,
@@ -74,10 +75,11 @@ function standardizeEntry(rawEntry) {
 }
 
 /**
- * Parsuje dane z niestandardowego API JSON (np. Steam, Reddit, custom blog).
- * @param {string} feedUrl URL API.
- * @param {object} httpClient Instancja axios.
- * @returns {Promise<Array>} Lista ustandaryzowanych wpisów.
+ * Parses data from custom JSON APIs (Steam, Reddit, custom blogs, etc.)
+ * 
+ * @param {string} feedUrl - API URL
+ * @param {object} httpClient - HTTP client with get method
+ * @returns {Promise<Array>} Array of standardized entries
  */
 async function parseApiX(feedUrl, httpClient) {
   try {
@@ -89,11 +91,11 @@ async function parseApiX(feedUrl, httpClient) {
     const rawData = res.data;
     let rawItems = [];
 
-    // --- 1️⃣ Główna tablica ---
+    // --- 1) Main array ---
     if (Array.isArray(rawData)) {
       rawItems = rawData;
     }
-    // --- 2️⃣ Typowe klucze zawierające listy ---
+    // --- 2) Typical keys containing lists ---
     else if (typeof rawData === "object" && rawData !== null) {
       rawItems =
         rawData.items ||
@@ -106,7 +108,7 @@ async function parseApiX(feedUrl, httpClient) {
         rawData.response ||
         [];
 
-      // --- 3️⃣ Szukanie zagnieżdżonej tablicy (feed.entries, data.items itd.) ---
+      // --- 3) Search for nested arrays (feed.entries, data.items, etc.) ---
       if (!Array.isArray(rawItems) || rawItems.length === 0) {
         for (const key of Object.keys(rawData)) {
           const val = rawData[key];
@@ -125,21 +127,21 @@ async function parseApiX(feedUrl, httpClient) {
     }
 
     if (!Array.isArray(rawItems) || rawItems.length === 0) {
-      console.warn(`[ApiX] Brak wpisów w ${feedUrl}`);
+      console.warn(`[ApiX] No entries in ${feedUrl}`);
       return [];
     }
 
     const items = rawItems
       .map(standardizeEntry)
-      .filter((x) => x && x.link && x.title); // eliminujemy puste
+      .filter((x) => x && x.link && x.title);
 
     if (!items.length) {
-      console.warn(`[ApiX] Nie udało się sparsować żadnych poprawnych wpisów z ${feedUrl}`);
+      console.warn(`[ApiX] Failed to parse any valid entries from ${feedUrl}`);
     }
 
     return items;
   } catch (error) {
-    console.error(`[ApiX] Błąd podczas parsowania ${feedUrl}: ${error.message}`);
+    console.error(`[ApiX] Error parsing ${feedUrl}: ${error.message}`);
     return [];
   }
 }

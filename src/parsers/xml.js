@@ -1,10 +1,13 @@
-// src/parsers/xml.js — Uniwersalny parser XML (RSS + Atom)
+// src/parsers/xml.js - Universal XML parser (RSS + Atom auto-detection)
 const xml2js = require("xml2js");
 const { stripHtml } = require("string-strip-html");
 const { parseDate } = require("./utils");
 
 /**
- * Pomocnicza funkcja do znajdowania pierwszego URL obrazka w HTML.
+ * Helper function to find first image URL in HTML string
+ * 
+ * @param {string} html - HTML string to search
+ * @returns {string|null} Image URL or null
  */
 function extractImageFromHTML(html) {
   if (!html) return null;
@@ -12,7 +15,7 @@ function extractImageFromHTML(html) {
   return imgMatch ? imgMatch[1] : null;
 }
 
-// Konfiguracja xml2js
+// xml2js configuration
 const parser = new xml2js.Parser({
   explicitArray: false,
   ignoreAttrs: false,
@@ -22,24 +25,27 @@ const parser = new xml2js.Parser({
 });
 
 /**
- * Parsuje kanały RSS/Atom/XML — automatycznie wykrywa strukturę.
- * @param {string} feedUrl
- * @param {object} httpClient (axios)
- * @returns {Promise<Array>}
+ * Parses RSS/Atom/XML feeds - auto-detects structure
+ * 
+ * @param {string} feedUrl - Feed URL
+ * @param {object} httpClient - HTTP client with get method
+ * @returns {Promise<Array>} Array of parsed items
  */
 async function parseXML(feedUrl, httpClient) {
   try {
-      const res = await httpClient.get(feedUrl, {
-        headers: {
-          Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9,*/*;q=0.8",
-        },
-        timeout: 15000,
-      });
-      if (res?.status === 304) return [];
-      const xml = res.data;
+    const res = await httpClient.get(feedUrl, {
+      headers: {
+        Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9,*/*;q=0.8",
+      },
+      timeout: 15000,
+    });
+    
+    if (res?.status === 304) return [];
+    
+    const xml = res.data;
     const data = await parser.parseStringPromise(xml);
 
-    // --- WYKRYWANIE STRUKTURY ---
+    // --- STRUCTURE DETECTION ---
     let entries = [];
     let type = "unknown";
 
@@ -54,7 +60,7 @@ async function parseXML(feedUrl, httpClient) {
       type = "Atom";
       entries = Array.isArray(data.feed.entry) ? data.feed.entry : [data.feed.entry];
     } else if (data?.channel?.item) {
-      // Niektóre serwisy pomijają <rss>
+      // Some services skip <rss> wrapper
       type = "RSS (no-root)";
       entries = Array.isArray(data.channel.item)
         ? data.channel.item
@@ -62,13 +68,13 @@ async function parseXML(feedUrl, httpClient) {
     }
 
     if (!entries.length) {
-      console.warn(`[XML Parser] Nie wykryto elementów w ${feedUrl}`);
+      console.warn(`[XML Parser] No elements detected in ${feedUrl}`);
       return [];
     }
 
-    // --- MAPOWANIE WPISÓW ---
+    // --- ITEM MAPPING ---
     const items = entries.map((entry) => {
-      const title = stripHtml(entry.title?.VALUE || entry.title || "Brak tytułu").result;
+      const title = stripHtml(entry.title?.VALUE || entry.title || "No title").result;
       const link =
         entry.link?.ATTR?.href || entry.link?.VALUE || entry.link || feedUrl;
       const author =
@@ -80,7 +86,7 @@ async function parseXML(feedUrl, httpClient) {
       const pubDate =
         entry.pubDate || entry.published || entry.updated || entry.created || null;
 
-      // Priorytet treści
+      // Content priority
       const rawContent =
         entry["content:encoded"]?.VALUE ||
         entry["content:encoded"] ||
@@ -92,7 +98,7 @@ async function parseXML(feedUrl, httpClient) {
         entry.description ||
         "";
 
-      // Obrazek — kolejność priorytetu
+      // Image - priority order
       let image =
         entry.enclosure?.ATTR?.url ||
         entry["media:content"]?.ATTR?.url ||
@@ -100,7 +106,7 @@ async function parseXML(feedUrl, httpClient) {
         extractImageFromHTML(rawContent) ||
         null;
 
-      // Kategorie (jeśli występują)
+      // Categories (if present)
       const categories = Array.isArray(entry.category)
         ? entry.category
         : entry.category
@@ -124,10 +130,10 @@ async function parseXML(feedUrl, httpClient) {
       };
     });
 
-    console.log(`[XML Parser] Sukces (${items.length}) [${type}] → ${feedUrl}`);
+    console.log(`[XML Parser] Success (${items.length}) [${type}] → ${feedUrl}`);
     return items;
   } catch (error) {
-    console.warn(`[XML Parser] Błąd przy pobieraniu ${feedUrl}: ${error.message}`);
+    console.warn(`[XML Parser] Error fetching ${feedUrl}: ${error.message}`);
     return [];
   }
 }

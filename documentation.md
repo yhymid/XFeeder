@@ -1,257 +1,410 @@
-# XFeeder 1.5 — Pełna Dokumentacja
+# XFeeder 2.0 — Complete Documentation
 
-Nowoczesny, modularny czytnik RSS/Atom/JSON/API i wiadomości Discord z sekwencyjnym pipeline’em, stabilnym klientem HTTP, rozszerzeniami (Workshop) i czytelną konfiguracją. Ten dokument opisuje XFeeder 1.5: jak działa, jak go skonfigurować, jak pisać pluginy, oraz jak diagnozować problemy.
+Modern, modular RSS/Atom/JSON/API feed reader and Discord message forwarder with sequential pipeline, stable HTTP client, plugin extensions (Workshop), and clean configuration.
 
-Spis treści
-- 0. Co nowego w 1.5 (względem 1.3)
-- 1. Co to jest XFeeder i co potrafi
-- 2. Architektura i przepływ danych
-- 3. Instalacja i uruchomienie
-- 4. Struktura katalogów
-- 5. Plik config.json (pełna specyfikacja)
-- 6. Sieć i stabilność (client.js)
-- 7. Pipeline i format Item
-- 8. Wysyłka na Discord (Components V2)
-- 9. Cache i deduplikacja
-- 10. Workshop (pluginy)
-- 11. Harmonogram i wydajność
-- 12. Logowanie i obsługa błędów
-- 13. Bezpieczeństwo i dane wrażliwe
-- 14. Rozwiązywanie problemów (FAQ)
-- 15. Dobre praktyki i tuningi
-- 16. Załącznik: przykładowy config.json
+This document describes XFeeder 2.0: how it works, configuration, plugin development, and troubleshooting.
 
-—
+## Table of Contents
 
-0) Co nowego w 1.5
-- Downloader (src/parsers/Downloader.js) na początku pipeline’u:
-  - jedno spójne pobranie HTTP (proxy/UA/If-None-Match/If-Modified-Since),
-  - dane (body + nagłówki) przekazywane dalej (dla pluginów i parserów).
-- Guard na schematy nie-HTTP (np. quest://, cs2blog://):
-  - nie wchodzą do warstwy HTTP; jeśli jest plugin (Workshop), obsłuży je jako pierwsze.
-- RSSParser.parseURL → parseString:
-  - najpierw pobieramy body przez getWithFallback, potem parseString na tym samym body (spójny klient HTTP).
-- 304 Not Modified = “brak zmian”:
-  - traktowane jako normalny brak zmian (bez wyjątków, bez fallbacków UA).
-- Normalizacja linków i miękki limit cache:
-  - mniej duplikatów (usuwanie utm_* i hash), mniejszy cache.json (limit per klucz).
-- Mikro-opóźnienie 350 ms między wysyłkami:
-  - mniejsze ryzyko 429 na webhookach Discorda.
-- Utrzymany sekwencyjny pipeline i 30 s przerwy między kanałami:
-  - brak równoległości w obrębie kanału, porządek: Downloader → Workshop → Moduły → Axios/regex → RSSParser → Error.
+- 0. What's New in 2.0
+- 1. What is XFeeder and What Can It Do
+- 2. Architecture and Data Flow
+- 3. Installation and Running
+- 4. Directory Structure
+- 5. config.json Full Specification
+- 6. Network and Stability (client.js)
+- 7. Pipeline and Item Format
+- 8. Discord Delivery (Components V2)
+- 9. Cache and Deduplication
+- 10. Workshop (Plugins)
+- 11. Scheduling and Performance
+- 12. Logging and Error Handling
+- 13. Security and Sensitive Data
+- 14. Troubleshooting (FAQ)
+- 15. Best Practices and Tuning
+- 16. Appendix: Example config.json
 
-—
+---
 
-1) Co to jest XFeeder i co potrafi
-- Czyta i publikuje:
-  - RSS/Atom/XML/JSON/API (YouTube/Atom, JSONFeed, niestandardowe API),
-  - wiadomości z kanałów Discord (API; wykrywa treść, załączniki, cytowania),
-  - własne źródła przez pluginy (Workshop).
-- Wysyła na Discord:
-  - format Components V2 (kontenery, tekst, galerie, przyciski),
-  - mikro-opóźnienie między wiadomościami (domyślnie 350 ms).
-- Stabilność:
-  - spójny HTTP: proxy, fallbacky UA, conditional requests (ETag/Last-Modified), 304 jako “OK”,
-  - brak równoległości w kanałach: porządek i mniejsze ryzyko 429.
-- Rozszerzalność:
-  - system Workshop: pluginy z parserami (test/parse, priority), dostęp do HTTP i configu.
+## 0. What's New in 2.0
 
-—
+- **Downloader (src/parsers/downloader.js)** at the beginning of the pipeline:
+  - Single unified HTTP fetch (proxy/UA/If-None-Match/If-Modified-Since)
+  - Data (body + headers) passed to downstream parsers and plugins
 
-2) Architektura i przepływ danych
+- **Guard for non-HTTP schemes** (e.g., quest://, freshrss://):
+  - Non-HTTP URLs don't enter HTTP layer; Workshop plugins handle them first
 
-Główne komponenty
-- main.js (core):
-  - harmonogram kanałów (TimeChecker per kanał, 30 s między kanałami),
-  - pipeline (sekwencyjnie): Downloader → Workshop → Moduły → Axios/regex → RSSParser → Error,
-  - deduplikacja i cache (normalizacja linków, miękki limit),
-  - wysyłka na webhook (Components V2) z mikro-opóźnieniem.
-- src/client.js:
-  - axios z proxy/UA fallback, Accept nagłówkami, If-None-Match/If-Modified-Since,
-  - getWithFallback(url, opts?) zwraca 304 jako “OK” (not modified).
-- src/parsers/*:
-  - wbudowane parsery (YouTube, XML, Atom, JSON, RSS/regex, Fallback/HTML, Discord API),
-- src/parsers/Downloader.js:
-  - wstępny HTTP GET (jedno miejsce), zwraca status, body, nagłówki (bez plików tymczasowych).
-- src/message.js:
-  - budowanie payloadu Components V2,
-  - brak fallbacku do klasycznych embedów w 1.5 (celowo usunięty).
-- src/workshop/*:
-  - loader (.plugin.js), pluginy rejestrujące parsery.
+- **RSSParser.parseURL → parseString**:
+  - First fetch body via getWithFallback, then parseString on the same body (consistent HTTP client)
 
-Przepływ (kanał RSS)
-- Kolejka wybiera kanał (co TimeChecker minut); po użyciu: 30 s przerwy do kolejnego.
-- Dla każdego feedu:
-  - Downloader (GET, obsługa 304),
-  - Workshop (pluginy) — pierwszeństwo, mogą użyć ctx.body,
-  - wbudowane parsers (sekwencyjnie),
-  - Axios/regex (użyje body z Downloadera jeśli możliwe),
-  - RSSParser.parseString (też użyje body, jeśli jest),
-  - wysyłka nowych wpisów na webhook, update cache.
+- **304 Not Modified = "no changes"**:
+  - Treated as normal "no new items" (no exceptions, no UA fallbacks)
 
-Przepływ (blok Discord)
-- parseDiscord pobiera wiadomości z ChannelIDs; dedup po guid,
-- wysyła wiadomości (Components V2) z mikro-opóźnieniem,
-- aktualizuje cache.
+- **Link normalization and soft cache limit**:
+  - Fewer duplicates (removes utm_* and hash), smaller cache.json (limit per key)
 
-—
+- **350ms micro-delay between sends**:
+  - Lower risk of 429 on Discord webhooks
 
-3) Instalacja i uruchomienie
-- Wymagania:
-  - Node.js 18+ (zalecane LTS),
-  - npm/pnpm/yarn.
-- Instalacja:
-  - npm install
-- Uruchomienie:
-  - npm start lub node main.js
-- Proxy (opcjonalnie):
-  - config.json → Proxy.Enabled: true, Proxy.Url: "http://127.0.0.1:8080"
-- Środowiska:
-  - Systemd/Docker: zadbaj o prawa zapisu (cache/logi w katalogu projektu).
+- **Maintained sequential pipeline and 30s delay between channels**:
+  - No parallelism within a channel
+  - Order: Downloader → Workshop → Modules → Axios/regex → RSSParser → Error
 
-—
+---
 
-4) Struktura katalogów
-- main.js — core
-- src/client.js — HTTP (proxy, UA fallback, ETag/Last-Modified)
-- src/message.js — wysyłka na webhook (Components V2)
-- src/parsers/
-  - rss.js, atom.js, xml.js, json.js, youtube.js, api_x.js, fallback.js, discord.js, utils.js
-  - Downloader.js — nowy downloader (pierwszy w pipeline)
-- src/workshop/
-  - loader.js — ładowanie pluginów (.plugin.js)
-  - workshop-cache.json — KV dla pluginów (jeśli używasz)
-- cache.json — cache deduplikacji
-- http-meta.json (opcjonalnie, jeśli włączone) — metadane HTTP (ETag/Last-Modified)
+## 1. What is XFeeder and What Can It Do
 
-—
+### Reads and Publishes:
+- RSS/Atom/XML/JSON/API (YouTube/Atom, JSONFeed, custom APIs)
+- Discord channel messages (API; detects content, attachments, quotes)
+- Custom sources via plugins (Workshop)
 
-5) Plik config.json (pełna specyfikacja)
+### Sends to Discord:
+- Components V2 format (containers, text, galleries, buttons)
+- Micro-delay between messages (default 350ms)
 
-Top-level
-- Settings (opcjonalne):
-  - Logs: bool (domyślnie true) — logi do plików (jeśli używasz rozszerzonego loggera),
-  - MaxCachePerKey: number (domyślnie 2000) — miękki limit cache per klucz,
-  - DelayBetweenSendsMs: number (domyślnie 350) — mikro-opóźnienie między wysyłkami,
-  - ParserTimeoutMs: number (domyślnie 15000) — maksymalny czas pracy pojedynczego parsera,
-  - DelayBetweenChannelsMs: number (domyślnie 30000) — przerwa pętli między kanałami.
-- Proxy (opcjonalne):
-  - Enabled: bool,
-  - Url: string.
-- Http (opcjonalne):
-  - AcceptEncoding: "gzip, deflate, br",
-  - Cookies: { "<host>": "cf_clearance=...;" },
-  - ExtraHeaders: { "<pattern>": { "Header": "Value" } } — dla URL zawierających pattern.
-- Auth (opcjonalne):
-  - Token, x-super-properties, cookie — globalne (używane w Discord parserach / pluginach).
-- Workshop (opcjonalne):
-  - Enabled: bool (domyślnie true),
-  - Plugins: obiekt konfiguracyjny per pluginId.
-- channels*, channels2*, … (dowolnie wiele grup kanałów):
-  - Każdy kanał:
-    - Webhook: string,
-    - Thread: string lub "null",
-    - RSS: [url, url, …] — feedy (RSS/Atom/JSON/API; lub własne schematy obsługiwane przez pluginy),
-    - TimeChecker: number (minuty),
-    - RequestSend: number (ile nowych wysyłać per runda),
-    - Discord, Discord2, … (opcjonalnie, wiele bloków):
-      - Webhook, Thread (nadpisy dla tego bloku),
-      - ChannelIDs: [string, …] — WYMAGANE,
-      - GuildID: string (opcjonalnie, dla referera/URL),
-      - Limit, TimeChecker, RequestSend (lokalnie).
+### Stability:
+- Unified HTTP: proxy, UA fallbacks, conditional requests (ETag/Last-Modified), 304 as "OK"
+- No parallelism in channels: order and lower 429 risk
 
-Notatki:
-- Ładowane są wszystkie klucze zaczynające się od “channels” (case-insensitive).
-- Token użytkownika (self-bot) łamie ToS Discorda — używaj na własną odpowiedzialność.
+### Extensibility:
+- Workshop system: plugins with parsers (test/parse, priority), access to HTTP and config
 
-—
+---
 
-6) Sieć i stabilność (client.js)
+## 2. Architecture and Data Flow
 
-Mechanizmy
-- Proxy (https-proxy-agent/http-proxy-agent v7),
-- Keep-Alive (po stronie Node, gdy bez proxy),
-- Fallbacky User-Agent (per request; nie modyfikują globalnych nagłówków),
-- Conditional requests:
-  - ETag/If-None-Match i Last-Modified/If-Modified-Since,
-  - 304 zwracane jako “OK” (not modified), bez wyjątku i bez cooldownu.
-- Specjalne nagłówki (możesz dołożyć w Http.ExtraHeaders),
-- API:
-  - getWithFallback(url, opts?) — opts.headers/timeout/responseType.
+### Main Components
 
-Ograniczenia
-- Nie wymuszaj “zstd” — Node nie rozkompresuje natywnie.
+**main.js (core):**
+- Channel scheduler (TimeChecker per channel, 30s between channels)
+- Pipeline (sequential): Downloader → Workshop → Modules → Axios/regex → RSSParser → Error
+- Deduplication and cache (link normalization, soft limit)
+- Webhook delivery (Components V2) with micro-delay
 
-—
+**src/client.js:**
+- Axios with proxy/UA fallback, Accept headers, If-None-Match/If-Modified-Since
+- getWithFallback(url, opts?) returns 304 as "OK" (not modified)
+- postWithFallback(url, data, opts?) for POST requests
 
-7) Pipeline i format Item
+**src/parsers/*:**
+- Built-in parsers (YouTube, XML, Atom, JSON, RSS/regex, Fallback/HTML, Discord API, FreshRSS)
 
-Kolejność (sekwencyjna)
-- Downloader (jeśli HTTP/HTTPS),
-- Workshop (pluginy; mogą użyć ctx.body z Downloadera),
-- Moduły (wbudowane): YouTube → Atom → XML → JSON → ApiX → RSS → Fallback,
-- Axios/regex (prosty RSS) — użyje body z Downloadera, jeśli dostępne,
-- RSSParser.parseString — też użyje body z Downloadera,
-- Error (log “brak danych”).
+**src/parsers/downloader.js:**
+- Initial HTTP GET (single location), returns status, body, headers (no temp files)
 
-Item (wpis) — co zwraca parser
-- title: string,
-- link: string,
-- contentSnippet: string (bez HTML, skrócony),
-- isoDate: ISO 8601 lub null,
-- enclosure: string lub null (miniatura/obraz),
-- author: string lub null,
-- guid: string (stabilny id; fallback: link),
-- categories: string[].
+**src/message.js:**
+- Building Components V2 payload
+- No fallback to classic embeds in 2.0 (intentionally removed)
 
-Wskazówki
-- link — klucz deduplikacji (core normalizuje: usuwa utm_* i hash),
-- isoDate — używaj parseDate,
-- contentSnippet — oczyść stripHtml i skróć do ~500–800 znaków.
+**src/workshop/*:**
+- Loader (.plugin.js), plugins registering parsers
 
-—
+### Flow (RSS Channel)
 
-8) Wysyłka na Discord (Components V2)
-- Layout:
-  - Kontener (type:17), tekst (type:10), galerie (type:12), przyciski (type:1/2),
-  - YouTube: tytuł + link + miniatura + przycisk,
-  - Discord messages: karta “💬” + treść + załączniki + cytowanie + metadane,
-  - RSS/Atom/JSON: tytuł + snippet + media + autor/data + przycisk.
-- Brak fallbacku do klasycznych embedów w 1.5 (celowe uproszczenie).
-- Opóźnienie między wysyłkami: DelayBetweenSendsMs (domyślnie 350 ms).
+1. Queue selects channel (every TimeChecker minutes); after processing: 30s delay to next
+2. For each feed:
+   - Downloader (GET, handles 304)
+   - Workshop (plugins) — priority, can use ctx.body
+   - Built-in parsers (sequential)
+   - Axios/regex (uses Downloader body if available)
+   - RSSParser.parseString (also uses body if available)
+   - Send new items to webhook, update cache
 
-—
+### Flow (Discord Block)
 
-9) Cache i deduplikacja
-- cache.json:
-  - pamięć “widzianych” ID/linków per klucz (feed lub Discord blok),
-  - miękki limit MaxCachePerKey (domyślnie 2000).
-- Deduplikacja:
-  - feedy: po znormalizowanym linku,
-  - Discord: po guid (id wiadomości).
-- http-meta.json (opcjonalnie, jeśli utrzymujesz ETag/Last-Modified lokalnie).
+1. parseDiscord fetches messages from ChannelIDs; dedup by guid
+2. Sends messages (Components V2) with micro-delay
+3. Updates cache
 
-—
+---
 
-10) Workshop (pluginy)
-- Ładowanie:
-  - src/workshop/loader.js — wczytuje pliki .plugin.js z katalogu src/workshop,
-  - domyślnie włączone (Workshop.Enabled !== false),
-  - pluginy jadą jako pierwsze w pipeline (HTTP/HTTPS lub schematy własne).
-- API przekazywane do pluginu:
-  - api.http.get (ctx.get): getWithFallback,
-  - api.utils: parseDate, stripHtml (opcjonalnie),
-  - api.send: wysyłka na webhook (Components V2),
-  - api.config: pełny config.json (tylko do odczytu),
-  - api.kv (jeśli loader takowy udostępnia) — magazyn per plugin,
-  - registerParser({ name, priority, test(url, ctx), parse(url, ctx) }).
-- Kontekst ctx (1.5):
-  - ctx.get — HTTP,
-  - ctx.api — API XFeeder,
-  - ctx.body/ctx.headers/ctx.status — jeśli Downloader już pobrał body (HTTP/HTTPS).
+## 3. Installation and Running
 
-Minimalny plugin:
-```js
+### Requirements:
+- Node.js 18+ (LTS recommended)
+- npm/pnpm/yarn
+
+### Installation:
+npm install
+
+### Running:
+npm start
+# or
+node main.js
+
+### Proxy (optional):
+config.json → Proxy.Enabled: true, Proxy.Url: "http://127.0.0.1:8080"
+
+### Environments:
+- Systemd/Docker: ensure write permissions (cache/logs in project directory)
+
+---
+
+## 4. Directory Structure
+
+xfeeder/
+├── main.js                      # Core application
+├── config.json                  # Your configuration (gitignored)
+├── config.json.example          # Configuration template
+├── package.json
+├── LICENSE
+├── README.md
+├── documentation.md             # This file
+│
+├── src/
+│   ├── client.js                # HTTP (proxy, UA fallback, ETag/Last-Modified)
+│   ├── message.js               # Webhook delivery (Components V2)
+│   │
+│   ├── parsers/
+│   │   ├── rss.js               # RSS 2.0 parser
+│   │   ├── atom.js              # Atom parser
+│   │   ├── xml.js               # Universal XML parser
+│   │   ├── json.js              # JSON Feed parser
+│   │   ├── youtube.js           # YouTube Atom parser
+│   │   ├── api_x.js             # Generic API parser
+│   │   ├── discord.js           # Discord messages parser
+│   │   ├── freshrss.js          # FreshRSS (Fever API) parser
+│   │   ├── fallback.js          # HTML scraping fallback
+│   │   ├── downloader.js        # HTTP downloader
+│   │   └── utils.js             # Shared utilities
+│   │
+│   └── workshop/
+│       ├── loader.js            # Plugin loader
+│       ├── documentation.md     # Plugin development guide
+│       ├── workshop-cache.json  # KV storage for plugins (gitignored)
+│       └── *.plugin.js          # Your custom plugins
+│
+├── cache.json                   # Deduplication cache (auto-generated, gitignored)
+├── http-meta.json               # HTTP metadata cache (optional, gitignored)
+│
+└── Preview/                     # Screenshots for README
+    ├── image.png
+    ├── image2.png
+    └── image3.png
+
+---
+
+## 5. config.json Full Specification
+
+### Top-level Structure
+
+{
+  "Settings": { ... },
+  "Auth": { ... },
+  "Proxy": { ... },
+  "Http": { ... },
+  "FreshRSS": { ... },
+  "Workshop": { ... },
+  "channels": [ ... ],
+  "channels2": [ ... ]
+}
+
+### Settings (optional)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| Logs | boolean | true | Enable file logging |
+| MaxCachePerKey | number | 2000 | Soft cache limit per key |
+| DelayBetweenSendsMs | number | 350 | Micro-delay between sends |
+| ParserTimeoutMs | number | 15000 | Max time for single parser |
+| DelayBetweenChannelsMs | number | 30000 | Delay between channels in queue |
+
+### Auth (optional)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| Token | string | Discord user token (self-bot, violates ToS) |
+| x-super-properties | string | Discord super properties header |
+| cookie | string | Discord cookies |
+
+### Proxy (optional)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| Enabled | boolean | Enable proxy |
+| Url | string | Proxy URL (e.g., http://127.0.0.1:8080) |
+
+### Http (optional)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| AcceptEncoding | string | Accept-Encoding header value |
+| Cookies | object | Per-host cookies: { "host.com": "cookie=value;" } |
+| ExtraHeaders | object | Per-URL pattern headers |
+
+### FreshRSS (optional)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| Enabled | boolean | Enable FreshRSS support |
+| Url | string | FreshRSS instance URL |
+| Username | string | FreshRSS username |
+| Password | string | FreshRSS password |
+| feverKey | string | Fever API key (alternative to user/pass) |
+
+### Workshop (optional)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| Enabled | boolean | true | Enable plugin system |
+| Dir | string | src/workshop | Plugin directory |
+| Plugins | object | {} | Per-plugin configuration |
+
+### Channel Configuration
+
+Each channel object:
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| Webhook | string | Yes | Discord webhook URL |
+| Thread | string/null | No | Thread ID or null |
+| RSS | array | Yes | Array of feed URLs |
+| TimeChecker | number | No | Check interval in minutes (default: 30) |
+| RequestSend | number | No | Max items to send per check (default: 5) |
+
+### Discord Block (within channel)
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| GuildID | string | No | Guild ID for referer |
+| Webhook | string | Yes | Webhook URL override |
+| Thread | string/null | No | Thread ID override |
+| ChannelIDs | array | Yes | Discord channel IDs to monitor |
+| Limit | number | No | Messages to fetch (default: 50) |
+| TimeChecker | number | No | Check interval override |
+| RequestSend | number | No | Max items override |
+
+### Notes:
+- All keys starting with "channels" are loaded (case-insensitive)
+- User token (self-bot) violates Discord ToS — use at your own risk
+
+---
+
+## 6. Network and Stability (client.js)
+
+### Mechanisms
+
+- **Proxy** (https-proxy-agent/http-proxy-agent v7)
+- **Keep-Alive** (Node side, when not using proxy)
+- **User-Agent fallbacks** (per request; don't modify global headers)
+- **Conditional requests**:
+  - ETag/If-None-Match and Last-Modified/If-Modified-Since
+  - 304 returned as "OK" (not modified), no exception, no cooldown
+- **Special headers** (can add via Http.ExtraHeaders)
+
+### API
+
+getWithFallback(url, opts?)
+- opts.headers, opts.timeout, opts.responseType
+- Returns response with status 304 as valid (not error)
+
+postWithFallback(url, data, opts?)
+- For POST requests (Fever API, etc.)
+
+### Limitations
+- Don't force "zstd" — Node won't decompress natively
+
+---
+
+## 7. Pipeline and Item Format
+
+### Order (sequential)
+
+1. Downloader (if HTTP/HTTPS)
+2. Workshop (plugins; can use ctx.body from Downloader)
+3. Modules (built-in): YouTube → Atom → XML → JSON → ApiX → RSS → Fallback
+4. Axios/regex (simple RSS) — uses Downloader body if available
+5. RSSParser.parseString — also uses Downloader body
+6. Error (log "no data")
+
+### Item (entry) — what parser returns
+
+{
+  "title": "string",
+  "link": "string",
+  "contentSnippet": "string",
+  "isoDate": "string|null",
+  "enclosure": "string|null",
+  "author": "string|null",
+  "guid": "string",
+  "categories": ["string", "..."]
+}
+
+### Guidelines
+
+- **link** — deduplication key (core normalizes: removes utm_* and hash)
+- **isoDate** — use parseDate
+- **contentSnippet** — clean with stripHtml and truncate to ~500-800 chars
+
+---
+
+## 8. Discord Delivery (Components V2)
+
+### Layout:
+- Container (type:17), text (type:10), galleries (type:12), buttons (type:1/2)
+- **YouTube**: title + link + thumbnail + button
+- **Discord messages**: card "💬" + content + attachments + quote + metadata
+- **RSS/Atom/JSON**: title + snippet + media + author/date + button
+
+### Notes:
+- No fallback to classic embeds in 2.0 (intentional simplification)
+- Delay between sends: DelayBetweenSendsMs (default 350ms)
+
+---
+
+## 9. Cache and Deduplication
+
+### cache.json:
+- Stores "seen" IDs/links per key (feed or Discord block)
+- Soft limit: MaxCachePerKey (default 2000)
+
+### Deduplication:
+- **Feeds**: by normalized link
+- **Discord**: by guid (message ID)
+- **FreshRSS**: by guid (freshrss-{id})
+
+### http-meta.json (optional):
+- Stores ETag/Last-Modified metadata locally
+
+---
+
+## 10. Workshop (Plugins)
+
+### Loading:
+- src/workshop/loader.js — loads .plugin.js files from src/workshop directory
+- Enabled by default (Workshop.Enabled !== false)
+- Plugins run first in pipeline (HTTP/HTTPS or custom schemes)
+
+### API Passed to Plugin:
+
+| Property | Description |
+|----------|-------------|
+| api.id | Plugin identifier |
+| api.http.get | getWithFallback function |
+| api.utils.parseDate | Date parsing utility |
+| api.utils.stripHtml | HTML stripping utility |
+| api.send | Webhook delivery function |
+| api.config | Full config.json (read-only) |
+| api.log / api.warn / api.error | Namespaced logging |
+| api.kv | Key-value storage per plugin |
+| api.registerParser | Parser registration function |
+
+### Context (ctx) in 2.0:
+
+| Property | Description |
+|----------|-------------|
+| ctx.get | HTTP GET function |
+| ctx.post | HTTP POST function |
+| ctx.api | XFeeder API |
+| ctx.body | Body from Downloader (if HTTP/HTTPS) |
+| ctx.headers | Headers from Downloader |
+| ctx.status | Status from Downloader |
+
+### Minimal Plugin Example:
+
+// src/workshop/hello.plugin.js
 module.exports = {
   id: "hello",
   enabled: true,
@@ -264,7 +417,7 @@ module.exports = {
         const res = ctx.body ? { data: ctx.body } : await ctx.get(url);
         const data = res.data || {};
         return [{
-          title: data.title || "Brak tytułu",
+          title: data.title || "No title",
           link: data.url || url,
           contentSnippet: api.utils.stripHtml(data.description || "").result.slice(0, 500),
           isoDate: api.utils.parseDate(data.date || new Date().toISOString()),
@@ -277,77 +430,100 @@ module.exports = {
     });
   }
 };
-```
 
-—
+---
 
-11) Harmonogram i wydajność
-- Kolejka kanałów:
-  - XFeeder scala channels*, channels2*, channels3* w jedną listę,
-  - dla każdego kanału sprawdza TimeChecker; po obsłużeniu — DelayBetweenChannelsMs (domyślnie 30 s).
-- W obrębie kanału:
-  - sekwencyjnie (po kolei) feedy z listy RSS,
-  - brak równoległości (celowo, mniejsze ryzyko 429),
-  - micro-trottle 350 ms między wysyłkami.
+## 11. Scheduling and Performance
 
-—
+### Channel Queue:
+- XFeeder merges channels*, channels2*, channels3* into one list
+- For each channel: checks TimeChecker; after processing — DelayBetweenChannelsMs (default 30s)
 
-12) Logowanie i obsługa błędów
-- Konsola (stdout/stderr) — informacje o sukcesach i ostrzeżenia/błędy,
-- Jeśli używasz rozszerzonego loggera:
-  - WarnLog.txt, ErrorLog.txt, CrashLog.txt (opcjonalne),
-  - redakcja danych wrażliwych (tokeny, cookies, webhooki).
-- Zamykanie:
-  - SIGINT: zapisuje cache i wychodzi,
-  - uncaughtException / unhandledRejection: zapis (o ile włączone), próba zapisu cache i wyjście.
+### Within Channel:
+- Sequential (one by one) feeds from RSS list
+- No parallelism (intentional, lower 429 risk)
+- Micro-throttle 350ms between sends
 
-—
+---
 
-13) Bezpieczeństwo i dane wrażliwe
-- Token użytkownika Discord (self-bot) łamie ToS Discorda — używaj na własne ryzyko,
-- Webhooki traktuj jak sekrety (URL = sekret),
-- Cookies (np. cf_clearance):
-  - trzymaj tylko w configu; unikaj logowania wartości,
-  - używaj Http.Cookies["host"] w config.json.
+## 12. Logging and Error Handling
 
-—
+### Console (stdout/stderr):
+- Success information and warnings/errors
 
-14) Rozwiązywanie problemów (FAQ)
+### File Logging (if extended logger used):
+- WarnLog.txt, ErrorLog.txt, CrashLog.txt (optional)
+- Redacts sensitive data (tokens, cookies, webhooks)
 
-- Nic nie pojawia się na Discordzie:
-  - sprawdź Webhook i Thread,
-  - sprawdź logi “Parser:… Sukces (N)” — czy pipeline coś zwraca?
-  - deduplikacja: link mógł być już w cache (cache.json).
-- Widzisz 304 Not Modified:
-  - to nie błąd — oznacza brak nowych wpisów (If-None-Match/If-Modified-Since).
-- 429 Too Many Requests:
-  - poczekaj (mikro-opóźnienie już działa), ewentualnie zwiększ DelayBetweenSendsMs,
-  - rozważ większy TimeChecker kanału.
-- 403/401 na feedzie:
-  - sprawdź, czy feed nie wymaga cookie/headers,
-  - użyj Http.Cookies/Http.ExtraHeaders w configu.
-- Własny schemat (np. quest://):
-  - nie przechodzi do HTTP — obsłuży go tylko plugin (Workshop).
-- Discord parser zwraca 404:
-  - podaj poprawne ChannelIDs (GuildID to nie ID kanału).
+### Shutdown:
+- SIGINT: saves cache and exits
+- uncaughtException / unhandledRejection: logs (if enabled), attempts cache save and exits
 
-—
+---
 
-15) Dobre praktyki i tuningi
-- TimeChecker: dopasuj do źródła (np. 10–60 min),
-- DelayBetweenSendsMs: 300–500 ms (mniej 429),
-- MaxCachePerKey: 1000–5000 (w zależności od liczby feedów),
-- Normalizacja linków: unikaj linków ze zmiennym query,
-- Workshop:
-  - agresywny test(url) (oszczędza czas),
-  - nie zwracaj tysięcy elementów naraz,
-  - używaj ctx.body jeśli Downloader już pobrał treść (mniej zapytań).
+## 13. Security and Sensitive Data
 
-—
+### Discord User Token (self-bot):
+- Violates Discord ToS — use at your own risk
 
-16) Załącznik: przykładowy config.json
+### Webhooks:
+- Treat as secrets (URL = secret)
 
-```json
+### Cookies (e.g., cf_clearance):
+- Keep only in config; avoid logging values
+- Use Http.Cookies["host"] in config.json
+
+---
+
+## 14. Troubleshooting (FAQ)
+
+### Nothing appears on Discord:
+- Check Webhook and Thread
+- Check logs "Parser:... Success (N)" — is pipeline returning anything?
+- Deduplication: link might already be in cache (cache.json)
+
+### Seeing 304 Not Modified:
+- Not an error — means no new items (If-None-Match/If-Modified-Since working)
+
+### 429 Too Many Requests:
+- Wait (micro-delay already working), optionally increase DelayBetweenSendsMs
+- Consider higher TimeChecker for channel
+
+### 403/401 on feed:
+- Check if feed requires cookies/headers
+- Use Http.Cookies/Http.ExtraHeaders in config
+
+### Custom scheme (e.g., quest://):
+- Doesn't go to HTTP — only Workshop plugin handles it
+
+### Discord parser returns 404:
+- Provide correct ChannelIDs (GuildID is not channel ID)
+
+---
+
+## 15. Best Practices and Tuning
+
+### TimeChecker:
+- Adjust to source (e.g., 10-60 min)
+
+### DelayBetweenSendsMs:
+- 300-500ms (fewer 429s)
+
+### MaxCachePerKey:
+- 1000-5000 (depending on feed count)
+
+### Link Normalization:
+- Avoid links with variable query params
+
+### Workshop:
+- Aggressive test(url) (saves time)
+- Don't return thousands of items at once
+- Use ctx.body if Downloader already fetched content (fewer requests)
+
+---
+
+## 16. Appendix: Example config.json
+
 {
   "Settings": {
     "Logs": true,
@@ -365,19 +541,27 @@ module.exports = {
   "Http": {
     "AcceptEncoding": "gzip, deflate, br",
     "Cookies": {
-      "boop.pl": "cf_clearance=PASTE_YOUR_CF_VALUE"
+      "example.com": "cf_clearance=YOUR_CF_VALUE"
     },
     "ExtraHeaders": {
-      "https://boop.pl/rss": {
+      "https://example.com/rss": {
         "If-Modified-Since": "Wed, 22 Oct 2025 17:00:09 +0000"
       }
     }
   },
 
   "Auth": {
-    "Token": "DISCORD_USER_TOKEN",
-    "x-super-properties": "BASE64_SUPER_PROPS",
-    "cookie": "cookie-string"
+    "Token": "YOUR_DISCORD_USER_TOKEN",
+    "x-super-properties": "YOUR_BASE64_SUPER_PROPS",
+    "cookie": "YOUR_COOKIE_STRING"
+  },
+
+  "FreshRSS": {
+    "Enabled": false,
+    "Url": "https://your-freshrss-instance.com",
+    "Username": "your_username",
+    "Password": "your_password",
+    "feverKey": "your_fever_api_key"
   },
 
   "Workshop": {
@@ -392,20 +576,20 @@ module.exports = {
   "channels": [
     {
       "Webhook": "https://discord.com/api/webhooks/AAA/BBB",
-      "Thread": "222222222222222222",
+      "Thread": null,
       "RSS": [
-        "https://boop.pl/rss",
-        "https://wiadomosci.onet.pl/.feed",
+        "https://example.com/rss",
+        "https://example.org/feed.xml",
         "quest://@me"
       ],
       "TimeChecker": 30,
       "RequestSend": 3,
 
       "Discord": {
-        "GuildID": "GUILD_ID",
+        "GuildID": "YOUR_GUILD_ID",
         "Webhook": "https://discord.com/api/webhooks/CCC/DDD",
-        "Thread": "333333333333333333",
-        "ChannelIDs": ["DISCORD_CHANNEL_ID_1", "DISCORD_CHANNEL_ID_2"],
+        "Thread": null,
+        "ChannelIDs": ["CHANNEL_ID_1", "CHANNEL_ID_2"],
         "Limit": 5,
         "RequestSend": 1
       }
@@ -416,23 +600,31 @@ module.exports = {
     {
       "Webhook": "https://discord.com/api/webhooks/EEE/FFF",
       "RSS": [
-        "https://lowcygier.pl/rss",
-        "https://git.example.com/user/project.atom"
+        "https://github.com/user/repo/commits.atom",
+        "freshrss://all"
       ],
       "TimeChecker": 60,
       "RequestSend": 2
     }
   ]
 }
-```
 
-—
+---
 
-Skrót najważniejszych różnic 1.5 vs 1.3
-- Downloader na początku pipeline’u (jedno spójne pobranie HTTP, body przekazywane dalej),
-- Schematy nie-HTTP obsługiwane tylko przez Workshop,
-- RSSParser.parseString na pobranym body (jeden klient HTTP, spójne nagłówki i proxy),
-- 304 = “brak zmian”, bez wyjątków i cooldownów,
-- Normalizacja linków + miękki limit cache,
-- Mikro-opóźnienie 350 ms między wysyłkami (mniej 429),
-- Utrzymany sekwencyjny pipeline i 30 s przerwy między kanałami.
+## Summary: Key Differences 2.0 vs 1.x
+
+| Feature | 1.x | 2.0 |
+|---------|-----|-----|
+| HTTP handling | Multiple fetch points | Downloader at pipeline start |
+| Non-HTTP schemes | Mixed handling | Workshop-only |
+| RSSParser | parseURL | parseString on fetched body |
+| 304 handling | Sometimes threw errors | Clean "no changes" |
+| Link deduplication | Basic | Normalized (no utm_*, hash) |
+| Cache limit | Unlimited | Soft limit per key |
+| Send delay | None | 350ms micro-delay |
+| Pipeline | Partially parallel | Fully sequential |
+| Channel delay | Variable | Fixed 30s between channels |
+
+---
+
+Made with care for the RSS community.

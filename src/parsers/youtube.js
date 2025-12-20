@@ -1,9 +1,9 @@
-// src/parsers/youtube.js — dedykowany parser YouTube Atom Feed
+// src/parsers/youtube.js - Dedicated YouTube Atom Feed parser
 const xml2js = require("xml2js");
 const { stripHtml } = require("string-strip-html");
 const { parseDate } = require("./utils");
 
-// Konfiguracja xml2js dla Atom/YouTube
+// xml2js configuration for Atom/YouTube
 const parser = new xml2js.Parser({
   explicitArray: false,
   ignoreAttrs: false,
@@ -13,13 +13,14 @@ const parser = new xml2js.Parser({
 });
 
 /**
- * Parsuje kanały Atom z YouTube (feeds/videos.xml)
- * @param {string} feedUrl URL feeda YouTube
- * @param {object} httpClient instancja axios
- * @returns {Array} lista przetworzonych wpisów
+ * Parses YouTube Atom feeds (feeds/videos.xml)
+ * 
+ * @param {string} feedUrl - YouTube feed URL
+ * @param {object} httpClient - HTTP client with get method
+ * @returns {Promise<Array>} Array of parsed items
  */
 async function parseYouTube(feedUrl, httpClient) {
-  // Weryfikacja, czy to YouTube Feed
+  // Verify this is a YouTube feed
   if (!feedUrl.includes("youtube.com/feeds/") && !feedUrl.includes("youtu")) {
     return [];
   }
@@ -40,17 +41,17 @@ async function parseYouTube(feedUrl, httpClient) {
       : [data.feed.entry];
 
     const items = entries.map((entry) => {
-      const title = stripHtml(entry.title?.VALUE || entry.title || "Brak tytułu").result;
+      const title = stripHtml(entry.title?.VALUE || entry.title || "No title").result;
       const isoDate = parseDate(entry.published || entry.updated || new Date());
-      const author = entry.author?.name || entry["author"]?.VALUE || "Nieznany autor";
+      const author = entry.author?.name || entry["author"]?.VALUE || "Unknown author";
 
-      // Identyfikator i link
+      // Video ID and link
       const videoId = entry["yt:videoId"];
       const link =
         entry.link?.ATTR?.href ||
         (videoId ? `https://www.youtube.com/watch?v=${videoId}` : feedUrl);
 
-      // Opis — preferuj media:description
+      // Description - prefer media:description
       const mediaGroup = entry["media:group"];
       const rawDescription =
         mediaGroup?.["media:description"] ||
@@ -58,18 +59,18 @@ async function parseYouTube(feedUrl, httpClient) {
         entry.summary ||
         "";
 
-      // Miniaturka (YouTube zawsze ma co najmniej kilka rozdzielczości)
+      // Thumbnail (YouTube always has multiple resolutions)
       let image = null;
       if (mediaGroup?.["media:thumbnail"]) {
         const thumb = mediaGroup["media:thumbnail"];
         if (Array.isArray(thumb)) {
-          // Weź najwyższą rozdzielczość (ostatni element)
+          // Take highest resolution (last element)
           image = thumb[thumb.length - 1].ATTR?.url || thumb[0].ATTR?.url;
         } else if (thumb.ATTR?.url) {
           image = thumb.ATTR.url;
         }
       }
-      // Fallback na statyczny link
+      // Fallback to static link
       if (!image && videoId) {
         image = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
       }
@@ -91,10 +92,10 @@ async function parseYouTube(feedUrl, httpClient) {
       };
     });
 
-    console.log(`[YouTube Parser] Sukces (${items.length}) → ${feedUrl}`);
+    console.log(`[YouTube Parser] Success (${items.length}) → ${feedUrl}`);
     return items;
   } catch (error) {
-    console.warn(`[YouTube Parser] Błąd przy pobieraniu ${feedUrl}: ${error.message}`);
+    console.warn(`[YouTube Parser] Error fetching ${feedUrl}: ${error.message}`);
     return [];
   }
 }

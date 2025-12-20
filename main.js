@@ -1,10 +1,12 @@
-// main.js - Główny plik aplikacji XFeeder (Workshop → Moduły → Axios → RSSParser → Error)
+// main.js - XFeeder 2.0 Main Application
+// Pipeline: Workshop → Modules → Axios → RSSParser → Error
+
 const fs = require("fs");
 const { sendMessage } = require("./src/message");
 const { download } = require("./src/parsers/downloader");
-const { getWithFallback } = require("./src/client");
+const { getWithFallback, postWithFallback } = require("./src/client");
 
-// Import parserów
+// Parser imports
 const { parseRSS } = require("./src/parsers/rss");
 const { parseAtom } = require("./src/parsers/atom");
 const { parseYouTube } = require("./src/parsers/youtube");
@@ -13,14 +15,15 @@ const { parseJSON } = require("./src/parsers/json");
 const { parseApiX } = require("./src/parsers/api_x");
 const { parseFallback } = require("./src/parsers/fallback");
 const { parseDiscord } = require("./src/parsers/discord");
+const { parseFreshRSS, isFreshRSSUrl } = require("./src/parsers/freshrss");
 
 // ------------------------------------------------------------
-// KONFIGURACJA
+// CONFIGURATION
 // ------------------------------------------------------------
 const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
 // ------------------------------------------------------------
-// WORKSHOP (opcjonalnie)
+// WORKSHOP (optional)
 // ------------------------------------------------------------
 let workshopParsers = [];
 try {
@@ -32,12 +35,12 @@ try {
       "src/workshop"
     );
     workshopParsers = loaded.parsers || [];
-    console.log(`[Workshop] Parserów: ${workshopParsers.length}`);
+    console.log(`[Workshop] Parsers loaded: ${workshopParsers.length}`);
   } else {
-    console.log("[Workshop] Wyłączony w configu.");
+    console.log("[Workshop] Disabled in config.");
   }
 } catch {
-  console.log("[Workshop] Loader niedostępny – pomijam.");
+  console.log("[Workshop] Loader not available — skipping.");
 }
 
 // ------------------------------------------------------------
@@ -48,48 +51,77 @@ const cacheFile = "./cache.json";
 if (fs.existsSync(cacheFile)) {
   try {
     cache = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-    console.log(`[Cache] Załadowano (${Object.keys(cache).length} kanałów)`);
+    console.log(`[Cache] Loaded (${Object.keys(cache).length} channels)`);
   } catch {
-    console.warn("[Cache] Błąd przy wczytywaniu cache.json – tworzę nowy.");
+    console.warn("[Cache] Error reading cache.json — creating new.");
     cache = {};
   }
 }
+
 function saveCache() {
   fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2), "utf8");
 }
 
 // ------------------------------------------------------------
-// HELPERY: normalizacja + limit cache + throttle wysyłki
+// HELPERS: normalization + cache limit + send throttle
 // ------------------------------------------------------------
+
+/**
+ * Normalizes link by removing tracking parameters (utm_*, fbclid, etc.)
+ */
 function normalizeLink(u) {
   try {
     const url = new URL(u);
     url.hash = "";
-    const rm = new Set(["utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_name","fbclid","gclid","yclid","mc_cid","mc_eid","ref"]);
+    const removeParams = new Set([
+      "utm_source", "utm_medium", "utm_campaign", "utm_term",
+      "utm_content", "utm_name", "fbclid", "gclid", "yclid",
+      "mc_cid", "mc_eid", "ref"
+    ]);
     for (const k of Array.from(url.searchParams.keys())) {
-      if (k.toLowerCase().startsWith("utm_") || rm.has(k)) url.searchParams.delete(k);
+      if (k.toLowerCase().startsWith("utm_") || removeParams.has(k)) {
+        url.searchParams.delete(k);
+      }
     }
     return url.toString();
   } catch {
     return u;
   }
 }
+
+/**
+ * Generates cache key for entry (guid for FreshRSS, normalized link for others)
+ */
+function getCacheKey(item) {
+  // For FreshRSS use guid (freshrss-{id})
+  if (item.guid && item.guid.startsWith("freshrss-")) {
+    return item.guid;
+  }
+  // For others — normalized link
+  return normalizeLink(item.link || item.guid || "");
+}
+
+/**
+ * Adds new IDs to cache with limit
+ */
 function pushCache(list, ids, limit = 2000) {
   const prev = Array.isArray(list) ? list : [];
   const merged = [...ids, ...prev];
   if (merged.length > limit) merged.length = limit;
   return merged;
 }
-const SEND_DELAY_MS = 350; // mikro-opóźnienie anty-429
+
+// Anti-429 micro-delay
+const SEND_DELAY_MS = 350;
 
 // ------------------------------------------------------------
-// FUNKCJA GŁÓWNA: Pobieranie feeda (Workshop → Moduły → Axios → RSSParser → Error)
+// MAIN FUNCTION: Fetch feed (Workshop → Modules → Axios → RSSParser → Error)
 // ------------------------------------------------------------
 const Parser = require("rss-parser");
 const parser = new Parser({
   timeout: 10000,
   headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win32; x64) XFeeder/1.2",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.0",
     "Accept": "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
   },
 });
@@ -97,19 +129,46 @@ const parser = new Parser({
 async function fetchFeed(url) {
   let items = [];
 
-  // 0) Downloader — jedna próba pobrania (re-użyjemy body w dalszych krokach)
-  //    - dla non-http/https: ok:false, reason: UNSUPPORTED_PROTOCOL
-  //    - dla 304: ok:true, notModified:true
+  // FreshRSS - handle before everything else
+  if (isFreshRSSUrl(url)) {
+    try {
+      const httpClient = {
+        get: getWithFallback,
+        post: postWithFallback
+      };
+      const parsed = await parseFreshRSS(url, { http: httpClient });
+      if (parsed && parsed.length) {
+        console.log(`[Parser:FreshRSS] Success (${parsed.length}) → ${url}`);
+        return parsed;
+      }
+      return [];
+    } catch (err) {
+      console.error(`[Parser:FreshRSS] Error: ${err.message}`);
+      return [];
+    }
+  }
+
+  // 0) Downloader — single fetch attempt (reuse body in later steps)
+  //    - for non-http/https: ok:false, reason: UNSUPPORTED_PROTOCOL
+  //    - for 304: ok:true, notModified:true
   const dl = await download(url, { accept: "auto" });
   if (dl.ok && dl.notModified) {
-    // brak zmian
+    // No changes
     return [];
   }
 
-  // 1⃣ Workshop — jeśli masz pluginy; body i nagłówki dostępne w ctx.body/ctx.headers dla chętnych
-  const ctx = { get: getWithFallback, api: { config }, body: dl.ok ? dl.data : undefined, headers: dl.headers, status: dl.status };
+  // 1) Workshop — if you have plugins; body and headers available in ctx.body/ctx.headers
+  const ctx = {
+    get: getWithFallback,
+    post: postWithFallback,
+    api: { config },
+    body: dl.ok ? dl.data : undefined,
+    headers: dl.headers,
+    status: dl.status
+  };
+
   if (!/^https?:\/\//i.test(url)) {
-    // Schemat nie-http/https → tylko Workshop
+    // Non-http/https scheme → Workshop only
     for (const p of workshopParsers) {
       try {
         if (typeof p.test === "function") {
@@ -118,17 +177,18 @@ async function fetchFeed(url) {
         }
         const parsed = await p.parse(url, ctx);
         if (parsed && parsed.length) {
-          console.log(`[Parser:${p.name || "workshop"}] Sukces (${parsed.length}) → ${url}`);
+          console.log(`[Parser:${p.name || "workshop"}] Success (${parsed.length}) → ${url}`);
           return parsed;
         }
         return [];
       } catch (err) {
-        console.warn(`[Parser:${p.name || "workshop"}] Błąd: ${err.message}`);
+        console.warn(`[Parser:${p.name || "workshop"}] Error: ${err.message}`);
       }
     }
     return [];
   }
 
+  // Workshop for HTTP/HTTPS
   for (const p of workshopParsers) {
     try {
       if (typeof p.test === "function") {
@@ -137,29 +197,38 @@ async function fetchFeed(url) {
       }
       const parsed = await p.parse(url, ctx);
       if (parsed && parsed.length) {
-        console.log(`[Parser:${p.name || "workshop"}] Sukces (${parsed.length}) → ${url}`);
+        console.log(`[Parser:${p.name || "workshop"}] Success (${parsed.length}) → ${url}`);
         return parsed;
       }
     } catch (err) {
-      console.warn(`[Parser:${p.name || "workshop"}] Błąd: ${err.message}`);
+      console.warn(`[Parser:${p.name || "workshop"}] Error: ${err.message}`);
     }
   }
 
-  // 2⃣ Moduły (wbudowane) — sekwencyjnie, bez równoległości
-  const parsersList = [parseYouTube, parseAtom, parseXML, parseJSON, parseApiX, parseRSS, parseFallback];
+  // 2) Built-in modules — sequential, no parallelism
+  const parsersList = [
+    parseYouTube,
+    parseAtom,
+    parseXML,
+    parseJSON,
+    parseApiX,
+    parseRSS,
+    parseFallback
+  ];
+
   for (const p of parsersList) {
     try {
       const parsed = await p(url, { get: getWithFallback });
       if (parsed && parsed.length) {
-        console.log(`[Parser:${p.name}] Sukces (${parsed.length}) → ${url}`);
+        console.log(`[Parser:${p.name}] Success (${parsed.length}) → ${url}`);
         return parsed;
       }
     } catch (err) {
-      console.warn(`[Parser:${p.name}] Błąd: ${err.message}`);
+      console.warn(`[Parser:${p.name}] Error: ${err.message}`);
     }
   }
 
-  // 3⃣ “Axios/regex” — wykorzystaj body z Downloadera jeśli jest
+  // 3) "Axios/regex" — use Downloader body if available
   try {
     if (dl.ok && typeof dl.data === "string" && dl.data.includes("<item")) {
       const matches = [...dl.data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
@@ -167,7 +236,7 @@ async function fetchFeed(url) {
         const getTag = (tag) =>
           (m[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] || "").trim();
         return {
-          title: getTag("title") || "Brak tytułu",
+          title: getTag("title") || "No title",
           link: getTag("link"),
           contentSnippet: (getTag("description") || "").replace(/<[^>]+>/g, "").substring(0, 400),
           isoDate: getTag("pubDate") || null,
@@ -178,11 +247,11 @@ async function fetchFeed(url) {
         };
       });
       if (items.length) {
-        console.log(`[Downloader/regex] Sukces (${items.length}) → ${url}`);
+        console.log(`[Downloader/regex] Success (${items.length}) → ${url}`);
         return items;
       }
     } else if (!dl.ok) {
-      // Downloader nie przyniósł body — zrób klasyczny fallback (1 żądanie)
+      // Downloader didn't get body — do classic fallback (1 request)
       const res = await getWithFallback(url, {
         headers: {
           "Accept": "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8"
@@ -195,7 +264,7 @@ async function fetchFeed(url) {
           const getTag = (tag) =>
             (m[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] || "").trim();
           return {
-            title: getTag("title") || "Brak tytułu",
+            title: getTag("title") || "No title",
             link: getTag("link"),
             contentSnippet: (getTag("description") || "").replace(/<[^>]+>/g, "").substring(0, 400),
             isoDate: getTag("pubDate") || null,
@@ -206,22 +275,22 @@ async function fetchFeed(url) {
           };
         });
         if (items.length) {
-          console.log(`[Axios-regex] Sukces (${items.length}) → ${url}`);
+          console.log(`[Axios-regex] Success (${items.length}) → ${url}`);
           return items;
         }
       }
     }
   } catch (err) {
-    console.warn(`[Axios-regex] Błąd dla ${url}: ${err.message}`);
+    console.warn(`[Axios-regex] Error for ${url}: ${err.message}`);
   }
 
-  // 4⃣ RSSParser — użyj body z Downloadera jeśli jest, inaczej pobierz
+  // 4) RSSParser — use Downloader body if available, otherwise fetch
   try {
     if (dl.ok && typeof dl.data === "string" && dl.data.trim()) {
       const feed = await parser.parseString(dl.data);
       if (feed?.items?.length) {
         items = feed.items.map((entry) => ({
-          title: entry.title || "Brak tytułu",
+          title: entry.title || "No title",
           link: entry.link,
           contentSnippet: entry.contentSnippet || entry.content || "",
           isoDate: entry.isoDate || entry.pubDate || null,
@@ -230,7 +299,7 @@ async function fetchFeed(url) {
           guid: entry.guid || entry.link,
           categories: entry.categories || [],
         }));
-        console.log(`[RSSParser] Sukces (${items.length}) → ${url}`);
+        console.log(`[RSSParser] Success (${items.length}) → ${url}`);
         return items;
       }
     } else {
@@ -244,7 +313,7 @@ async function fetchFeed(url) {
         const feed = await parser.parseString(res.data);
         if (feed?.items?.length) {
           items = feed.items.map((entry) => ({
-            title: entry.title || "Brak tytułu",
+            title: entry.title || "No title",
             link: entry.link,
             contentSnippet: entry.contentSnippet || entry.content || "",
             isoDate: entry.isoDate || entry.pubDate || null,
@@ -253,22 +322,22 @@ async function fetchFeed(url) {
             guid: entry.guid || entry.link,
             categories: entry.categories || [],
           }));
-          console.log(`[RSSParser] Sukces (${items.length}) → ${url}`);
+          console.log(`[RSSParser] Success (${items.length}) → ${url}`);
           return items;
         }
       }
     }
   } catch (err) {
-    console.warn(`[RSSParser] Błąd dla ${url}: ${err.message}`);
+    console.warn(`[RSSParser] Error for ${url}: ${err.message}`);
   }
 
-  // 5⃣ Error
-  console.error(`⚠️ Brak danych z ${url}`);
+  // 5) Error
+  console.error(`⚠️ No data from ${url}`);
   return [];
 }
 
 // ------------------------------------------------------------
-// SPRAWDZANIE KANAŁU
+// CHANNEL CHECKING
 // ------------------------------------------------------------
 async function checkFeedsForChannel(index, channelConfig) {
   if (!cache[index]) cache[index] = {};
@@ -300,15 +369,15 @@ async function checkFeedsForChannel(index, channelConfig) {
         );
         saveCache();
         console.log(
-          `[Kanał ${index + 1}] Wysłano ${toSend.length} (Discord).`
+          `[Channel ${index + 1}] Sent ${toSend.length} (Discord).`
         );
       }
     } catch (err) {
-      console.error(`[Kanał ${index + 1}] Discord Error:`, err.message);
+      console.error(`[Channel ${index + 1}] Discord Error:`, err.message);
     }
   }
 
-  // --- RSS/ATOM/YT (sekwencyjnie) ---
+  // --- RSS/ATOM/YT/FreshRSS (sequential) ---
   if (channelConfig.RSS && Array.isArray(channelConfig.RSS)) {
     for (const feedUrl of channelConfig.RSS) {
       try {
@@ -316,8 +385,10 @@ async function checkFeedsForChannel(index, channelConfig) {
         if (!items.length) continue;
 
         if (!cache[index][feedUrl]) cache[index][feedUrl] = [];
+
+        // Use getCacheKey() for proper deduplication (FreshRSS vs others)
         const newItems = items.filter((i) => {
-          const key = normalizeLink(i.link || "");
+          const key = getCacheKey(i);
           return key && !cache[index][feedUrl].includes(key);
         });
 
@@ -332,18 +403,19 @@ async function checkFeedsForChannel(index, channelConfig) {
             await new Promise(r => setTimeout(r, SEND_DELAY_MS));
           }
 
+          // Save to cache with proper key
           cache[index][feedUrl] = pushCache(
             cache[index][feedUrl],
-            newItems.map((i) => normalizeLink(i.link || ""))
+            newItems.map((i) => getCacheKey(i))
           );
           saveCache();
           console.log(
-            `[Kanał ${index + 1}] Wysłano ${toSend.length} wpisów z ${feedUrl}.`
+            `[Channel ${index + 1}] Sent ${toSend.length} items from ${feedUrl}.`
           );
         }
       } catch (err) {
         console.error(
-          `[Kanał ${index + 1}] Błąd RSS ${feedUrl}:`,
+          `[Channel ${index + 1}] RSS Error ${feedUrl}:`,
           err.message
         );
       }
@@ -352,13 +424,15 @@ async function checkFeedsForChannel(index, channelConfig) {
 }
 
 // ------------------------------------------------------------
-// KOLEJKOWANIE (30s przerwy między kanałami — bez zmian)
+// QUEUE (30s delay between channels)
 // ------------------------------------------------------------
 let allChannels = [];
 for (const key of Object.keys(config)) {
-  if (key.startsWith("channels")) allChannels = allChannels.concat(config[key]);
+  if (key.toLowerCase().startsWith("channels")) {
+    allChannels = allChannels.concat(config[key]);
+  }
 }
-console.log(`[System] Kanałów do obsługi: ${allChannels.length}`);
+console.log(`[System] Channels to process: ${allChannels.length}`);
 
 let lastCheck = new Array(allChannels.length).fill(0);
 let currentIndex = 0;
@@ -372,14 +446,14 @@ async function processNextChannel() {
 
   if (now - lastCheck[currentIndex] >= minDelay) {
     console.log(
-      `[Kolejka] Sprawdzam kanał ${currentIndex + 1}/${allChannels.length}`
+      `[Queue] Checking channel ${currentIndex + 1}/${allChannels.length}`
     );
     try {
       await checkFeedsForChannel(currentIndex, channel);
       lastCheck[currentIndex] = Date.now();
     } catch (err) {
       console.error(
-        `[Kolejka] Błąd kanału ${currentIndex + 1}:`,
+        `[Queue] Channel ${currentIndex + 1} error:`,
         err.message
       );
     }
@@ -391,15 +465,21 @@ async function processNextChannel() {
 processNextChannel();
 
 // ------------------------------------------------------------
-// ZAMYKANIE
+// SHUTDOWN
 // ------------------------------------------------------------
 process.on("SIGINT", () => {
-  console.log("\n[Shutdown] Zapisuję cache i zamykam...");
+  console.log("\n[Shutdown] Saving cache and exiting...");
   saveCache();
   process.exit(0);
 });
+
 process.on("uncaughtException", (error) => {
   console.error("[Critical Error]", error);
   saveCache();
 });
-console.log(`🚀 XFeeder v${require("./package.json").version} uruchomiony!`);
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[Unhandled Rejection]", reason);
+});
+
+console.log(`🚀 XFeeder v${require("./package.json").version} started!`);

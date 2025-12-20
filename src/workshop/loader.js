@@ -1,22 +1,34 @@
-// src/workshop/loader.js
+// src/workshop/loader.js - Plugin loader for Workshop system
 const fs = require("fs");
 const path = require("path");
 
+/**
+ * Loads all Workshop plugins from specified directory.
+ * Only loads files ending with .plugin.js
+ * 
+ * @param {object} baseApi - Base API object with get, send, utils, config
+ * @param {string} dir - Directory path to load plugins from
+ * @returns {object} Object with parsers and plugins arrays
+ */
 function loadWorkshop(baseApi, dir = path.resolve(__dirname)) {
-  // domyślnie ładuje z katalogu, w którym znajduje się ten plik: src/workshop
   const parsers = [];
   const plugins = [];
 
-  // jeśli katalog nie istnieje — nie tworzymy go, tylko pomijamy ładowanie
+  // If directory doesn't exist — skip loading (don't create it)
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
-    console.warn(`[Workshop] Katalog nie istnieje: ${dir} — pomijam ładowanie pluginów.`);
+    console.warn(`[Workshop] Directory not found: ${dir} — skipping plugin loading.`);
     return { parsers: [], plugins: [] };
   }
 
-  // KV store per plugin (workshop-cache.json w src/workshop)
+  /**
+   * Creates KV store for a plugin (persisted to workshop-cache.json)
+   * @param {string} pluginId - Plugin identifier
+   * @returns {object} KV store methods: get, set, push
+   */
   function makeKV(pluginId) {
     const kvPath = path.join(dir, "workshop-cache.json");
     let store = {};
+    
     try {
       if (fs.existsSync(kvPath)) {
         store = JSON.parse(fs.readFileSync(kvPath, "utf8"));
@@ -24,22 +36,42 @@ function loadWorkshop(baseApi, dir = path.resolve(__dirname)) {
     } catch {
       store = {};
     }
+    
     if (!store[pluginId]) store[pluginId] = {};
 
     function save() {
-      // tworzymy tylko plik w istniejącym katalogu (nie katalog)
+      // Only create file in existing directory (not the directory itself)
       fs.writeFileSync(kvPath, JSON.stringify(store, null, 2), "utf8");
     }
 
     return {
+      /**
+       * Gets value from KV store
+       * @param {string} key - Key to retrieve
+       * @param {any} defVal - Default value if key doesn't exist
+       * @returns {any} Stored value or default
+       */
       get: (key, defVal = undefined) =>
         Object.prototype.hasOwnProperty.call(store[pluginId], key)
           ? store[pluginId][key]
           : defVal,
+      
+      /**
+       * Sets value in KV store
+       * @param {string} key - Key to set
+       * @param {any} val - Value to store
+       */
       set: (key, val) => {
         store[pluginId][key] = val;
         save();
       },
+      
+      /**
+       * Pushes value to array in KV store (FIFO with limit)
+       * @param {string} key - Key for array
+       * @param {any} val - Value to prepend
+       * @param {number} limit - Max array length (default 1000)
+       */
       push: (key, val, limit = 1000) => {
         if (!Array.isArray(store[pluginId][key])) store[pluginId][key] = [];
         store[pluginId][key].unshift(val);
@@ -51,27 +83,42 @@ function loadWorkshop(baseApi, dir = path.resolve(__dirname)) {
     };
   }
 
+  /**
+   * Creates API object for a specific plugin
+   * @param {string} pluginId - Plugin identifier
+   * @returns {object} Plugin API
+   */
   function makePluginApi(pluginId) {
     return {
       id: pluginId,
-      // HTTP
+      
+      // HTTP client
       http: { get: baseApi.get },
-      // Utils
+      
+      // Utility functions
       utils: baseApi.utils,
-      // Wysyłka
+      
+      // Discord sender
       send: baseApi.send,
+      
       // Config (read-only)
       config: baseApi.config,
-      // Logi namespacowane
+      
+      // Namespaced logging
       log: (...a) => console.log(`[WS:${pluginId}]`, ...a),
       warn: (...a) => console.warn(`[WS:${pluginId}]`, ...a),
       error: (...a) => console.error(`[WS:${pluginId}]`, ...a),
+      
       // KV storage
       kv: makeKV(pluginId),
-      // Rejestracja parserów
+      
+      /**
+       * Registers a parser with the Workshop system
+       * @param {object} def - Parser definition with name, priority, test, parse
+       */
       registerParser: (def) => {
         if (!def || typeof def.parse !== "function") {
-          throw new Error("registerParser: def.parse musi być funkcją");
+          throw new Error("registerParser: def.parse must be a function");
         }
         parsers.push({
           name: def.name || `${pluginId}-parser`,
@@ -83,7 +130,7 @@ function loadWorkshop(baseApi, dir = path.resolve(__dirname)) {
     };
   }
 
-  // ŁADUJEMY TYLKO pliki kończące się na .plugin.js
+  // Load only files ending with .plugin.js
   const files = fs
     .readdirSync(dir, { withFileTypes: true })
     .filter((d) => d.isFile() && /\.plugin\.js$/i.test(d.name))
@@ -95,13 +142,15 @@ function loadWorkshop(baseApi, dir = path.resolve(__dirname)) {
       const mod = require(path.resolve(full));
       const id = mod.id || path.basename(file, ".plugin.js");
 
+      // Skip disabled plugins
       if (mod.enabled === false) {
-        console.log(`[Workshop] Plugin wyłączony (enabled:false): ${id} – pomijam`);
+        console.log(`[Workshop] Plugin disabled (enabled:false): ${id} — skipping`);
         continue;
       }
 
       const api = makePluginApi(id);
 
+      // Support multiple plugin formats
       if (typeof mod.init === "function") {
         mod.init(api);
       } else if (typeof mod.register === "function") {
@@ -109,20 +158,21 @@ function loadWorkshop(baseApi, dir = path.resolve(__dirname)) {
       } else if (mod.parsers && Array.isArray(mod.parsers)) {
         for (const p of mod.parsers) api.registerParser(p);
       } else if (typeof mod === "function") {
-        // eksport jako funkcja przyjmująca api
+        // Export as function accepting api
         const out = mod(api);
         if (out?.parse) api.registerParser(out);
       }
 
       plugins.push({ id, file });
-      console.log(`[Workshop] Załadowano plugin: ${id} (${file})`);
+      console.log(`[Workshop] Plugin loaded: ${id} (${file})`);
     } catch (e) {
-      console.warn(`[Workshop] Błąd ładowania ${file}: ${e.message}`);
+      console.warn(`[Workshop] Error loading ${file}: ${e.message}`);
     }
   }
 
+  // Sort parsers by priority (lower = higher priority)
   parsers.sort((a, b) => (a.priority ?? 50) - (b.priority ?? 50));
-  console.log(`[Workshop] Parserów: ${parsers.length}`);
+  console.log(`[Workshop] Total parsers: ${parsers.length}`);
 
   return { parsers, plugins };
 }

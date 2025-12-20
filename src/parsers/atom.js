@@ -1,4 +1,4 @@
-// src/parsers/atom.js
+// src/parsers/atom.js - Atom 1.0 parser (GitHub, Steam, Feedburner, etc.)
 const xml2js = require("xml2js");
 const { stripHtml } = require("string-strip-html");
 const { parseDate } = require("./utils");
@@ -12,17 +12,20 @@ const parser = new xml2js.Parser({
 });
 
 /**
- * Parser Atom 1.0 (GitHub, Steam, Feedburner, StackOverflow, etc.)
- * @param {string} feedUrl - URL kanału Atom
- * @param {object} httpClient - instancja axios
- * @returns {Promise<Array>} Lista wpisów
+ * Parses Atom 1.0 feeds
+ * 
+ * @param {string} feedUrl - Feed URL
+ * @param {object} httpClient - HTTP client with get method
+ * @returns {Promise<Array>} Array of parsed items
  */
 async function parseAtom(feedUrl, httpClient) {
+  // Skip YouTube feeds (handled by dedicated parser)
   if (feedUrl.includes("youtube.com") || feedUrl.includes("yt:")) return [];
 
   try {
     const res = await httpClient.get(feedUrl, { timeout: 15000 });
     if (res?.status === 304) return [];
+    
     const xml = res.data;
     const data = await parser.parseStringPromise(xml);
 
@@ -35,7 +38,7 @@ async function parseAtom(feedUrl, httpClient) {
     const items = entries.map((entry) => {
       const title = entry.title
         ? stripHtml(entry.title.VALUE || entry.title).result.trim()
-        : "Brak tytułu";
+        : "No title";
 
       const isoDate = parseDate(entry.updated || entry.published);
       const author =
@@ -50,7 +53,7 @@ async function parseAtom(feedUrl, httpClient) {
         link = entry.link.ATTR.href;
       }
 
-      // --- MEDIA / OBRAZKI ---
+      // --- MEDIA / IMAGES ---
       let image = null;
 
       if (entry["media:thumbnail"]?.ATTR?.url) {
@@ -66,7 +69,7 @@ async function parseAtom(feedUrl, httpClient) {
         if (imgLink) image = imgLink.ATTR.href;
       }
 
-      // --- OPIS / TREŚĆ ---
+      // --- DESCRIPTION / CONTENT ---
       const rawDescription =
         entry.summary?.VALUE ||
         entry.summary ||
@@ -94,7 +97,7 @@ async function parseAtom(feedUrl, httpClient) {
 
     return items.filter((i) => i.link || i.title);
   } catch (err) {
-    console.warn(`[Atom Parser] Błąd dla ${feedUrl}: ${err.message}`);
+    console.warn(`[Atom Parser] Error for ${feedUrl}: ${err.message}`);
     return [];
   }
 }

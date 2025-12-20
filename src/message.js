@@ -1,13 +1,13 @@
-// src/message.js
+// src/message.js - Discord webhook sender (Components V2 format)
 const axios = require("axios");
 
 /**
- * Wysyła wpis do kanału Discord poprzez webhook (Components V2).
- * Brak fallbacku do embedów (embedy usunięte w całości).
+ * Sends an entry to Discord channel via webhook (Components V2).
+ * No fallback to classic embeds (removed in v2.0).
  *
- * @param {string} webhookUrl - pełny URL webhooka
- * @param {string|null} threadId - id wątku lub "null"
- * @param {object} entry - ustandaryzowany obiekt wpisu (title, link, contentSnippet, enclosure, attachments, author, timestamp, etc.)
+ * @param {string} webhookUrl - Full webhook URL
+ * @param {string|null} threadId - Thread ID or "null"
+ * @param {object} entry - Standardized entry object (title, link, contentSnippet, enclosure, attachments, author, timestamp, etc.)
  */
 async function sendMessage(webhookUrl, threadId, entry) {
   try {
@@ -15,7 +15,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
     try {
       urlObj = new URL(webhookUrl);
     } catch (e) {
-      throw new Error("Nieprawidłowy webhookUrl: " + webhookUrl);
+      throw new Error("Invalid webhookUrl: " + webhookUrl);
     }
 
     urlObj.searchParams.set("with_components", "true");
@@ -27,7 +27,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
 
     // --- YOUTUBE ---
     if (entry.link && (entry.link.includes("youtube.com") || entry.link.includes("youtu.be"))) {
-      container.components.push({ type: 10, content: `📺 ${entry.title || "Nowy film"}` });
+      container.components.push({ type: 10, content: `📺 ${entry.title || "New video"}` });
       container.components.push({ type: 10, content: entry.link });
 
       const thumb = entry.enclosure || getYouTubeThumbnailFromLink(entry.link);
@@ -40,21 +40,21 @@ async function sendMessage(webhookUrl, threadId, entry) {
 
       container.components.push({
         type: 1,
-        components: [{ type: 2, style: 5, label: "Otwórz na YouTube", url: entry.link }]
+        components: [{ type: 2, style: 5, label: "Open on YouTube", url: entry.link }]
       });
 
       const payload = { flags: 1 << 15, components: [container] };
       await postToWebhook(urlObj.toString(), payload);
-      console.log(`[ComponentsV2] Wysłano (YouTube): ${entry.title}`);
+      console.log(`[ComponentsV2] Sent (YouTube): ${entry.title}`);
       return;
     }
 
-    // --- DISCORD (priorytet) ---
+    // --- DISCORD (priority) ---
     if (entry.categories?.includes("discord")) {
-      const username = entry.author || "Użytkownik";
-      const timestamp = entry.isoDate ? new Date(entry.isoDate).toLocaleString("pl-PL") : "";
+      const username = entry.author || "User";
+      const timestamp = entry.isoDate ? new Date(entry.isoDate).toLocaleString("en-US") : "";
 
-      container.components.push({ type: 10, content: `💬 Wykryto nową wiadomość od **${username}**` });
+      container.components.push({ type: 10, content: `💬 New message from **${username}**` });
 
       if (entry.contentSnippet) {
         container.components.push({ type: 10, content: entry.contentSnippet });
@@ -73,7 +73,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
       if (entry.referenced) {
         container.components.push({
           type: 10,
-          content: `↪️ *Odpowiedź do: ${entry.referenced.author || "Anonim"} — "${truncate(entry.referenced.content, 100)}"*`
+          content: `↪️ *Reply to: ${entry.referenced.author || "Anonymous"} — "${truncate(entry.referenced.content, 100)}"*`
         });
       }
 
@@ -82,21 +82,21 @@ async function sendMessage(webhookUrl, threadId, entry) {
       if (entry.link) {
         container.components.push({
           type: 1,
-          components: [{ type: 2, style: 5, label: "Otwórz", url: entry.link }]
+          components: [{ type: 2, style: 5, label: "Open", url: entry.link }]
         });
       }
 
       await postToWebhook(urlObj.toString(), { flags: 1 << 15, components: [container] });
-      console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
+      console.log(`[ComponentsV2] Sent (Discord message from ${username})`);
       return;
     }
 
-    // --- DISCORD MESSAGE (generyczne, fallback treści – nadal Components) ---
+    // --- DISCORD MESSAGE (generic, content fallback — still Components) ---
     if (entry.attachments || entry.content || entry.referenced) {
-      const username = entry.author?.username || entry.author || "Użytkownik";
-      const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString("pl-PL") : "";
+      const username = entry.author?.username || entry.author || "User";
+      const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString("en-US") : "";
 
-      container.components.push({ type: 10, content: `💬 Wykryto nową wiadomość od **${username}**` });
+      container.components.push({ type: 10, content: `💬 New message from **${username}**` });
 
       if (entry.content) container.components.push({ type: 10, content: entry.content });
 
@@ -110,7 +110,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
       if (entry.referenced) {
         container.components.push({
           type: 10,
-          content: `↪️ *Odpowiedź do: ${entry.referenced.author || "Anonim"} — "${truncate(entry.referenced.content, 100)}"*`
+          content: `↪️ *Reply to: ${entry.referenced.author || "Anonymous"} — "${truncate(entry.referenced.content, 100)}"*`
         });
       }
 
@@ -119,18 +119,18 @@ async function sendMessage(webhookUrl, threadId, entry) {
       if (entry.link) {
         container.components.push({
           type: 1,
-          components: [{ type: 2, style: 5, label: "Otwórz", url: entry.link }]
+          components: [{ type: 2, style: 5, label: "Open", url: entry.link }]
         });
       }
 
       const payload = { flags: 1 << 15, components: [container] };
       await postToWebhook(urlObj.toString(), payload);
-      console.log(`[ComponentsV2] Wysłano (Discord message od ${username})`);
+      console.log(`[ComponentsV2] Sent (Discord message from ${username})`);
       return;
     }
 
     // --- RSS / ATOM / JSON ---
-    container.components.push({ type: 10, content: `📰 **${entry.title || "Nowy wpis"}**` });
+    container.components.push({ type: 10, content: `📰 **${entry.title || "New entry"}**` });
 
     if (entry.contentSnippet) {
       container.components.push({ type: 10, content: truncate(entry.contentSnippet, 800) });
@@ -146,35 +146,58 @@ async function sendMessage(webhookUrl, threadId, entry) {
     if (entry.author || entry.isoDate) {
       container.components.push({
         type: 10,
-        content: `👤 ${entry.author || "Anonim"} • 🕒 ${entry.isoDate ? new Date(entry.isoDate).toLocaleString("pl-PL") : ""}`
+        content: `👤 ${entry.author || "Anonymous"} • 🕒 ${entry.isoDate ? new Date(entry.isoDate).toLocaleString("en-US") : ""}`
       });
     }
 
     if (entry.link) {
       container.components.push({
         type: 1,
-        components: [{ type: 2, style: 5, label: "Otwórz", url: entry.link }]
+        components: [{ type: 2, style: 5, label: "Open", url: entry.link }]
       });
     }
 
     const payload = { flags: 1 << 15, components: [container] };
     await postToWebhook(urlObj.toString(), payload);
-    console.log(`[ComponentsV2] Wysłano: ${entry.title || entry.link || "(brak tytułu)"}`);
+    console.log(`[ComponentsV2] Sent: ${entry.title || entry.link || "(no title)"}`);
   } catch (err) {
-    if (err.response) console.error(`[ComponentsV2] Błąd przy wysyłaniu wpisu: ${err.response.status}`, err.response.data);
-    else console.error(`[ComponentsV2] Błąd:`, err.message);
+    if (err.response) {
+      console.error(`[ComponentsV2] Send error: ${err.response.status}`, err.response.data);
+    } else {
+      console.error(`[ComponentsV2] Error:`, err.message);
+    }
   }
 }
 
+/**
+ * Posts payload to webhook URL.
+ * 
+ * @param {string} url - Full webhook URL with query params
+ * @param {object} payload - Request body
+ * @returns {Promise<object>} Axios response
+ */
 async function postToWebhook(url, payload) {
   return axios.post(url, payload, { headers: { "Content-Type": "application/json" } });
 }
 
+/**
+ * Truncates string to specified length with ellipsis.
+ * 
+ * @param {string} str - Input string
+ * @param {number} n - Max length
+ * @returns {string} Truncated string
+ */
 function truncate(str, n) {
   if (!str) return "";
   return str.length > n ? str.slice(0, n).trim() + "..." : str;
 }
 
+/**
+ * Extracts YouTube thumbnail URL from video link.
+ * 
+ * @param {string} link - YouTube video URL
+ * @returns {string|null} Thumbnail URL or null
+ */
 function getYouTubeThumbnailFromLink(link) {
   if (!link) return null;
   const m = link.match(/(?:v=|\/)([A-Za-z0-9_-]{11})/);

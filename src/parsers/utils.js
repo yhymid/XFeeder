@@ -1,50 +1,51 @@
-// src/parsers/utils.js
+// src/parsers/utils.js - Shared utility functions for parsers
 
 /**
- * Konwertuje różne formaty dat (RSS, Atom, ISO, Unix Timestamp) na spójny format ISO 8601.
- * @param {string|Date|number} dateInput Surowy ciąg daty, obiekt Date lub timestamp.
- * @returns {string|null} Data w formacie ISO 8601 lub null, jeśli parsowanie się nie powiodło.
+ * Converts various date formats (RSS, Atom, ISO, Unix Timestamp) to consistent ISO 8601 format.
+ * 
+ * @param {string|Date|number} dateInput - Raw date string, Date object, or timestamp
+ * @returns {string|null} Date in ISO 8601 format or null if parsing failed
  */
 function parseDate(dateInput) {
-    if (!dateInput) {
-        return null;
-    }
-    
-    let date;
+  if (!dateInput) {
+    return null;
+  }
 
-    // 1. Obsługa timestampów (liczba)
-    if (typeof dateInput === 'number') {
-        // Unix timestamp: sekundy (10 cyfr) lub milisekundy (13+ cyfr)
-        if (dateInput.toString().length === 10) {
-            // Konwertuj sekundy na milisekundy
-            date = new Date(dateInput * 1000); 
-        } else {
-            // Zakładamy milisekundy
-            date = new Date(dateInput); 
-        }
-    } 
-    // 2. Obsługa ciągów (RSS, Atom, ISO)
-    else if (typeof dateInput === 'string') {
-        // Konstruktor Date w Node.js jest bardzo dobry w parsowaniu większości standardów (RFC 822, ISO 8601)
-        date = new Date(dateInput);
-    } 
-    // 3. Obsługa już sparsowanych obiektów Date
-    else if (dateInput instanceof Date) {
-        date = dateInput;
-    } 
-    else {
-        return null; 
-    }
+  let date;
 
-    // Weryfikacja, czy data jest prawidłowa (getTime zwróci NaN dla nieprawidłowych dat)
-    if (isNaN(date.getTime())) {
-        return null;
+  // 1. Handle timestamps (numbers)
+  if (typeof dateInput === "number") {
+    // Unix timestamp: seconds (10 digits) or milliseconds (13+ digits)
+    if (dateInput.toString().length === 10) {
+      // Convert seconds to milliseconds
+      date = new Date(dateInput * 1000);
+    } else {
+      // Assume milliseconds
+      date = new Date(dateInput);
     }
+  }
+  // 2. Handle strings (RSS, Atom, ISO)
+  else if (typeof dateInput === "string") {
+    // Node.js Date constructor handles most standards (RFC 822, ISO 8601)
+    date = new Date(dateInput);
+  }
+  // 3. Handle already parsed Date objects
+  else if (dateInput instanceof Date) {
+    date = dateInput;
+  }
+  else {
+    return null;
+  }
 
-    // Zwróć datę w jednolitym formacie ISO 8601
-    return date.toISOString();
+  // Validate date (getTime returns NaN for invalid dates)
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+
+  // Return date in unified ISO 8601 format
+  return date.toISOString();
 }
 
-module.exports = { 
-    parseDate 
+module.exports = {
+  parseDate
 };

@@ -1,9 +1,54 @@
-cache.json
-config.json
-package-lock.json
+# Dependencies
 node_modules/
-data.txt
-errorlog.txt
+
+# Configuration (contains secrets)
+config.json
+
+# Runtime data
+cache.json
 http-meta.json
-warnlog.txt
+
+# Workshop cache
 src/workshop/workshop-cache.json
+
+# Logs
+*.log
+errorlog.txt
+warnlog.txt
+CrashLog.txt
+WarnLog.txt
+ErrorLog.txt
+
+# Debug files
+data.txt
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*~
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+package-lock.json
+config.json

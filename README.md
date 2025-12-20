@@ -41,9 +41,12 @@
 
 ### Installation
 
+```
 git clone https://git.marmak.net.pl/yhymid/XFeeder
 cd xfeeder
 npm install
+node main.js
+```
 
 ### Configuration
 
@@ -52,7 +55,7 @@ npm install
 cp config.json.example config.json
 
 2. Edit config.json with your settings:
-
+```json
 {
   "Settings": {
     "Logs": false
@@ -70,17 +73,12 @@ cp config.json.example config.json
     }
   ]
 }
-
-### Running
-
-npm start
-# or
-node main.js
+```
 
 ## ⚙️ Configuration Reference
 
 ### Basic Structure
-
+```json
 {
   "Settings": { ... },
   "Proxy": { ... },
@@ -89,6 +87,7 @@ node main.js
   "channels": [ ... ],
   "channels2": [ ... ]
 }
+```
 
 ### Settings
 
@@ -128,49 +127,12 @@ node main.js
 | Enabled | boolean | true | Enable plugin system |
 | Dir | string | src/workshop | Plugin directory |
 
-## 📁 Project Structure
-
-xfeeder/
-├── main.js                  # Application entry point
-├── config.json.example      # Configuration template
-├── package.json
-├── LICENSE
-├── documentation.md         # Full documentation
-│
-├── src/
-│   ├── client.js            # HTTP client (proxy, fallbacks, caching)
-│   ├── message.js           # Discord webhook sender (Components V2)
-│   │
-│   ├── parsers/             # Built-in feed parsers
-│   │   ├── rss.js           # RSS 2.0 parser
-│   │   ├── atom.js          # Atom parser
-│   │   ├── youtube.js       # YouTube feed parser
-│   │   ├── json.js          # JSON Feed parser
-│   │   ├── xml.js           # Universal XML parser
-│   │   ├── api_x.js         # Generic API parser
-│   │   ├── discord.js       # Discord message parser
-│   │   ├── freshrss.js      # FreshRSS (Fever API) parser
-│   │   ├── fallback.js      # HTML scraping fallback
-│   │   ├── downloader.js    # HTTP downloader
-│   │   └── utils.js         # Shared utilities
-│   │
-│   └── workshop/            # Plugin system
-│       ├── loader.js        # Plugin loader
-│       ├── documentation.md # Plugin development guide
-│       └── *.plugin.js      # Your custom plugins
-│
-├── cache.json               # Deduplication cache (auto-generated)
-└── Preview/                 # Screenshots for README
-    ├── image.png
-    ├── image2.png
-    └── image3.png
-
 ## 🔌 Plugin System (Workshop)
 
 XFeeder supports custom parsers through the Workshop plugin system. Plugins are JavaScript files ending with .plugin.js placed in the src/workshop/ directory.
 
 ### Quick Example
-
+```js
 // src/workshop/my-custom.plugin.js
 module.exports = {
   id: "my-custom",
@@ -198,6 +160,7 @@ module.exports = {
     });
   }
 };
+```
 
 ### Plugin API
 
@@ -215,7 +178,7 @@ For detailed plugin development guide, see src/workshop/documentation.md
 
 ## 📸 Preview
 
-| Feed Messages | YouTube Integration | Discord Forwarding |
+| Feed Messages | Feed Messages | Feed Messages |
 |---------------|--------------------|--------------------|
 | ![Preview 1](Preview/image.png) | ![Preview 2](Preview/image2.png) | ![Preview 3](Preview/image3.png) |
 
@@ -252,17 +215,6 @@ For detailed plugin development guide, see src/workshop/documentation.md
 - Add comments for complex logic
 - Test with multiple feed types
 - Update documentation for new features
-
-## 📝 Changelog
-
-### v2.0 (Current)
-- Complete rewrite of feed processing pipeline
-- New Downloader module for unified HTTP handling
-- FreshRSS support via Fever API
-- Discord Components V2 message format
-- Improved caching with link normalization
-- Workshop plugin system with KV storage
-- Better error handling and logging
 
 ## 📄 License
 

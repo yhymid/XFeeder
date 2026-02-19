@@ -41,22 +41,29 @@
 
 ### Installation
 
+```bash
 git clone https://git.marmak.net.pl/yhymid/XFeeder
 cd xfeeder
 npm install
+```
 
 ### Configuration
 
 1. Copy the example configuration:
 
+```bash
 cp config.json.example config.json
+```
 
 Optional (recommended for secrets):
 
+```bash
 cp .env.example .env
+```
 
 2. Edit config.json with your settings:
 
+```json
 {
   "Settings": {
     "Logs": false
@@ -74,12 +81,15 @@ cp .env.example .env
     }
   ]
 }
+```
 
 ### Running
 
+```bash
 npm start
 # or
 node main.js
+```
 
 ## 🛡️ Advanced: Scrapling Integration (Optional)
 
@@ -103,11 +113,8 @@ scrapling install
   "Scrapling": {
     "Enabled": true,
     "AutoFallback": true,
-    "PerUrlConfig": {
-      "https://protected-blog.com": {
-        "solveCaptcha": true
-      }
-    }
+    "ForceGlobal": true,
+    "DefaultMode": "stealthy_fetch"
   }
 }
 ```
@@ -116,6 +123,7 @@ scrapling install
 
 ### Basic Structure
 
+```json
 {
   "Settings": { ... },
   "Proxy": { ... },
@@ -124,6 +132,7 @@ scrapling install
   "channels": [ ... ],
   "channels2": [ ... ]
 }
+```
 
 ### Settings
 
@@ -165,6 +174,7 @@ scrapling install
 
 ## 📁 Project Structure
 
+```text
 xfeeder/
 ├── main.js                  # Application entry point
 ├── config.json.example      # Configuration template
@@ -198,6 +208,7 @@ xfeeder/
     ├── image.png
     ├── image2.png
     └── image3.png
+```
 
 ## 🔌 Plugin System (Workshop)
 
@@ -205,6 +216,7 @@ XFeeder supports custom parsers through the Workshop plugin system. Plugins are 
 
 ### Quick Example
 
+```js
 // src/workshop/my-custom.plugin.js
 module.exports = {
   id: "my-custom",
@@ -232,6 +244,7 @@ module.exports = {
     });
   }
 };
+```
 
 ### Plugin API
 

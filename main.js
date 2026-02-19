@@ -1,10 +1,11 @@
-// main.js - XFeeder 2.0 Main Application
+// main.js - XFeeder 2.1 Main Application
 // Pipeline: Workshop → Modules → Axios → RSSParser → Error
 
 const fs = require("fs");
 const { sendMessage } = require("./src/message");
 const { download } = require("./src/parsers/downloader");
 const { getWithFallback, postWithFallback } = require("./src/client");
+const { loadConfig } = require("./src/config-loader");
 
 // Parser imports
 const { parseRSS } = require("./src/parsers/rss");
@@ -15,12 +16,11 @@ const { parseJSON } = require("./src/parsers/json");
 const { parseApiX } = require("./src/parsers/api_x");
 const { parseFallback } = require("./src/parsers/fallback");
 const { parseDiscord } = require("./src/parsers/discord");
-const { parseFreshRSS, isFreshRSSUrl } = require("./src/parsers/freshrss");
 
 // ------------------------------------------------------------
 // CONFIGURATION
 // ------------------------------------------------------------
-const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
+const config = loadConfig("./config.json");
 
 // ------------------------------------------------------------
 // WORKSHOP (optional)
@@ -29,10 +29,11 @@ let workshopParsers = [];
 try {
   const { loadWorkshop } = require("./src/workshop/loader");
   const workshopEnabled = config.Workshop?.Enabled !== false;
+  const workshopDir = config.Workshop?.Dir || "src/workshop";
   if (workshopEnabled) {
     const loaded = loadWorkshop(
       { get: getWithFallback, send: sendMessage, utils: {}, config },
-      "src/workshop"
+      workshopDir
     );
     workshopParsers = loaded.parsers || [];
     console.log(`[Workshop] Parsers loaded: ${workshopParsers.length}`);
@@ -90,14 +91,9 @@ function normalizeLink(u) {
 }
 
 /**
- * Generates cache key for entry (guid for FreshRSS, normalized link for others)
+ * Generates cache key for entry
  */
 function getCacheKey(item) {
-  // For FreshRSS use guid (freshrss-{id})
-  if (item.guid && item.guid.startsWith("freshrss-")) {
-    return item.guid;
-  }
-  // For others — normalized link
   return normalizeLink(item.link || item.guid || "");
 }
 
@@ -121,32 +117,13 @@ const Parser = require("rss-parser");
 const parser = new Parser({
   timeout: 10000,
   headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.0",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.1",
     "Accept": "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
   },
 });
 
 async function fetchFeed(url) {
   let items = [];
-
-  // FreshRSS - handle before everything else
-  if (isFreshRSSUrl(url)) {
-    try {
-      const httpClient = {
-        get: getWithFallback,
-        post: postWithFallback
-      };
-      const parsed = await parseFreshRSS(url, { http: httpClient });
-      if (parsed && parsed.length) {
-        console.log(`[Parser:FreshRSS] Success (${parsed.length}) → ${url}`);
-        return parsed;
-      }
-      return [];
-    } catch (err) {
-      console.error(`[Parser:FreshRSS] Error: ${err.message}`);
-      return [];
-    }
-  }
 
   // 0) Downloader — single fetch attempt (reuse body in later steps)
   //    - for non-http/https: ok:false, reason: UNSUPPORTED_PROTOCOL
@@ -377,7 +354,7 @@ async function checkFeedsForChannel(index, channelConfig) {
     }
   }
 
-  // --- RSS/ATOM/YT/FreshRSS (sequential) ---
+  // --- RSS/ATOM/YT (sequential) ---
   if (channelConfig.RSS && Array.isArray(channelConfig.RSS)) {
     for (const feedUrl of channelConfig.RSS) {
       try {
@@ -386,7 +363,7 @@ async function checkFeedsForChannel(index, channelConfig) {
 
         if (!cache[index][feedUrl]) cache[index][feedUrl] = [];
 
-        // Use getCacheKey() for proper deduplication (FreshRSS vs others)
+        // Use getCacheKey() for proper deduplication
         const newItems = items.filter((i) => {
           const key = getCacheKey(i);
           return key && !cache[index][feedUrl].includes(key);
@@ -429,40 +406,52 @@ async function checkFeedsForChannel(index, channelConfig) {
 let allChannels = [];
 for (const key of Object.keys(config)) {
   if (key.toLowerCase().startsWith("channels")) {
-    allChannels = allChannels.concat(config[key]);
-  }
-}
-console.log(`[System] Channels to process: ${allChannels.length}`);
-
-let lastCheck = new Array(allChannels.length).fill(0);
-let currentIndex = 0;
-const delayBetweenChannels = 30000;
-
-async function processNextChannel() {
-  const channel = allChannels[currentIndex];
-  const now = Date.now();
-  const minutes = channel.TimeChecker || 30;
-  const minDelay = minutes * 60 * 1000;
-
-  if (now - lastCheck[currentIndex] >= minDelay) {
-    console.log(
-      `[Queue] Checking channel ${currentIndex + 1}/${allChannels.length}`
-    );
-    try {
-      await checkFeedsForChannel(currentIndex, channel);
-      lastCheck[currentIndex] = Date.now();
-    } catch (err) {
-      console.error(
-        `[Queue] Channel ${currentIndex + 1} error:`,
-        err.message
-      );
+    if (Array.isArray(config[key])) {
+      allChannels = allChannels.concat(config[key]);
     }
   }
-
-  currentIndex = (currentIndex + 1) % allChannels.length;
-  setTimeout(processNextChannel, delayBetweenChannels);
 }
-processNextChannel();
+allChannels = allChannels.filter((ch) => ch && typeof ch === "object");
+console.log(`[System] Channels to process: ${allChannels.length}`);
+if (allChannels.length === 0) {
+  console.error("[System] No valid channels configured. Queue not started.");
+} else {
+  let lastCheck = new Array(allChannels.length).fill(0);
+  let currentIndex = 0;
+  const delayBetweenChannels = 30000;
+
+  async function processNextChannel() {
+    const channel = allChannels[currentIndex];
+    if (!channel) {
+      currentIndex = (currentIndex + 1) % allChannels.length;
+      setTimeout(processNextChannel, delayBetweenChannels);
+      return;
+    }
+
+    const now = Date.now();
+    const minutes = channel.TimeChecker || 30;
+    const minDelay = minutes * 60 * 1000;
+
+    if (now - lastCheck[currentIndex] >= minDelay) {
+      console.log(
+        `[Queue] Checking channel ${currentIndex + 1}/${allChannels.length}`
+      );
+      try {
+        await checkFeedsForChannel(currentIndex, channel);
+        lastCheck[currentIndex] = Date.now();
+      } catch (err) {
+        console.error(
+          `[Queue] Channel ${currentIndex + 1} error:`,
+          err.message
+        );
+      }
+    }
+
+    currentIndex = (currentIndex + 1) % allChannels.length;
+    setTimeout(processNextChannel, delayBetweenChannels);
+  }
+  processNextChannel();
+}
 
 // ------------------------------------------------------------
 // SHUTDOWN

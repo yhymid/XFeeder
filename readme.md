@@ -3,14 +3,14 @@
 > Modular RSS/Atom/JSON feed reader for Discord webhooks with extensible plugin system.
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/)
-[![Version](https://img.shields.io/badge/Version-2.0-blue)](https://git.marmak.net.pl/yhymid/XFeeder)
+[![Version](https://img.shields.io/badge/Version-2.1-blue)](https://git.marmak.net.pl/yhymid/XFeeder)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ![Preview](Preview/image.png)
 
 ## ✨ Features
 
-- 📰 **Multi-format Support** — RSS 2.0, Atom, JSON Feed, FreshRSS (Fever API), custom APIs
+- 📰 **Multi-format Support** — RSS 2.0, Atom, JSON Feed, custom APIs
 - 🎬 **YouTube Integration** — Dedicated parser with automatic thumbnails
 - 💬 **Discord Message Forwarding** — Monitor and forward messages between channels
 - 🔌 **Plugin System (Workshop)** — Create custom parsers for any data source
@@ -41,12 +41,9 @@
 
 ### Installation
 
-```
 git clone https://git.marmak.net.pl/yhymid/XFeeder
 cd xfeeder
 npm install
-node main.js
-```
 
 ### Configuration
 
@@ -54,8 +51,12 @@ node main.js
 
 cp config.json.example config.json
 
+Optional (recommended for secrets):
+
+cp .env.example .env
+
 2. Edit config.json with your settings:
-```json
+
 {
   "Settings": {
     "Logs": false
@@ -73,12 +74,48 @@ cp config.json.example config.json
     }
   ]
 }
+
+### Running
+
+npm start
+# or
+node main.js
+
+## 🛡️ Advanced: Scrapling Integration (Optional)
+
+XFeeder supports [Scrapling](https://scrapling.readthedocs.io/) for advanced HTML scraping with Cloudflare bypass.
+
+### When to Use
+- Feed behind Cloudflare protection
+- Dynamic HTML content (JavaScript-heavy)
+- Website returns HTML instead of RSS/Atom
+
+### Setup
+```bash
+# Install Scrapling
+pip install "scrapling[all]"
+scrapling install
+```
+
+### Configuration
+```json
+{
+  "Scrapling": {
+    "Enabled": true,
+    "AutoFallback": true,
+    "PerUrlConfig": {
+      "https://protected-blog.com": {
+        "solveCaptcha": true
+      }
+    }
+  }
+}
 ```
 
 ## ⚙️ Configuration Reference
 
 ### Basic Structure
-```json
+
 {
   "Settings": { ... },
   "Proxy": { ... },
@@ -87,7 +124,6 @@ cp config.json.example config.json
   "channels": [ ... ],
   "channels2": [ ... ]
 }
-```
 
 ### Settings
 
@@ -127,12 +163,48 @@ cp config.json.example config.json
 | Enabled | boolean | true | Enable plugin system |
 | Dir | string | src/workshop | Plugin directory |
 
+## 📁 Project Structure
+
+xfeeder/
+├── main.js                  # Application entry point
+├── config.json.example      # Configuration template
+├── package.json
+├── LICENSE
+├── documentation.md         # Full documentation
+│
+├── src/
+│   ├── client.js            # HTTP client (proxy, fallbacks, caching)
+│   ├── message.js           # Discord webhook sender (Components V2)
+│   │
+│   ├── parsers/             # Built-in feed parsers
+│   │   ├── rss.js           # RSS 2.0 parser
+│   │   ├── atom.js          # Atom parser
+│   │   ├── youtube.js       # YouTube feed parser
+│   │   ├── json.js          # JSON Feed parser
+│   │   ├── xml.js           # Universal XML parser
+│   │   ├── api_x.js         # Generic API parser
+│   │   ├── discord.js       # Discord message parser
+│   │   ├── fallback.js      # HTML scraping fallback
+│   │   ├── downloader.js    # HTTP downloader
+│   │   └── utils.js         # Shared utilities
+│   │
+│   └── workshop/            # Plugin system
+│       ├── loader.js        # Plugin loader
+│       ├── documentation.md # Plugin development guide
+│       └── *.plugin.js      # Your custom plugins
+│
+├── cache.json               # Deduplication cache (auto-generated)
+└── Preview/                 # Screenshots for README
+    ├── image.png
+    ├── image2.png
+    └── image3.png
+
 ## 🔌 Plugin System (Workshop)
 
 XFeeder supports custom parsers through the Workshop plugin system. Plugins are JavaScript files ending with .plugin.js placed in the src/workshop/ directory.
 
 ### Quick Example
-```js
+
 // src/workshop/my-custom.plugin.js
 module.exports = {
   id: "my-custom",
@@ -160,7 +232,6 @@ module.exports = {
     });
   }
 };
-```
 
 ### Plugin API
 
@@ -178,7 +249,7 @@ For detailed plugin development guide, see src/workshop/documentation.md
 
 ## 📸 Preview
 
-| Feed Messages | Feed Messages | Feed Messages |
+| Feed Messages | YouTube Integration | Discord Forwarding |
 |---------------|--------------------|--------------------|
 | ![Preview 1](Preview/image.png) | ![Preview 2](Preview/image2.png) | ![Preview 3](Preview/image3.png) |
 
@@ -190,7 +261,6 @@ For detailed plugin development guide, see src/workshop/documentation.md
 | Atom | ✅ Full | GitHub, Stack Overflow, etc. |
 | JSON Feed | ✅ Full | jsonfeed.org specification |
 | YouTube | ✅ Full | Channel/playlist feeds with thumbnails |
-| FreshRSS | ✅ Full | Via Fever API |
 | Generic API | ✅ Partial | Auto-detection of common patterns |
 | HTML Scraping | ⚠️ Fallback | Meta tags extraction |
 
@@ -215,6 +285,24 @@ For detailed plugin development guide, see src/workshop/documentation.md
 - Add comments for complex logic
 - Test with multiple feed types
 - Update documentation for new features
+
+## 📝 Changelog
+
+See `CHANGELOG.md` for full release notes.
+
+### v2.1 (Current)
+- Removed FreshRSS support and parser
+- Added `.env` placeholder resolution in config (`${ENV_VAR}`)
+- Added global Scrapling mode (`ForceGlobal`) and expanded options
+- Hardened Scrapling command execution and mode validation
+
+### v2.0
+- Complete rewrite of feed processing pipeline
+- New Downloader module for unified HTTP handling
+- Discord Components V2 message format
+- Improved caching with link normalization
+- Workshop plugin system with KV storage
+- Better error handling and logging
 
 ## 📄 License
 

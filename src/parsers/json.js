@@ -14,7 +14,7 @@ async function parseJSON(feedUrl, httpClient) {
     const res = await httpClient.get(feedUrl, {
       headers: {
         Accept: "application/feed+json, application/json, text/json;q=0.9,*/*;q=0.8",
-        "User-Agent": "XFeeder/2.0 (JSON Parser)",
+        "User-Agent": "XFeeder/2.1 (JSON Parser)",
       },
       timeout: 15000,
     });

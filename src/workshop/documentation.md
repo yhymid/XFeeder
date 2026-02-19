@@ -1,4 +1,4 @@
-# XFeeder 2.0 Workshop — How to Write Custom Plugins
+# XFeeder 2.1 Workshop — How to Write Custom Plugins
 
 This guide provides a simple, practical tutorial for creating XFeeder plugins. Starting with "Quick Start", followed by API explanation, ready-to-use templates, and common troubleshooting. Everything designed to get your first plugin running in 3-5 minutes.
 

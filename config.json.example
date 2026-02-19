@@ -4,9 +4,9 @@
   },
 
   "Auth": {
-    "Token": "YOUR_DISCORD_USER_TOKEN_HERE",
-    "x-super-properties": "YOUR_X_SUPER_PROPERTIES_HERE",
-    "cookie": "YOUR_COOKIE_HERE"
+    "Token": "${DISCORD_AUTH_TOKEN}",
+    "x-super-properties": "${DISCORD_X_SUPER_PROPERTIES}",
+    "cookie": "${DISCORD_COOKIE}"
   },
 
   "Workshop": {
@@ -19,17 +19,62 @@
     "Url": "http://127.0.0.1:8080"
   },
 
-  "FreshRSS": {
-    "Enabled": false,
-    "Url": "https://your-freshrss-instance.com",
-    "Username": "your_username",
-    "Password": "your_password",
-    "feverKey": "your_fever_api_key_here"
+    "Scrapling": {
+    "Enabled": true,
+    "ForceGlobal": false,
+    "Comment": "Requires: pip install 'scrapling[all]' && scrapling install",
+    "AutoFallback": true,
+    "PreferredMode": "cli",
+    "DefaultFetchMode": "stealthy-fetch",
+    "FallbackStatusCodes": [403, 429, 503],
+    
+    "DefaultOptions": {
+      "headless": true,
+      "solveCaptcha": false,
+      "timeout": 60,
+      "wait": 0,
+      "disableResources": true,
+      "networkIdle": false,
+      "waitSelector": null,
+      "waitSelectorState": null,
+      "blockedDomains": [],
+      "retries": 3,
+      "retryDelay": 1
+    },
+    
+    "PerUrlConfig": {
+      "https://protected-site.com/feed": {
+        "enabled": true,
+        "mode": "stealthy-fetch",
+        "solveCaptcha": true,
+        "networkIdle": true,
+        "waitSelector": ".content-ready",
+        "waitSelectorState": "visible",
+        "blockedDomains": ["ads.example.com", "tracker.example.com"],
+        "retries": 3,
+        "retryDelay": 1,
+        "htmlParseOptions": {
+          "itemSelector": "article",
+          "titleSelector": "h2",
+          "linkSelector": "a.read-more"
+        }
+      },
+      "https://some-cloudflare-site.com": {
+        "enabled": true,
+        "mode": "stealthy-fetch",
+        "solveCaptcha": true,
+        "networkIdle": true,
+        "wait": 1500,
+        "timeout": 90,
+        "retries": 5,
+        "retryDelay": 2
+      }
+    }
   },
 
   "channels": [
     {
-      "Webhook": "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
+      "Webhook": "${DISCORD_WEBHOOK_MAIN}",
       "Thread": null,
       "RSS": [
         "https://example.com/rss",
@@ -43,11 +88,10 @@
 
   "channels2": [
     {
-      "Webhook": "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
+      "Webhook": "${DISCORD_WEBHOOK_MAIN}",
       "Thread": null,
       "RSS": [
-        "https://github.com/user/repo/commits.atom",
-        "freshrss://all"
+        "https://github.com/user/repo/commits.atom"
       ],
       "TimeChecker": 60,
       "RequestSend": 2
@@ -55,7 +99,7 @@
     {
       "Discord": {
         "GuildID": "YOUR_GUILD_ID",
-        "Webhook": "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
+        "Webhook": "${DISCORD_WEBHOOK_MAIN}",
         "Thread": null,
         "Limit": 5,
         "ChannelIDs": ["CHANNEL_ID_1", "CHANNEL_ID_2"],

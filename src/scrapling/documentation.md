@@ -1,15 +1,25 @@
+</details>
+
+---
+
+## 🔧 Pliki do ZMIANY (ISTNIEJĄCE)
+
+### 8. `src/parsers/downloader.js` - ZMIEŃ CAŁY PLIK
+
+**Lokalizacja:** `src/parsers/downloader.js`
+
+**Akcja:** Zastąp CAŁY obecny kod tym nowym kodem:
+
+<details>
+<summary>Kliknij aby rozwinąć pełny nowy downloader.js</summary>
+
+```javascript
 // src/parsers/downloader.js - HTTP downloader with Scrapling integration
 "use strict";
 
 const { getWithFallback } = require("../client");
 const { getScrapling } = require("../scrapling");
 
-/**
- * Builds Accept header based on content type hint
- * 
- * @param {string} accept - Content type hint: 'auto', 'xml', 'rss', 'atom', 'json', 'html'
- * @returns {string} Accept header value
- */
 function buildAccept(accept) {
   switch ((accept || "auto").toLowerCase()) {
     case "xml":
@@ -26,33 +36,24 @@ function buildAccept(accept) {
   }
 }
 
-/**
- * Check if response indicates protection that Scrapling can bypass
- * 
- * @param {object} response - Response object or error
- * @returns {boolean} True if should try Scrapling
- */
 function shouldTryScrapling(response) {
   if (!response) return false;
   
   const scrapling = getScrapling();
   if (!scrapling.enabled) return false;
   
-  // Check status codes
   const status = response?.status || response?.response?.status;
   if (scrapling.utils.isProtectedStatus(status)) {
     console.log(`[Downloader] Status ${status} detected - will try Scrapling`);
     return true;
   }
   
-  // Check for Cloudflare headers
   const headers = response?.headers || response?.response?.headers;
   if (headers && scrapling.utils.isCloudflareProtected(headers)) {
     console.log('[Downloader] Cloudflare detected - will try Scrapling');
     return true;
   }
   
-  // Check for specific error messages
   const errorMessage = response?.message || response?.response?.data || '';
   const protectionIndicators = [
     'cloudflare',
@@ -78,28 +79,18 @@ function shouldTryScrapling(response) {
   return false;
 }
 
-/**
- * Try to fetch with Scrapling
- * 
- * @param {string} url - URL to fetch
- * @param {object} opts - Original options
- * @returns {Promise<object>} Result object
- */
 async function fetchWithScrapling(url, opts = {}) {
   const scrapling = getScrapling();
   
-  // Get Scrapling config for this URL
   const scraplingConfig = scrapling.config.getUrlConfig(url);
   
-  // Merge with any explicit Scrapling options
   const scraplingOptions = {
     ...scraplingConfig,
     ...(opts.scrapling || {}),
     headers: opts.headers || {},
-    timeout: resolveScraplingTimeout(opts.timeout, scraplingConfig.timeout),
+    timeout: Math.floor((opts.timeout || 30000) / 1000),
   };
   
-  // Add proxy if configured
   const proxyUrl = opts.proxy || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
   if (proxyUrl) {
     scraplingOptions.proxy = proxyUrl;
@@ -114,10 +105,8 @@ async function fetchWithScrapling(url, opts = {}) {
     
     console.log(`[Downloader] Scrapling success in ${elapsed}ms`);
     
-    // Parse content type from HTML if possible
     let contentType = 'text/html';
     if (response.html) {
-      // Check if it's actually XML/RSS/Atom
       const format = scrapling.utils.detectFeedFormat(response.html);
       if (format === 'rss') contentType = 'application/rss+xml';
       else if (format === 'atom') contentType = 'application/atom+xml';
@@ -138,7 +127,6 @@ async function fetchWithScrapling(url, opts = {}) {
   } catch (err) {
     console.error(`[Downloader] Scrapling failed: ${err.message}`);
     
-    // Return error info for upstream handling
     return {
       ok: false,
       error: err,
@@ -147,30 +135,7 @@ async function fetchWithScrapling(url, opts = {}) {
   }
 }
 
-function resolveScraplingTimeout(inputTimeout, configTimeout) {
-  // Downloader timeout is usually provided in ms. Scrapling wrappers expect seconds.
-  if (typeof inputTimeout === 'number' && Number.isFinite(inputTimeout) && inputTimeout > 0) {
-    if (inputTimeout > 1000) return Math.max(1, Math.floor(inputTimeout / 1000));
-    return Math.floor(inputTimeout);
-  }
-  if (typeof configTimeout === 'number' && Number.isFinite(configTimeout) && configTimeout > 0) {
-    return Math.floor(configTimeout);
-  }
-  return 60;
-}
-
-/**
- * Downloads URL content with automatic Scrapling fallback
- * - Handles 304 (not modified) as success with notModified: true
- * - For non-http/https schemes returns ok:false with reason: "UNSUPPORTED_PROTOCOL"
- * - Automatically tries Scrapling on protection/errors
- *
- * @param {string} url - URL to download
- * @param {object} opts - Options: accept, headers, timeout, useScrapling
- * @returns {Promise<object>} Result object with ok, status, headers, data, contentType, notModified, reason, error
- */
 async function download(url, opts = {}) {
-  // Guard: non-http/https schemes
   let u;
   try {
     u = new URL(url);
@@ -178,12 +143,10 @@ async function download(url, opts = {}) {
       return { ok: false, reason: "UNSUPPORTED_PROTOCOL" };
     }
   } catch (err) {
-    // Invalid URL -> let getWithFallback throw a readable error
     console.error(`[Downloader] Invalid URL: ${url}`);
     return { ok: false, error: err, reason: "INVALID_URL" };
   }
 
-  // Check if Scrapling should be used explicitly for this URL
   const scrapling = getScrapling();
   const forceScrapling = opts.useScrapling || 
                         (scrapling.enabled && scrapling.config.shouldUseScrapling(url));
@@ -192,11 +155,9 @@ async function download(url, opts = {}) {
     console.log(`[Downloader] Scrapling explicitly requested for ${url}`);
     const result = await fetchWithScrapling(url, opts);
     if (result.ok) return result;
-    // If Scrapling failed and it was forced, don't try normal fetch
     if (opts.useScrapling) {
       return result;
     }
-    // Otherwise fall through to try normal fetch
   }
 
   const headers = {
@@ -204,7 +165,6 @@ async function download(url, opts = {}) {
     ...(opts.headers || {}),
   };
 
-  // Add conditional request headers if provided
   if (opts.etag) {
     headers['If-None-Match'] = opts.etag;
   }
@@ -219,7 +179,6 @@ async function download(url, opts = {}) {
       responseType: opts.responseType
     });
     
-    // Treat 304 as "no changes" (not an error)
     if (res?.status === 304) {
       return {
         ok: true,
@@ -230,13 +189,11 @@ async function download(url, opts = {}) {
       };
     }
 
-    // Check if response indicates protection
     if (shouldTryScrapling(res)) {
       const scraplingResult = await fetchWithScrapling(url, opts);
       if (scraplingResult.ok) {
         return scraplingResult;
       }
-      // If Scrapling also failed, return original response
       console.log('[Downloader] Scrapling failed, returning original response');
     }
 
@@ -251,7 +208,6 @@ async function download(url, opts = {}) {
     };
     
   } catch (err) {
-    // Check if error indicates protection
     if (shouldTryScrapling(err)) {
       const scraplingResult = await fetchWithScrapling(url, opts);
       if (scraplingResult.ok) {
@@ -259,7 +215,6 @@ async function download(url, opts = {}) {
       }
     }
     
-    // Return original error
     return {
       ok: false,
       error: err,
@@ -268,18 +223,9 @@ async function download(url, opts = {}) {
   }
 }
 
-/**
- * Parse HTML content to feed items if needed
- * Used when Scrapling returns HTML that needs to be converted to feed format
- * 
- * @param {string} data - HTML content
- * @param {string} url - Original URL for context
- * @returns {Array} Feed items or null if not HTML
- */
 function parseHtmlToFeedItems(data, url) {
   const scrapling = getScrapling();
   
-  // Check if it's HTML that needs parsing
   if (!data || typeof data !== 'string') return null;
   
   const format = scrapling.utils.detectFeedFormat(data);
@@ -287,11 +233,9 @@ function parseHtmlToFeedItems(data, url) {
   
   console.log('[Downloader] Converting HTML to feed items');
   
-  // Get custom selectors from config if available
   const config = scrapling.config.getUrlConfig(url);
   const parseOptions = config.htmlParseOptions || {};
   
-  // Parse HTML to feed items
   const items = scrapling.parseHtmlToFeed(data, parseOptions);
   
   if (items.length > 0) {
@@ -303,17 +247,9 @@ function parseHtmlToFeedItems(data, url) {
   return items;
 }
 
-/**
- * Enhanced download with automatic HTML to feed conversion
- * 
- * @param {string} url - URL to download
- * @param {object} opts - Download options
- * @returns {Promise<object>} Result with data and possible feedItems
- */
 async function downloadEnhanced(url, opts = {}) {
   const result = await download(url, opts);
   
-  // If Scrapling was used and returned HTML, try to convert to feed
   if (result.ok && result.scrapling && result.data) {
     const feedItems = parseHtmlToFeedItems(result.data, url);
     if (feedItems && feedItems.length > 0) {
@@ -325,18 +261,9 @@ async function downloadEnhanced(url, opts = {}) {
   return result;
 }
 
-// Cache for ETags and Last-Modified headers
 const metadataCache = new Map();
 
-/**
- * Download with caching support
- * 
- * @param {string} url - URL to download
- * @param {object} opts - Download options
- * @returns {Promise<object>} Result object
- */
 async function downloadWithCache(url, opts = {}) {
-  // Get cached metadata
   const cached = metadataCache.get(url);
   
   if (cached) {
@@ -346,7 +273,6 @@ async function downloadWithCache(url, opts = {}) {
   
   const result = await downloadEnhanced(url, opts);
   
-  // Update cache if successful
   if (result.ok && !result.notModified) {
     const etag = result.headers?.etag || result.headers?.ETag;
     const lastModified = result.headers?.['last-modified'] || result.headers?.['Last-Modified'];
@@ -359,7 +285,6 @@ async function downloadWithCache(url, opts = {}) {
   return result;
 }
 
-// Export all functions
 module.exports = { 
   download,
   downloadEnhanced,

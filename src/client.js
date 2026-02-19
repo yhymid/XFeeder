@@ -1,13 +1,13 @@
 // src/client.js - HTTP Client with proxy support and UA fallbacks
 const axios = require("axios");
-const fs = require("fs");
+const { loadConfig } = require("./config-loader");
 
 let proxyEnabled = false;
 let proxyUrl = null;
 
 // Load proxy configuration
 try {
-  const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
+  const config = loadConfig("./config.json");
   if (config.Proxy && config.Proxy.Enabled && config.Proxy.Url) {
     proxyEnabled = true;
     proxyUrl = config.Proxy.Url;

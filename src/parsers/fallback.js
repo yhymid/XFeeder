@@ -16,7 +16,7 @@ async function parseFallback(feedUrl, httpClient) {
     const res = await httpClient.get(feedUrl, {
       headers: {
         Accept: "text/html,application/xhtml+xml",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.0 (Fallback)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.1 (Fallback)",
       },
       timeout: 10000,
     });

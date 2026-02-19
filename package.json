@@ -1,6 +1,6 @@
 {
   "name": "xfeeder",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Modular RSS/Atom/JSON feed reader for Discord webhooks with extensible plugin system.",
   "main": "main.js",
   "scripts": {
@@ -15,10 +15,9 @@
     "feed-reader",
     "bot",
     "automation",
-    "freshrss",
     "youtube"
   ],
-  "author": "YOUR_NAME",
+  "author": "!Yhym's",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,12 +1,12 @@
-# XFeeder 2.0 — Complete Documentation
+# XFeeder 2.1 — Complete Documentation
 
 Modern, modular RSS/Atom/JSON/API feed reader and Discord message forwarder with sequential pipeline, stable HTTP client, plugin extensions (Workshop), and clean configuration.
 
-This document describes XFeeder 2.0: how it works, configuration, plugin development, and troubleshooting.
+This document describes XFeeder 2.1: how it works, configuration, plugin development, and troubleshooting.
 
 ## Table of Contents
 
-- 0. What's New in 2.0
+- 0. What's New in 2.1
 - 1. What is XFeeder and What Can It Do
 - 2. Architecture and Data Flow
 - 3. Installation and Running
@@ -26,13 +26,31 @@ This document describes XFeeder 2.0: how it works, configuration, plugin develop
 
 ---
 
-## 0. What's New in 2.0
+## 0. What's New in 2.1
+
+- **FreshRSS removed**:
+  - FreshRSS parser and `freshrss://` scheme support removed from runtime
+  - FreshRSS configuration removed from templates
+
+- **Environment variable placeholders in config**:
+  - Supports `${ENV_VAR}` values loaded from `.env`
+  - Helps keep tokens/webhooks outside `config.json`
+
+- **Scrapling global mode and hardening**:
+  - New `Scrapling.ForceGlobal` toggle
+  - Improved CLI/shell safety and argument handling
+  - Added compatibility warning for older Scrapling versions
+
+- **Documentation and config cleanup**:
+  - Updated examples to current parser set and config structure
+
+## 0.1 Baseline 2.x
 
 - **Downloader (src/parsers/downloader.js)** at the beginning of the pipeline:
   - Single unified HTTP fetch (proxy/UA/If-None-Match/If-Modified-Since)
   - Data (body + headers) passed to downstream parsers and plugins
 
-- **Guard for non-HTTP schemes** (e.g., quest://, freshrss://):
+- **Guard for non-HTTP schemes** (e.g., quest://):
   - Non-HTTP URLs don't enter HTTP layer; Workshop plugins handle them first
 
 - **RSSParser.parseURL → parseString**:
@@ -89,14 +107,14 @@ This document describes XFeeder 2.0: how it works, configuration, plugin develop
 - postWithFallback(url, data, opts?) for POST requests
 
 **src/parsers/*:**
-- Built-in parsers (YouTube, XML, Atom, JSON, RSS/regex, Fallback/HTML, Discord API, FreshRSS)
+- Built-in parsers (YouTube, XML, Atom, JSON, RSS/regex, Fallback/HTML, Discord API)
 
 **src/parsers/downloader.js:**
 - Initial HTTP GET (single location), returns status, body, headers (no temp files)
 
 **src/message.js:**
 - Building Components V2 payload
-- No fallback to classic embeds in 2.0 (intentionally removed)
+- No fallback to classic embeds in 2.x (intentionally removed)
 
 **src/workshop/*:**
 - Loader (.plugin.js), plugins registering parsers
@@ -165,7 +183,6 @@ xfeeder/
 │   │   ├── youtube.js           # YouTube Atom parser
 │   │   ├── api_x.js             # Generic API parser
 │   │   ├── discord.js           # Discord messages parser
-│   │   ├── freshrss.js          # FreshRSS (Fever API) parser
 │   │   ├── fallback.js          # HTML scraping fallback
 │   │   ├── downloader.js        # HTTP downloader
 │   │   └── utils.js             # Shared utilities
@@ -195,7 +212,6 @@ xfeeder/
   "Auth": { ... },
   "Proxy": { ... },
   "Http": { ... },
-  "FreshRSS": { ... },
   "Workshop": { ... },
   "channels": [ ... ],
   "channels2": [ ... ]
@@ -233,16 +249,6 @@ xfeeder/
 | AcceptEncoding | string | Accept-Encoding header value |
 | Cookies | object | Per-host cookies: { "host.com": "cookie=value;" } |
 | ExtraHeaders | object | Per-URL pattern headers |
-
-### FreshRSS (optional)
-
-| Key | Type | Description |
-|-----|------|-------------|
-| Enabled | boolean | Enable FreshRSS support |
-| Url | string | FreshRSS instance URL |
-| Username | string | FreshRSS username |
-| Password | string | FreshRSS password |
-| feverKey | string | Fever API key (alternative to user/pass) |
 
 ### Workshop (optional)
 
@@ -349,7 +355,7 @@ postWithFallback(url, data, opts?)
 - **RSS/Atom/JSON**: title + snippet + media + author/date + button
 
 ### Notes:
-- No fallback to classic embeds in 2.0 (intentional simplification)
+- No fallback to classic embeds in 2.x (intentional simplification)
 - Delay between sends: DelayBetweenSendsMs (default 350ms)
 
 ---
@@ -363,7 +369,6 @@ postWithFallback(url, data, opts?)
 ### Deduplication:
 - **Feeds**: by normalized link
 - **Discord**: by guid (message ID)
-- **FreshRSS**: by guid (freshrss-{id})
 
 ### http-meta.json (optional):
 - Stores ETag/Last-Modified metadata locally
@@ -391,7 +396,7 @@ postWithFallback(url, data, opts?)
 | api.kv | Key-value storage per plugin |
 | api.registerParser | Parser registration function |
 
-### Context (ctx) in 2.0:
+### Context (ctx) in 2.x:
 
 | Property | Description |
 |----------|-------------|
@@ -556,14 +561,6 @@ module.exports = {
     "cookie": "YOUR_COOKIE_STRING"
   },
 
-  "FreshRSS": {
-    "Enabled": false,
-    "Url": "https://your-freshrss-instance.com",
-    "Username": "your_username",
-    "Password": "your_password",
-    "feverKey": "your_fever_api_key"
-  },
-
   "Workshop": {
     "Enabled": true,
     "Plugins": {
@@ -600,8 +597,7 @@ module.exports = {
     {
       "Webhook": "https://discord.com/api/webhooks/EEE/FFF",
       "RSS": [
-        "https://github.com/user/repo/commits.atom",
-        "freshrss://all"
+        "https://github.com/user/repo/commits.atom"
       ],
       "TimeChecker": 60,
       "RequestSend": 2
@@ -611,9 +607,9 @@ module.exports = {
 
 ---
 
-## Summary: Key Differences 2.0 vs 1.x
+## Summary: Key Differences 2.1 vs 1.x
 
-| Feature | 1.x | 2.0 |
+| Feature | 1.x | 2.1 |
 |---------|-----|-----|
 | HTTP handling | Multiple fetch points | Downloader at pipeline start |
 | Non-HTTP schemes | Mixed handling | Workshop-only |
@@ -624,6 +620,9 @@ module.exports = {
 | Send delay | None | 350ms micro-delay |
 | Pipeline | Partially parallel | Fully sequential |
 | Channel delay | Variable | Fixed 30s between channels |
+| Secrets in config | Plain values | `${ENV_VAR}` + `.env` placeholders |
+| FreshRSS parser | Available | Removed |
+| Scrapling mode | Per URL / fallback | Adds global force mode |
 
 ---
 

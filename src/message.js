@@ -3,7 +3,7 @@ const axios = require("axios");
 
 /**
  * Sends an entry to Discord channel via webhook (Components V2).
- * No fallback to classic embeds (removed in v2.0).
+ * No fallback to classic embeds (removed in v2.x line).
  *
  * @param {string} webhookUrl - Full webhook URL
  * @param {string|null} threadId - Thread ID or "null"

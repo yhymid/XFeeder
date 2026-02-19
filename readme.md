@@ -42,7 +42,7 @@
 ### Installation
 
 ```bash
-git clone https://git.marmak.net.pl/yhymid/XFeeder
+git clone https://github.com/yhymid/XFeeder
 cd xfeeder
 npm install
 ```

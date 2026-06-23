@@ -79,3 +79,42 @@ test("channel runner retries only the failed target on the next pass", async () 
   assert.deepEqual(channelCache["https://example.com/feed.xml::matrix"], ["https://example.com/post"]);
   assert.equal(cacheStore.getSaveCount(), 2);
 });
+
+test("channel runner handles webhook-only feeds when Matrix config is null", async () => {
+  const cacheStore = createCacheStoreMock();
+  let webhookCalls = 0;
+
+  const { checkFeedsForChannel } = createChannelRunner({
+    cacheStore,
+    dryRun: false,
+    fetchFeed: async () => [{
+      title: "Webhook only entry",
+      link: "https://example.com/webhook-only",
+      guid: "https://example.com/webhook-only",
+      isoDate: "2026-01-01T00:00:00.000Z",
+    }],
+    parseDiscord: async () => [],
+    sendMessage: async () => {
+      webhookCalls += 1;
+    },
+    sendMatrixMessage: async () => {
+      throw new Error("Matrix should not be called for webhook-only channels");
+    },
+  });
+
+  await checkFeedsForChannel(0, {
+    cacheKey: "channel:webhook-only",
+    name: "webhook-only",
+    sourceKey: "channels",
+    Webhook: "https://discord.com/api/webhooks/test",
+    Thread: null,
+    Matrix: null,
+    RSS: ["https://example.com/feed.xml"],
+    RequestSend: 5,
+  });
+
+  const channelCache = cacheStore.getChannelBucket("channel:webhook-only");
+  assert.equal(webhookCalls, 1);
+  assert.deepEqual(channelCache["https://example.com/feed.xml::webhook"], ["https://example.com/webhook-only"]);
+  assert.equal(cacheStore.getSaveCount(), 1);
+});

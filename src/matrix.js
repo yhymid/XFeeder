@@ -22,13 +22,14 @@ function truncate(value, maxLength = MAX_BODY_LENGTH) {
 }
 
 function normalizeMatrixConfig(matrixConfig = {}) {
-  const timeout = Number(matrixConfig.Timeout || matrixConfig.TimeoutMs);
+  const source = matrixConfig && typeof matrixConfig === "object" ? matrixConfig : {};
+  const timeout = Number(source.Timeout || source.TimeoutMs);
   return {
-    enabled: matrixConfig.Enabled !== false,
-    homeserver: String(matrixConfig.Homeserver || "").replace(/\/+$/, ""),
-    accessToken: String(matrixConfig.AccessToken || "").trim(),
-    roomId: String(matrixConfig.RoomID || "").trim(),
-    msgtype: String(matrixConfig.MsgType || "m.notice").trim() || "m.notice",
+    enabled: source.Enabled !== false,
+    homeserver: String(source.Homeserver || "").replace(/\/+$/, ""),
+    accessToken: String(source.AccessToken || "").trim(),
+    roomId: String(source.RoomID || "").trim(),
+    msgtype: String(source.MsgType || "m.notice").trim() || "m.notice",
     timeout: Number.isFinite(timeout) && timeout > 0 ? Math.floor(timeout) : DEFAULT_TIMEOUT_MS,
   };
 }

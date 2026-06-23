@@ -2,110 +2,183 @@
   "Settings": {
     "Logs": false
   },
-
   "Auth": {
     "Token": "${DISCORD_AUTH_TOKEN}",
     "x-super-properties": "${DISCORD_X_SUPER_PROPERTIES}",
     "cookie": "${DISCORD_COOKIE}"
   },
-
-  "Workshop": {
-    "Enabled": false,
-    "Dir": "src/workshop"
+  "Matrix": {
+    "Enabled": true,
+    "Homeserver": "https://matrix.example.org",
+    "AccessToken": "${MATRIX_ACCESS_TOKEN}",
+    "RoomID": "!yourRoomId:matrix.example.org",
+    "MsgType": "m.notice"
   },
-
   "Proxy": {
     "Enabled": false,
     "Url": "http://127.0.0.1:8080"
   },
-
-    "Scrapling": {
+  "Scrapling": {
     "Enabled": true,
     "ForceGlobal": false,
-    "Comment": "Requires: pip install 'scrapling[all]' && scrapling install",
     "AutoFallback": true,
+    "AutoUseShellForAdvancedOptions": true,
     "PreferredMode": "cli",
-    "DefaultFetchMode": "stealthy-fetch",
-    "FallbackStatusCodes": [403, 429, 503],
-    
-    "DefaultOptions": {
-      "headless": true,
-      "solveCaptcha": false,
-      "timeout": 60,
-      "wait": 0,
-      "disableResources": true,
-      "networkIdle": false,
-      "waitSelector": null,
-      "waitSelectorState": null,
-      "blockedDomains": [],
-      "retries": 3,
-      "retryDelay": 1
+    "FallbackStatusCodes": [
+      403,
+      429,
+      503
+    ],
+    "AntiBot": {
+      "Enabled": true,
+      "LogDecisions": false,
+      "PreferStealthOnSignals": true,
+      "ModeOrder": [
+        "get",
+        "fetch",
+        "stealthy-fetch"
+      ],
+      "StatusCodes": [
+        403,
+        429,
+        503
+      ],
+      "HeaderKeys": [
+        "cf-mitigated",
+        "x-datadome",
+        "x-akamai-transformed",
+        "akamai-grn",
+        "x-sucuri-id"
+      ],
+      "BodySignatures": [
+        "just a moment",
+        "attention required",
+        "turnstile",
+        "datadome",
+        "challenge page",
+        "captcha",
+        "access denied"
+      ],
+      "TitleSignatures": [
+        "just a moment",
+        "attention required",
+        "error 1020",
+        "access denied",
+        "verify you are human"
+      ],
+      "MinBodyBytes": 200,
+      "MinConfidence": 40,
+      "TreatCloudflareAsSignal": true,
+      "MaxAttempts": 3
     },
-    
+    "DefaultOptions": {
+      "runtimeMode": "cli",
+      "extractMode": "stealthy-fetch",
+      "mode": "stealthy-fetch",
+      "headers": {},
+      "extraHeaders": {},
+      "cookies": "",
+      "auth": null,
+      "params": {},
+      "data": "",
+      "jsonData": null,
+      "followRedirects": true,
+      "verify": true,
+      "impersonate": null,
+      "stealthyHeaders": true,
+      "aiTargeted": false,
+      "headless": true,
+      "timeoutSeconds": 30,
+      "timeoutMs": 30000,
+      "maxPages": null,
+      "wait": 0,
+      "networkIdle": false,
+      "disableResources": false,
+      "dnsOverHttps": false,
+      "waitSelector": null,
+      "proxy": null,
+      "proxyRotator": null,
+      "blockAds": false,
+      "blockWebrtc": false,
+      "solveCloudflare": false,
+      "allowWebgl": true,
+      "hideCanvas": false,
+      "realChrome": false,
+      "locale": null
+    },
     "PerUrlConfig": {
       "https://protected-site.com/feed": {
         "enabled": true,
+        "runtimeMode": "cli",
+        "extractMode": "stealthy-fetch",
         "mode": "stealthy-fetch",
-        "solveCaptcha": true,
+        "solveCloudflare": true,
+        "headless": true,
+        "timeoutMs": 45000,
+        "wait": 1000,
         "networkIdle": true,
+        "disableResources": true,
+        "dnsOverHttps": true,
         "waitSelector": ".content-ready",
-        "waitSelectorState": "visible",
-        "blockedDomains": ["ads.example.com", "tracker.example.com"],
-        "retries": 3,
-        "retryDelay": 1,
+        "proxy": null,
+        "blockAds": true,
+        "blockWebrtc": true,
+        "allowWebgl": false,
+        "hideCanvas": true,
+        "realChrome": false,
+        "locale": "en-US",
+        "maxPages": 2,
+        "proxyRotator": null,
+        "extraHeaders": {
+          "Accept-Language": "en-US,en;q=0.9"
+        },
+        "antiBot": {
+          "ModeOrder": [
+            "fetch",
+            "stealthy-fetch"
+          ],
+          "MinBodyBytes": 500,
+          "MinConfidence": 50
+        },
         "htmlParseOptions": {
           "itemSelector": "article",
           "titleSelector": "h2",
           "linkSelector": "a.read-more"
         }
-      },
-      "https://some-cloudflare-site.com": {
-        "enabled": true,
-        "mode": "stealthy-fetch",
-        "solveCaptcha": true,
-        "networkIdle": true,
-        "wait": 1500,
-        "timeout": 90,
-        "retries": 5,
-        "retryDelay": 2
       }
     }
   },
-
-  "channels": [
-    {
+  "ChannelDefaults": {
+    "TimeChecker": 30,
+    "RequestSend": 5
+  },
+  "channels": {
+    "main": {
       "Webhook": "${DISCORD_WEBHOOK_MAIN}",
-      "Thread": null,
-      "RSS": [
+      "Matrix": {
+        "Enabled": true,
+        "Comment": "Per-channel Matrix can override only selected fields, e.g. RoomID",
+        "RoomID": "!roomMain:matrix.example.org"
+      },
+      "Feeds": [
         "https://example.com/rss",
         "https://example.org/feed.xml",
         "https://www.youtube.com/feeds/videos.xml?channel_id=UC_CHANNEL_ID"
-      ],
-      "TimeChecker": 30,
-      "RequestSend": 5
+      ]
     }
-  ],
-
-  "channels2": [
-    {
-      "Webhook": "${DISCORD_WEBHOOK_MAIN}",
-      "Thread": null,
-      "RSS": [
-        "https://github.com/user/repo/commits.atom"
+  },
+  "channels2": {
+    "dev": {
+      "Webhook": "${DISCORD_WEBHOOK_DEV}",
+      "Matrix": {
+        "Enabled": true,
+        "RoomID": "!roomDev:matrix.example.org"
+      },
+      "Feeds": [
+        "https://example.org/project/commits.atom"
       ],
       "TimeChecker": 60,
       "RequestSend": 2
-    },
-    {
-      "Discord": {
-        "GuildID": "YOUR_GUILD_ID",
-        "Webhook": "${DISCORD_WEBHOOK_MAIN}",
-        "Thread": null,
-        "Limit": 5,
-        "ChannelIDs": ["CHANNEL_ID_1", "CHANNEL_ID_2"],
-        "TimeChecker": 30,
-        "RequestSend": 1
-      }
     }
-  ]
+  }
 }

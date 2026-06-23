@@ -1,9 +1,6 @@
 // src/parsers/freshrss.js - FreshRSS parser via Fever API (with proper chronological order)
 const crypto = require("crypto");
-
-let freshConfig = null;
-let apiHash = null;
-let configLoaded = false;
+const { loadConfig: loadAppConfig } = require("../config-loader");
 
 /**
  * Loads FreshRSS configuration from config.json
@@ -11,26 +8,29 @@ let configLoaded = false;
  * @returns {object|null} FreshRSS config or null
  */
 function loadConfig() {
-  if (configLoaded) return freshConfig;
-  configLoaded = true;
-
   try {
-    const fs = require("fs");
-    const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
-    freshConfig = config.FreshRSS || null;
+    const config = loadAppConfig("./config.json");
+    const freshConfig = config.FreshRSS || null;
+    if (!freshConfig) return null;
 
-    if (freshConfig?.feverKey) {
-      apiHash = freshConfig.feverKey;
+    let apiHash = null;
+    const explicitKey = freshConfig?.feverKey || freshConfig?.FeverKey;
+    if (explicitKey) {
+      apiHash = explicitKey;
     } else if (freshConfig?.Username && freshConfig?.Password) {
       apiHash = crypto.createHash("md5")
         .update(`${freshConfig.Username}:${freshConfig.Password}`)
         .digest("hex");
     }
+
+    return {
+      ...freshConfig,
+      __apiHash: apiHash,
+    };
   } catch (err) {
     console.error("[FreshRSS] Configuration error:", err.message);
+    return null;
   }
-
-  return freshConfig;
 }
 
 /**
@@ -53,12 +53,12 @@ function isFreshRSSUrl(url) {
 async function feverPost(endpoint, httpClient) {
   const config = loadConfig();
   if (!config) throw new Error("Missing FreshRSS in config.json");
-  if (!apiHash) throw new Error("Missing feverKey in config.json");
+  if (!config.__apiHash) throw new Error("Missing FreshRSS feverKey/FeverKey or Username/Password.");
 
   const baseUrl = config.Url.replace(/\/$/, "");
   const url = `${baseUrl}/api/fever.php?api&${endpoint}`;
 
-  const res = await httpClient.post(url, `api_key=${apiHash}`, {
+  const res = await httpClient.post(url, `api_key=${config.__apiHash}`, {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     timeout: 30000,
   });
@@ -120,6 +120,8 @@ function mapItem(item, feeds) {
  * @returns {Promise<Array>} Array of parsed items
  */
 async function parseFreshRSS(feedUrl, ctx) {
+  if (!isFreshRSSUrl(feedUrl)) return [];
+
   const config = loadConfig();
   if (!config?.Enabled) return [];
 

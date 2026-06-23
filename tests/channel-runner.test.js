@@ -1,0 +1,81 @@
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const { createChannelRunner } = require("../src/app/channel-runner");
+
+function createCacheStoreMock() {
+  const state = {};
+  let saves = 0;
+
+  return {
+    getState() {
+      return state;
+    },
+    getChannelBucket(key) {
+      if (!state[key]) state[key] = {};
+      return state[key];
+    },
+    save() {
+      saves += 1;
+    },
+    getSaveCount() {
+      return saves;
+    },
+  };
+}
+
+test("channel runner retries only the failed target on the next pass", async () => {
+  const cacheStore = createCacheStoreMock();
+  let webhookCalls = 0;
+  let matrixCalls = 0;
+  let failMatrixOnce = true;
+
+  const { checkFeedsForChannel } = createChannelRunner({
+    cacheStore,
+    dryRun: false,
+    fetchFeed: async () => [{
+      title: "Example entry",
+      link: "https://example.com/post",
+      guid: "https://example.com/post",
+      isoDate: "2026-01-01T00:00:00.000Z",
+    }],
+    parseDiscord: async () => [],
+    sendMessage: async () => {
+      webhookCalls += 1;
+    },
+    sendMatrixMessage: async () => {
+      matrixCalls += 1;
+      if (failMatrixOnce) {
+        failMatrixOnce = false;
+        throw new Error("temporary matrix error");
+      }
+    },
+  });
+
+  const channelConfig = {
+    cacheKey: "channel:test",
+    name: "test",
+    sourceKey: "channels",
+    Webhook: "https://discord.com/api/webhooks/test",
+    Thread: null,
+    Matrix: {
+      Enabled: true,
+      Homeserver: "https://matrix.example.org",
+      AccessToken: "token",
+      RoomID: "!room:matrix.example.org",
+      MsgType: "m.notice",
+    },
+    RSS: ["https://example.com/feed.xml"],
+    RequestSend: 5,
+  };
+
+  await checkFeedsForChannel(0, channelConfig);
+  await checkFeedsForChannel(0, channelConfig);
+
+  const channelCache = cacheStore.getChannelBucket("channel:test");
+  assert.equal(webhookCalls, 1);
+  assert.equal(matrixCalls, 2);
+  assert.deepEqual(channelCache["https://example.com/feed.xml::webhook"], ["https://example.com/post"]);
+  assert.deepEqual(channelCache["https://example.com/feed.xml::matrix"], ["https://example.com/post"]);
+  assert.equal(cacheStore.getSaveCount(), 2);
+});

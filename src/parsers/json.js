@@ -1,6 +1,14 @@
 // src/parsers/json.js - JSON Feed / RSS2JSON / API parser
+const crypto = require("crypto");
+
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
+
+function buildFallbackGuid(feedUrl, parts = []) {
+  const fingerprint = parts.filter(Boolean).join("\n").trim();
+  if (!fingerprint) return `${feedUrl}#unknown`;
+  return `${feedUrl}#${crypto.createHash("sha1").update(fingerprint).digest("hex").slice(0, 16)}`;
+}
 
 /**
  * Parses JSON Feed (jsonfeed.org) and generic JSON APIs
@@ -49,7 +57,7 @@ async function parseJSON(feedUrl, httpClient) {
           isoDate,
           enclosure: image,
           author,
-          guid: item.id || link || `${feedUrl}#${Math.random().toString(36).substring(2, 8)}`,
+          guid: item.id || link || buildFallbackGuid(feedUrl, [title, isoDate, author, description]),
           categories: item.tags || [],
         };
       });
@@ -97,7 +105,7 @@ async function parseJSON(feedUrl, httpClient) {
           isoDate,
           enclosure: image,
           author,
-          guid: entry.guid || link || `${feedUrl}#${Math.random().toString(36).slice(2, 8)}`,
+          guid: entry.guid || link || buildFallbackGuid(feedUrl, [title, isoDate, author, description]),
           categories: entry.categories || entry.tags || [],
         };
       });

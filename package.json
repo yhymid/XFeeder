@@ -4,7 +4,12 @@
   "description": "Modular RSS/Atom/JSON feed reader for Discord webhooks with extensible plugin system.",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "start:once": "node main.js --once",
+    "start:dry-run": "node main.js --dry-run --once",
+    "check-config": "node main.js --check-config",
+    "dashboard": "node dashboard.js",
+    "test": "node --test tests/*.test.js"
   },
   "keywords": [
     "rss",
@@ -19,14 +24,6 @@
   ],
   "author": "!Yhym's",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://git.marmak.net.pl/yhymid/XFeeder"
-  },
-  "bugs": {
-    "url": "https://git.marmak.net.pl/yhymid/XFeeder/issues"
-  },
-  "homepage": "https://git.marmak.net.pl/yhymid/XFeeder#readme",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -37,6 +34,7 @@
     "https-proxy-agent": "^7.0.6",
     "rss-parser": "^3.13.0",
     "string-strip-html": "^8.5.0",
+    "ws": "^8.19.0",
     "xml2js": "^0.6.2"
   }
 }

@@ -1,15 +1,10 @@
-// src/parsers/downloader.js - HTTP downloader with Scrapling integration
+// src/parsers/downloader.js - HTTP downloader with Scrapling fallback
 "use strict";
 
 const { getWithFallback } = require("../client");
-const { getScrapling } = require("../scrapling");
+const { getScrapling } = require("../extensions/Scrapling");
+const { loadConfig } = require("../config-loader");
 
-/**
- * Builds Accept header based on content type hint
- * 
- * @param {string} accept - Content type hint: 'auto', 'xml', 'rss', 'atom', 'json', 'html'
- * @returns {string} Accept header value
- */
 function buildAccept(accept) {
   switch ((accept || "auto").toLowerCase()) {
     case "xml":
@@ -26,346 +21,215 @@ function buildAccept(accept) {
   }
 }
 
-/**
- * Check if response indicates protection that Scrapling can bypass
- * 
- * @param {object} response - Response object or error
- * @returns {boolean} True if should try Scrapling
- */
-function shouldTryScrapling(response) {
-  if (!response) return false;
-  
-  const scrapling = getScrapling();
-  if (!scrapling.enabled) return false;
-  
-  // Check status codes
-  const status = response?.status || response?.response?.status;
-  if (scrapling.utils.isProtectedStatus(status)) {
-    console.log(`[Downloader] Status ${status} detected - will try Scrapling`);
-    return true;
+function normalizeSource(responseLike = {}) {
+  return {
+    status: responseLike?.status || responseLike?.response?.status || null,
+    headers: responseLike?.headers || responseLike?.response?.headers || {},
+    body: responseLike?.data || responseLike?.response?.data || "",
+  };
+}
+
+function analyzeSource(scrapling, url, responseLike, antiBotOverrides = {}) {
+  const src = normalizeSource(responseLike);
+  const anti = scrapling.config.getAntiBotConfig(url, antiBotOverrides);
+  return {
+    anti,
+    ...scrapling.utils.analyzeAntiBotSignals({
+      status: src.status,
+      headers: src.headers,
+      body: typeof src.body === "string" ? src.body : "",
+      statusCodes: anti.statusCodes,
+      headerKeys: anti.headerKeys,
+      bodySignatures: anti.bodySignatures,
+      titleSignatures: anti.titleSignatures,
+      minBodyBytes: anti.minBodyBytes,
+      minConfidence: anti.minConfidence,
+      treatCloudflareAsSignal: anti.treatCloudflareAsSignal,
+    }),
+  };
+}
+
+function evaluateScraplingNeed(scrapling, responseLike, url, opts = {}) {
+  if (!scrapling.enabled) return { use: false, analysis: null, status: null };
+  const src = normalizeSource(responseLike);
+  const status = src.status;
+  const antiOverrides = opts?.scrapling?.antiBot || {};
+  const analysis = analyzeSource(scrapling, url, responseLike, antiOverrides);
+
+  if (scrapling.config.shouldUseScrapling(url, status)) {
+    return { use: true, analysis, status };
   }
-  
-  // Check for Cloudflare headers
-  const headers = response?.headers || response?.response?.headers;
-  if (headers && scrapling.utils.isCloudflareProtected(headers)) {
-    console.log('[Downloader] Cloudflare detected - will try Scrapling');
-    return true;
+
+  if (analysis.anti.enabled && analysis.blocked) {
+    if (analysis.anti.logDecisions) {
+      console.warn(
+        `[Scrapling AntiBot] HTTP challenge detected for ${url}: score=${analysis.score} reasons=${analysis.reasons.join(", ")}`
+      );
+    }
+    return { use: true, analysis, status };
   }
-  
-  // Check for specific error messages
-  const errorMessage = response?.message || response?.response?.data || '';
-  const protectionIndicators = [
-    'cloudflare',
-    'cf-ray',
-    'access denied',
-    'please enable cookies',
-    'checking your browser',
-    'just a moment',
-    'ddos protection',
-    'rate limit'
-  ];
-  
-  if (typeof errorMessage === 'string') {
-    const lowerMessage = errorMessage.toLowerCase();
-    for (const indicator of protectionIndicators) {
-      if (lowerMessage.includes(indicator)) {
-        console.log(`[Downloader] Protection indicator "${indicator}" found - will try Scrapling`);
-        return true;
+  return { use: false, analysis, status };
+}
+
+function prioritizeModeSequence(modeSequence = [], seedAnalysis = null, antiConfig = null) {
+  const sequence = Array.isArray(modeSequence) ? [...modeSequence] : [];
+  if (antiConfig && antiConfig.preferStealthOnSignals === false) return sequence;
+  if (!seedAnalysis || typeof seedAnalysis !== "object") return sequence;
+
+  const preferStealth = Boolean(
+    seedAnalysis.cloudflare ||
+    seedAnalysis.statusBlocked ||
+    seedAnalysis.headerBlocked ||
+    seedAnalysis.bodyBlocked ||
+    seedAnalysis.titleBlocked
+  );
+  if (!preferStealth) return sequence;
+
+  const preferred = ["stealthy-fetch", "fetch"];
+  const out = [];
+  for (const mode of preferred) {
+    if (sequence.includes(mode) && !out.includes(mode)) out.push(mode);
+  }
+  for (const mode of sequence) {
+    if (!out.includes(mode)) out.push(mode);
+  }
+  return out;
+}
+
+async function fetchWithScrapling(scrapling, url, opts = {}, initialAnalysis = null) {
+  const requestOptions = opts.scrapling || {};
+  const anti = scrapling.config.getAntiBotConfig(url, requestOptions.antiBot || {});
+  const rawModeSequence = scrapling.config.buildModeSequence(url, requestOptions);
+  const modeSequence = prioritizeModeSequence(rawModeSequence, initialAnalysis, anti);
+  if (
+    anti.logDecisions &&
+    Array.isArray(rawModeSequence) &&
+    rawModeSequence.join("|") !== modeSequence.join("|")
+  ) {
+    console.warn(
+      `[Scrapling AntiBot] Prioritized modes for ${url}: ${rawModeSequence.join(" -> ")} => ${modeSequence.join(" -> ")}`
+    );
+  }
+  const attempts = modeSequence.slice(0, Math.max(1, anti.maxAttempts));
+  let lastError = null;
+  let lastBlocked = null;
+
+  for (const mode of attempts) {
+    const attemptOptions = { ...requestOptions, mode, extractMode: mode, fetchMode: mode };
+    if (mode === "stealthy-fetch" && attemptOptions.solveCloudflare == null && attemptOptions.solveCaptcha == null) {
+      attemptOptions.solveCloudflare = true;
+    }
+    if (attemptOptions.solveCloudflare === true) {
+      if (attemptOptions.timeoutMs == null || Number(attemptOptions.timeoutMs) < 60000) {
+        attemptOptions.timeoutMs = 60000;
+      }
+      if (attemptOptions.timeout == null || Number(attemptOptions.timeout) < 60) {
+        attemptOptions.timeout = 60;
       }
     }
-  }
-  
-  return false;
-}
 
-/**
- * Try to fetch with Scrapling
- * 
- * @param {string} url - URL to fetch
- * @param {object} opts - Original options
- * @returns {Promise<object>} Result object
- */
-async function fetchWithScrapling(url, opts = {}) {
-  const scrapling = getScrapling();
-  
-  // Get Scrapling config for this URL
-  const scraplingConfig = scrapling.config.getUrlConfig(url);
-  
-  // Merge with any explicit Scrapling options
-  const scraplingOptions = {
-    ...scraplingConfig,
-    ...(opts.scrapling || {}),
-    headers: opts.headers || {},
-    timeout: resolveScraplingTimeout(opts.timeout, scraplingConfig.timeout),
-  };
-  
-  // Add proxy if configured
-  const proxyUrl = opts.proxy || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
-  if (proxyUrl) {
-    scraplingOptions.proxy = proxyUrl;
-  }
-  
-  console.log(`[Downloader] Using Scrapling (${scraplingOptions.mode || 'stealthy-fetch'}) for ${url}`);
-  
-  try {
-    const startTime = Date.now();
-    const response = await scrapling.fetch(url, scraplingOptions);
-    const elapsed = Date.now() - startTime;
-    
-    console.log(`[Downloader] Scrapling success in ${elapsed}ms`);
-    
-    // Parse content type from HTML if possible
-    let contentType = 'text/html';
-    if (response.html) {
-      // Check if it's actually XML/RSS/Atom
-      const format = scrapling.utils.detectFeedFormat(response.html);
-      if (format === 'rss') contentType = 'application/rss+xml';
-      else if (format === 'atom') contentType = 'application/atom+xml';
-      else if (format === 'json') contentType = 'application/json';
-    }
-    
-    return {
-      ok: true,
-      status: response.status || 200,
-      headers: response.headers || { 'content-type': contentType },
-      data: response.html || response.data,
-      contentType,
-      scrapling: true,
-      scraplingMode: response.fetchMode,
-      elapsed: response.elapsed
-    };
-    
-  } catch (err) {
-    console.error(`[Downloader] Scrapling failed: ${err.message}`);
-    
-    // Return error info for upstream handling
-    return {
-      ok: false,
-      error: err,
-      scraplingFailed: true
-    };
-  }
-}
+    try {
+      const response = await scrapling.fetch(url, attemptOptions);
+      const html = response?.html || response?.data || "";
+      const analysis = scrapling.utils.analyzeAntiBotSignals({
+        status: response?.status || 200,
+        headers: response?.headers || {},
+        body: typeof html === "string" ? html : "",
+        statusCodes: anti.statusCodes,
+        headerKeys: anti.headerKeys,
+        bodySignatures: anti.bodySignatures,
+        titleSignatures: anti.titleSignatures,
+        minBodyBytes: anti.minBodyBytes,
+        minConfidence: anti.minConfidence,
+        treatCloudflareAsSignal: anti.treatCloudflareAsSignal,
+      });
 
-function resolveScraplingTimeout(inputTimeout, configTimeout) {
-  // Downloader timeout is usually provided in ms. Scrapling wrappers expect seconds.
-  if (typeof inputTimeout === 'number' && Number.isFinite(inputTimeout) && inputTimeout > 0) {
-    if (inputTimeout > 1000) return Math.max(1, Math.floor(inputTimeout / 1000));
-    return Math.floor(inputTimeout);
-  }
-  if (typeof configTimeout === 'number' && Number.isFinite(configTimeout) && configTimeout > 0) {
-    return Math.floor(configTimeout);
-  }
-  return 60;
-}
+      if (analysis.blocked) {
+        lastBlocked = { mode, analysis };
+        if (anti.logDecisions) {
+          console.warn(
+            `[Scrapling AntiBot] Mode ${mode} looks blocked for ${url}: score=${analysis.score} reasons=${analysis.reasons.join(", ")}`
+          );
+        }
+        continue;
+      }
 
-/**
- * Downloads URL content with automatic Scrapling fallback
- * - Handles 304 (not modified) as success with notModified: true
- * - For non-http/https schemes returns ok:false with reason: "UNSUPPORTED_PROTOCOL"
- * - Automatically tries Scrapling on protection/errors
- *
- * @param {string} url - URL to download
- * @param {object} opts - Options: accept, headers, timeout, useScrapling
- * @returns {Promise<object>} Result object with ok, status, headers, data, contentType, notModified, reason, error
- */
-async function download(url, opts = {}) {
-  // Guard: non-http/https schemes
-  let u;
-  try {
-    u = new URL(url);
-    if (u.protocol !== "http:" && u.protocol !== "https:") {
-      return { ok: false, reason: "UNSUPPORTED_PROTOCOL" };
-    }
-  } catch (err) {
-    // Invalid URL -> let getWithFallback throw a readable error
-    console.error(`[Downloader] Invalid URL: ${url}`);
-    return { ok: false, error: err, reason: "INVALID_URL" };
-  }
-
-  // Check if Scrapling should be used explicitly for this URL
-  const scrapling = getScrapling();
-  const forceScrapling = opts.useScrapling || 
-                        (scrapling.enabled && scrapling.config.shouldUseScrapling(url));
-  
-  if (forceScrapling) {
-    console.log(`[Downloader] Scrapling explicitly requested for ${url}`);
-    const result = await fetchWithScrapling(url, opts);
-    if (result.ok) return result;
-    // If Scrapling failed and it was forced, don't try normal fetch
-    if (opts.useScrapling) {
-      return result;
-    }
-    // Otherwise fall through to try normal fetch
-  }
-
-  const headers = {
-    Accept: buildAccept(opts.accept),
-    ...(opts.headers || {}),
-  };
-
-  // Add conditional request headers if provided
-  if (opts.etag) {
-    headers['If-None-Match'] = opts.etag;
-  }
-  if (opts.lastModified) {
-    headers['If-Modified-Since'] = opts.lastModified;
-  }
-
-  try {
-    const res = await getWithFallback(url, { 
-      headers, 
-      timeout: opts.timeout,
-      responseType: opts.responseType
-    });
-    
-    // Treat 304 as "no changes" (not an error)
-    if (res?.status === 304) {
       return {
         ok: true,
-        status: 304,
-        headers: res.headers || {},
-        data: "",
-        notModified: true
+        status: response?.status || 200,
+        headers: response?.headers || {},
+        data: html,
+        contentType: "text/html",
+        scrapling: true,
+        scraplingMode: response?.fetchMode || mode,
+        scraplingRuntime: response?.runtime || response?.resolvedRuntime || null,
+        scraplingRuntimeResolved: response?.resolvedRuntime || response?.runtime || null,
+        scraplingRuntimeRequested: response?.requestedRuntime || null,
+        scraplingRuntimeAutoSwitched: response?.runtimeAutoSwitched === true,
+        elapsed: response?.elapsed || null,
+        antiBotSignals: analysis,
       };
-    }
-
-    // Check if response indicates protection
-    if (shouldTryScrapling(res)) {
-      const scraplingResult = await fetchWithScrapling(url, opts);
-      if (scraplingResult.ok) {
-        return scraplingResult;
+    } catch (error) {
+      lastError = error;
+      if (anti.logDecisions) {
+        console.warn(`[Scrapling AntiBot] Mode ${mode} failed for ${url}: ${error.message}`);
       }
-      // If Scrapling also failed, return original response
-      console.log('[Downloader] Scrapling failed, returning original response');
+    }
+  }
+
+  if (lastError) {
+    return { ok: false, error: lastError, reason: "SCRAPLING_ERROR" };
+  }
+  if (lastBlocked) {
+    return { ok: false, reason: "SCRAPLING_BLOCKED", antiBotSignals: lastBlocked.analysis };
+  }
+  return { ok: false, reason: "SCRAPLING_NO_RESULT" };
+}
+
+async function download(url, opts = {}) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) return { ok: false, reason: "UNSUPPORTED_PROTOCOL" };
+  } catch (error) {
+    return { ok: false, error, reason: "INVALID_URL" };
+  }
+
+  const rootConfig = loadConfig("./config.json");
+  const scrapling = getScrapling(rootConfig);
+
+  const headers = { Accept: buildAccept(opts.accept), ...(opts.headers || {}) };
+  if (opts.etag) headers["If-None-Match"] = opts.etag;
+  if (opts.lastModified) headers["If-Modified-Since"] = opts.lastModified;
+
+  try {
+    const res = await getWithFallback(url, { headers, timeout: opts.timeout, responseType: opts.responseType });
+    if (res?.status === 304) return { ok: true, status: 304, headers: res.headers || {}, data: "", notModified: true };
+
+    const decision = evaluateScraplingNeed(scrapling, res, url, opts);
+    if (decision.use) {
+      const s = await fetchWithScrapling(scrapling, url, opts, decision.analysis);
+      if (s.ok) return s;
     }
 
     const ct = (res?.headers?.["content-type"] || res?.headers?.["Content-Type"] || "").toString();
-    
-    return {
-      ok: true,
-      status: res?.status,
-      headers: res?.headers || {},
-      data: res?.data,
-      contentType: ct,
-    };
-    
+    return { ok: true, status: res?.status, headers: res?.headers || {}, data: res?.data, contentType: ct };
   } catch (err) {
-    // Check if error indicates protection
-    if (shouldTryScrapling(err)) {
-      const scraplingResult = await fetchWithScrapling(url, opts);
-      if (scraplingResult.ok) {
-        return scraplingResult;
-      }
+    const decision = evaluateScraplingNeed(scrapling, err, url, opts);
+    if (decision.use) {
+      const s = await fetchWithScrapling(scrapling, url, opts, decision.analysis);
+      if (s.ok) return s;
     }
-    
-    // Return original error
     return {
       ok: false,
       error: err,
-      status: err?.response?.status
+      status: err?.response?.status,
+      headers: err?.response?.headers || {},
+      data: err?.response?.data,
+      contentType: (err?.response?.headers?.["content-type"] || "").toString(),
+      reason: "HTTP_ERROR",
     };
   }
 }
 
-/**
- * Parse HTML content to feed items if needed
- * Used when Scrapling returns HTML that needs to be converted to feed format
- * 
- * @param {string} data - HTML content
- * @param {string} url - Original URL for context
- * @returns {Array} Feed items or null if not HTML
- */
-function parseHtmlToFeedItems(data, url) {
-  const scrapling = getScrapling();
-  
-  // Check if it's HTML that needs parsing
-  if (!data || typeof data !== 'string') return null;
-  
-  const format = scrapling.utils.detectFeedFormat(data);
-  if (format !== 'html') return null;
-  
-  console.log('[Downloader] Converting HTML to feed items');
-  
-  // Get custom selectors from config if available
-  const config = scrapling.config.getUrlConfig(url);
-  const parseOptions = config.htmlParseOptions || {};
-  
-  // Parse HTML to feed items
-  const items = scrapling.parseHtmlToFeed(data, parseOptions);
-  
-  if (items.length > 0) {
-    console.log(`[Downloader] Extracted ${items.length} items from HTML`);
-  } else {
-    console.warn('[Downloader] No items extracted from HTML');
-  }
-  
-  return items;
-}
-
-/**
- * Enhanced download with automatic HTML to feed conversion
- * 
- * @param {string} url - URL to download
- * @param {object} opts - Download options
- * @returns {Promise<object>} Result with data and possible feedItems
- */
-async function downloadEnhanced(url, opts = {}) {
-  const result = await download(url, opts);
-  
-  // If Scrapling was used and returned HTML, try to convert to feed
-  if (result.ok && result.scrapling && result.data) {
-    const feedItems = parseHtmlToFeedItems(result.data, url);
-    if (feedItems && feedItems.length > 0) {
-      result.feedItems = feedItems;
-      result.isHtmlConverted = true;
-    }
-  }
-  
-  return result;
-}
-
-// Cache for ETags and Last-Modified headers
-const metadataCache = new Map();
-
-/**
- * Download with caching support
- * 
- * @param {string} url - URL to download
- * @param {object} opts - Download options
- * @returns {Promise<object>} Result object
- */
-async function downloadWithCache(url, opts = {}) {
-  // Get cached metadata
-  const cached = metadataCache.get(url);
-  
-  if (cached) {
-    opts.etag = cached.etag;
-    opts.lastModified = cached.lastModified;
-  }
-  
-  const result = await downloadEnhanced(url, opts);
-  
-  // Update cache if successful
-  if (result.ok && !result.notModified) {
-    const etag = result.headers?.etag || result.headers?.ETag;
-    const lastModified = result.headers?.['last-modified'] || result.headers?.['Last-Modified'];
-    
-    if (etag || lastModified) {
-      metadataCache.set(url, { etag, lastModified });
-    }
-  }
-  
-  return result;
-}
-
-// Export all functions
-module.exports = { 
-  download,
-  downloadEnhanced,
-  downloadWithCache,
-  buildAccept,
-  shouldTryScrapling,
-  fetchWithScrapling,
-  parseHtmlToFeedItems
-};
+module.exports = { buildAccept, download };

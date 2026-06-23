@@ -1,0 +1,17 @@
+[Unit]
+Description=XFeeder worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/xfeeder
+ExecStart=/usr/bin/node /opt/xfeeder/main.js
+Restart=always
+RestartSec=5
+User=xfeeder
+Group=xfeeder
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

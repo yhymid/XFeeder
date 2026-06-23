@@ -3,7 +3,11 @@
 const fs = require("fs");
 const path = require("path");
 
-let envLoaded = false;
+let envCache = {
+  filePath: null,
+  mtimeMs: null,
+  values: {},
+};
 
 function stripWrappedQuotes(value) {
   if (!value) return value;
@@ -15,18 +19,8 @@ function stripWrappedQuotes(value) {
   return value;
 }
 
-function loadDotEnv(filePath = path.join(process.cwd(), ".env")) {
-  if (envLoaded) return;
-  envLoaded = true;
-
-  if (!fs.existsSync(filePath)) return;
-
-  let content = "";
-  try {
-    content = fs.readFileSync(filePath, "utf8");
-  } catch {
-    return;
-  }
+function parseDotEnv(content = "") {
+  const values = {};
 
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -37,29 +31,69 @@ function loadDotEnv(filePath = path.join(process.cwd(), ".env")) {
 
     const key = match[1];
     const value = stripWrappedQuotes(match[2].trim());
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-    }
+    values[key] = value;
   }
+
+  return values;
 }
 
-function resolveEnv(value) {
+function loadDotEnv(filePath = path.join(process.cwd(), ".env"), { reload = false } = {}) {
+  const resolvedPath = path.resolve(filePath);
+
+  let stat = null;
+  try {
+    stat = fs.statSync(resolvedPath);
+  } catch {
+    envCache = {
+      filePath: resolvedPath,
+      mtimeMs: null,
+      values: {},
+    };
+    return {};
+  }
+
+  if (
+    !reload &&
+    envCache.filePath === resolvedPath &&
+    envCache.mtimeMs === stat.mtimeMs
+  ) {
+    return { ...envCache.values };
+  }
+
+  let content = "";
+  try {
+    content = fs.readFileSync(resolvedPath, "utf8");
+  } catch {
+    return {};
+  }
+
+  const values = parseDotEnv(content);
+  envCache = {
+    filePath: resolvedPath,
+    mtimeMs: stat.mtimeMs,
+    values,
+  };
+
+  return { ...values };
+}
+
+function resolveEnv(value, envMap = process.env) {
   if (typeof value === "string") {
     const match = value.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/);
     if (match) {
-      return process.env[match[1]] ?? "";
+      return envMap[match[1]] ?? "";
     }
     return value;
   }
 
   if (Array.isArray(value)) {
-    return value.map(resolveEnv);
+    return value.map((entry) => resolveEnv(entry, envMap));
   }
 
   if (value && typeof value === "object") {
     const out = {};
     for (const [k, v] of Object.entries(value)) {
-      out[k] = resolveEnv(v);
+      out[k] = resolveEnv(v, envMap);
     }
     return out;
   }
@@ -68,9 +102,15 @@ function resolveEnv(value) {
 }
 
 function loadConfig(configPath = "./config.json") {
-  loadDotEnv();
-  const raw = fs.readFileSync(configPath, "utf8");
-  return resolveEnv(JSON.parse(raw));
+  const resolvedConfigPath = path.resolve(configPath);
+  const envPath = path.join(path.dirname(resolvedConfigPath), ".env");
+  const envFromFile = loadDotEnv(envPath, { reload: true });
+  const envMap = {
+    ...envFromFile,
+    ...process.env,
+  };
+  const raw = fs.readFileSync(resolvedConfigPath, "utf8");
+  return resolveEnv(JSON.parse(raw), envMap);
 }
 
 module.exports = {

@@ -1,0 +1,20 @@
+[Unit]
+Description=XFeeder dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/xfeeder
+ExecStart=/usr/bin/node /opt/xfeeder/dashboard.js
+Restart=always
+RestartSec=5
+User=xfeeder
+Group=xfeeder
+Environment=NODE_ENV=production
+Environment=XFEEDER_DASHBOARD_HOST=127.0.0.1
+Environment=XFEEDER_DASHBOARD_PORT=3000
+Environment=XFEEDER_DASHBOARD_PASSWORD=CHANGE_ME
+
+[Install]
+WantedBy=multi-user.target

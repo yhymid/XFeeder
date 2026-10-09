@@ -1,6 +1,7 @@
 // src/parsers/api_x.js - Generic API JSON parser
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
+const { sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 /**
  * Converts a single API entry to standardized format.
@@ -127,7 +128,7 @@ async function parseApiX(feedUrl, httpClient) {
     }
 
     if (!Array.isArray(rawItems) || rawItems.length === 0) {
-      console.warn(`[ApiX] No entries in ${feedUrl}`);
+      console.warn(`[ApiX] No entries in ${sanitizeUrl(feedUrl)}`);
       return [];
     }
 
@@ -136,12 +137,12 @@ async function parseApiX(feedUrl, httpClient) {
       .filter((x) => x && x.link && x.title);
 
     if (!items.length) {
-      console.warn(`[ApiX] Failed to parse any valid entries from ${feedUrl}`);
+      console.warn(`[ApiX] Failed to parse any valid entries from ${sanitizeUrl(feedUrl)}`);
     }
 
     return items;
   } catch (error) {
-    console.error(`[ApiX] Error parsing ${feedUrl}: ${error.message}`);
+    console.error(`[ApiX] Error parsing ${sanitizeUrl(feedUrl)}: ${sanitizeText(error.message)}`);
     return [];
   }
 }

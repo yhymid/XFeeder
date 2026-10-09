@@ -16,6 +16,7 @@ Lokalna integracja Scrapling dla XFeeder (`src/extensions/Scrapling`).
 - Tryby runtime:
   - `cli` (domyślnie, pełna zgodność flag Scrapling CLI)
   - `shell` (fallback przez Python API)
+  - trwałe sesje przeglądarkowe Scraplinga 0.4.15 dla `fetch` i `stealthy-fetch`
 - CLI wrapper:
   - `extract`
   - `install`
@@ -25,14 +26,17 @@ Lokalna integracja Scrapling dla XFeeder (`src/extensions/Scrapling`).
 - Integracja w `src/parsers/downloader.js` i `src/core/feed-pipeline.js`
 - Przewodnik Anti-Bot: `ANTI_BOT_GUIDE.md`
 
-## Instalacja lokalna (już wykonana)
+## Instalacja lokalna (opcjonalna)
 
 W katalogu extension:
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-pip install "scrapling[all]"
+# Reproducible dependency set resolved with Python 3.14:
+pip install -r requirements.lock.txt
+# On other supported Python versions, use the package pin and let pip resolve dependencies:
+# pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
@@ -47,6 +51,7 @@ Najważniejsze pola:
 - `Enabled`
 - `ForceGlobal`
 - `AutoUseShellForAdvancedOptions`
+- `PersistentBrowserSessions` (domyślnie `true`; wyłącza trwałe sesje przeglądarkowe)
 - `PreferredMode`
 - `FallbackStatusCodes`
 - `AntiBot`
@@ -108,6 +113,7 @@ Opcje `DefaultOptions` / `PerUrlConfig` (mapowane na Scrapling):
   - `pageAction` / `pageSetup` w `shell` moze byc stringiem z kodem Python albo obiektem `{path|file|code, function}`
   - `shell` zwraca teraz realne `status` i `headers` (zamiast stalego `200/{}`), co poprawia decyzje Anti-Bot
   - odpowiedzi Scrapling zwracaja metadane runtime: `runtime`, `resolvedRuntime`, `requestedRuntime`, `runtimeAutoSwitched`
+  - tryby przeglądarkowe korzystają z procesu Pythona utrzymywanego między żądaniami; sesje są oddzielone według hosta i konfiguracji, a pula przechowuje maksymalnie cztery sesje LRU i zamyka je przy wyłączaniu aplikacji
   - walidacja konfliktow opcji: `proxyRotator` nie moze byc laczony z `proxy`/`proxies`
   - `rawCliArgs|cliArgs|extraCliArgs`: passthrough dodatkowych flag do `scrapling extract ...`
 
@@ -117,5 +123,7 @@ MCP można odpalić przez API extension (metoda `startMcpServer`) lub bezpośred
 
 ```bash
 src/extensions/Scrapling/.venv/bin/scrapling mcp
-src/extensions/Scrapling/.venv/bin/scrapling mcp --http --host 127.0.0.1 --port 8000
+SCRAPLING_MCP_AUTH_TOKEN=replace-with-a-long-random-token src/extensions/Scrapling/.venv/bin/scrapling mcp --http --host 127.0.0.1 --port 8000
 ```
+
+W Scraplingu 0.4.15 transport HTTP wymaga tokenu. Przez API przekaż `authToken` (wrapper ustawia go w środowisku procesu) albo jawnie wybierz `noAuth: true` dla lokalnego, nieuwierzytelnionego serwera. Host domyślny to `127.0.0.1`.

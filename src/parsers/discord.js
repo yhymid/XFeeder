@@ -1,9 +1,11 @@
 // src/parsers/discord.js - Discord channel messages parser
 const axios = require("axios");
+const { context } = require("../network/context");
+const { isCancelled } = require("../network/abort");
 
 /**
  * Parses messages from Discord channel.
- * 
+ *
  * @param {object} discordConfig - Configuration from config.json
  * @param {object} httpClient - HTTP client with get method (default: axios)
  * @returns {Promise<Array>} Array of messages in feed format
@@ -29,6 +31,8 @@ async function parseDiscord(discordConfig, httpClient = axios) {
       const channelMessages = await fetchChannelMessages(channelId, discordConfig, httpClient);
       messages.push(...channelMessages);
     } catch (err) {
+      if (isCancelled(err) || context().signal?.aborted) throw err;
+      context().onFailure?.(err);
       console.error(`[Discord parser] Error for channel ${channelId}:`, err.message);
     }
   }
@@ -39,30 +43,30 @@ async function parseDiscord(discordConfig, httpClient = axios) {
 
 /**
  * Extracts channel IDs from config
- * 
+ *
  * @param {object} discordConfig - Discord configuration
  * @returns {Array<string>} Array of channel IDs
  */
 function getChannelIds(discordConfig) {
   const channelIds = [];
-  
+
   if (Array.isArray(discordConfig.ChannelIDs)) {
     channelIds.push(...discordConfig.ChannelIDs.filter((x) => typeof x === "string" && x.trim()));
   } else if (typeof discordConfig.ChannelIDs === "string" && discordConfig.ChannelIDs.trim()) {
     channelIds.push(discordConfig.ChannelIDs.trim());
   }
-  
+
   // Optionally support singular "ChannelID"
   if (!channelIds.length && typeof discordConfig.ChannelID === "string" && discordConfig.ChannelID.trim()) {
     channelIds.push(discordConfig.ChannelID.trim());
   }
-  
+
   return channelIds;
 }
 
 /**
  * Fetches messages from a single Discord channel
- * 
+ *
  * @param {string} channelId - Channel ID
  * @param {object} discordConfig - Discord configuration
  * @param {object} httpClient - HTTP client
@@ -133,7 +137,7 @@ async function fetchChannelMessages(channelId, discordConfig, httpClient) {
 
 /**
  * Extracts thumbnail from embed (YT, Twitter, etc.)
- * 
+ *
  * @param {object} msg - Discord message object
  * @returns {string|null} Thumbnail URL or null
  */

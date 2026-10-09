@@ -1,5 +1,6 @@
 "use strict";
 
+const { isBlockedPage } = require("../../core/blocked-page");
 const cheerio = require("cheerio");
 
 const DEFAULT_BLOCKED_STATUS_CODES = [403, 429, 503];
@@ -169,7 +170,9 @@ function analyzeAntiBotSignals({
     ? Math.max(0, Math.min(100, Number(minConfidence)))
     : 40;
 
-  const blocked = hasStrongSignals || bodyTooSmall || smallBodySuspicious || score >= confidenceFloor;
+  const confidenceScore = Math.max(0, score - (bodyTooSmall ? 20 : 0));
+  const confidenceBlocked = confidenceScore > 0 && confidenceScore >= confidenceFloor;
+  const blocked = hasStrongSignals || smallBodySuspicious || confidenceBlocked;
 
   return {
     blocked,
@@ -199,6 +202,7 @@ function detectFeedFormat(body) {
 }
 
 function htmlToFeedItems(html, options = {}) {
+  if (isBlockedPage(html)) return [];
   const $ = cheerio.load(String(html || ""));
   const itemSelector = options.itemSelector || "article, .post, .entry, li";
   const titleSelector = options.titleSelector || "h1, h2, h3, .title, .entry-title";

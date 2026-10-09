@@ -3,6 +3,7 @@ const crypto = require("crypto");
 
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
+const { sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 function buildFallbackGuid(feedUrl, parts = []) {
   const fingerprint = parts.filter(Boolean).join("\n").trim();
@@ -12,7 +13,7 @@ function buildFallbackGuid(feedUrl, parts = []) {
 
 /**
  * Parses JSON Feed (jsonfeed.org) and generic JSON APIs
- * 
+ *
  * @param {string} feedUrl - Feed URL
  * @param {object} httpClient - HTTP client with get method
  * @returns {Promise<Array>} Array of parsed items
@@ -22,13 +23,13 @@ async function parseJSON(feedUrl, httpClient) {
     const res = await httpClient.get(feedUrl, {
       headers: {
         Accept: "application/feed+json, application/json, text/json;q=0.9,*/*;q=0.8",
-        "User-Agent": "XFeeder/2.1 (JSON Parser)",
+        "User-Agent": "XFeeder/2.2.0 (JSON Parser)",
       },
       timeout: 15000,
     });
-    
+
     if (res?.status === 304) return [];
-    
+
     const data = res.data;
     if (!data) return [];
 
@@ -62,7 +63,7 @@ async function parseJSON(feedUrl, httpClient) {
         };
       });
 
-      console.log(`[JSONFeed] Success (${items.length}) → ${feedUrl}`);
+      console.log(`[JSONFeed] Success (${items.length}) → ${sanitizeUrl(feedUrl)}`);
       return items;
     }
 
@@ -110,14 +111,14 @@ async function parseJSON(feedUrl, httpClient) {
         };
       });
 
-      console.log(`[JSON API] Success (${items.length}) → ${feedUrl}`);
+      console.log(`[JSON API] Success (${items.length}) → ${sanitizeUrl(feedUrl)}`);
       return items;
     }
 
-    console.warn(`[JSON Parser] Unrecognized JSON structure for ${feedUrl}`);
+    console.warn(`[JSON Parser] Unrecognized JSON structure for ${sanitizeUrl(feedUrl)}`);
     return [];
   } catch (err) {
-    console.warn(`[JSON Parser] Error fetching ${feedUrl}: ${err.message}`);
+    console.warn(`[JSON Parser] Error fetching ${sanitizeUrl(feedUrl)}: ${sanitizeText(err.message)}`);
     return [];
   }
 }

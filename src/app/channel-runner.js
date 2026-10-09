@@ -1,8 +1,10 @@
 "use strict";
 
-const { hasMatrixDeliveryTarget } = require("../matrix");
-const { SEND_DELAY_MS, getCacheKey, pushCache, sleep } = require("../core/normalize");
-const { getChannelLabel } = require("../core/channel-config");
+const { SEND_DELAY_MS, getCacheKey, pushCache } = require("../core/normalize");
+const { getChannelLabel, hasTelegramDeliveryTarget } = require("../core/channel-config");
+const { context } = require("../network/context");
+const { isCancelled, throwIfAborted, sleep: abortableSleep } = require("../network/abort");
+const { expert, sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 function hasWebhookTarget(webhookUrl) {
   return typeof webhookUrl === "string" && webhookUrl.trim().length > 0;
@@ -12,7 +14,7 @@ function resolveFeedTargets(channelConfig) {
   return {
     webhookUrl: channelConfig.Webhook,
     threadId: channelConfig.Thread,
-    matrixConfig: channelConfig.Matrix,
+    telegramConfig: channelConfig.Telegram,
   };
 }
 
@@ -20,7 +22,7 @@ function resolveDiscordTargets(channelConfig) {
   return {
     webhookUrl: channelConfig.Discord?.Webhook || channelConfig.Webhook,
     threadId: channelConfig.Discord?.Thread ?? channelConfig.Thread,
-    matrixConfig: channelConfig.Matrix,
+    telegramConfig: channelConfig.Telegram,
   };
 }
 
@@ -31,9 +33,10 @@ function getTargetDescriptors(targetConfig = {}) {
     targets.push({ kind: "webhook" });
   }
 
-  if (hasMatrixDeliveryTarget(targetConfig.matrixConfig)) {
-    targets.push({ kind: "matrix" });
+  if (hasTelegramDeliveryTarget(targetConfig.telegramConfig)) {
+    targets.push({ kind: "telegram" });
   }
+
 
   return targets;
 }
@@ -80,7 +83,10 @@ function applySuccessfulDeliveries(channelCache, updates = {}) {
 
   for (const [bucketName, ids] of Object.entries(updates)) {
     if (!Array.isArray(ids) || ids.length === 0) continue;
-    channelCache[bucketName] = pushCache(channelCache[bucketName], ids);
+    const existing = Array.isArray(channelCache[bucketName]) ? channelCache[bucketName] : [];
+    const fresh = [...new Set(ids)].filter(id => !existing.includes(id));
+    if (!fresh.length) continue;
+    channelCache[bucketName] = pushCache(existing, fresh);
     changed = true;
   }
 
@@ -95,39 +101,58 @@ async function deliverToTarget({
   targetConfig,
   entry,
   sendMessage,
-  sendMatrixMessage,
+  sendTelegramMessage,
   dryRun,
 } = {}) {
+  throwIfAborted(context().signal);
   const entryLabel = entry?.title || entry?.link || entry?.guid || "unknown";
+  const startedAt = Date.now();
+  expert("delivery.begin", {
+    channel: channelLabel,
+    source: contextLabel,
+    target: target.kind,
+    dryRun,
+    entry: { title: entry?.title || null, link: entry?.link || null, guid: entry?.guid || null },
+  });
 
   if (dryRun) {
-    console.log(`[Dry Run] ${channelLabel}: ${contextLabel} -> ${target.kind}: ${entryLabel}`);
+    console.log(`[Dry Run] ${channelLabel}: ${sanitizeUrl(contextLabel)} -> ${target.kind}: ${sanitizeText(entryLabel)}`);
+    expert("delivery.simulated", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt });
     return true;
   }
 
   if (target.kind === "webhook") {
     try {
       await sendMessage(targetConfig.webhookUrl, targetConfig.threadId, entry);
+      expert("delivery.complete", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt });
       return true;
     } catch (err) {
+      if (isCancelled(err) || context().signal?.aborted) throw err;
+      context().onFailure?.(err);
       console.error(
-        `[Channel ${index + 1}] ${channelLabel} send failed (${contextLabel} -> webhook): ${entryLabel}: ${err.message}`
+        `[Channel ${index + 1}] ${channelLabel} send failed (${sanitizeUrl(contextLabel)} -> webhook): ${sanitizeText(entryLabel)}: ${sanitizeText(err.message)}`
       );
+      expert("delivery.failed", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt, error: err });
       return false;
     }
   }
 
-  if (target.kind === "matrix") {
+  if (target.kind === "telegram") {
     try {
-      await sendMatrixMessage(targetConfig.matrixConfig, entry);
+      await sendTelegramMessage(targetConfig.telegramConfig, entry);
+      expert("delivery.complete", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt });
       return true;
     } catch (err) {
+      if (isCancelled(err) || context().signal?.aborted) throw err;
+      context().onFailure?.(err);
       console.error(
-        `[Channel ${index + 1}] ${channelLabel} send failed (${contextLabel} -> matrix): ${entryLabel}: ${err.message}`
+        `[Channel ${index + 1}] ${channelLabel} send failed (${sanitizeUrl(contextLabel)} -> telegram): ${sanitizeText(entryLabel)}: ${sanitizeText(err.message)}`
       );
+      expert("delivery.failed", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt, error: err });
       return false;
     }
   }
+
 
   return false;
 }
@@ -166,25 +191,41 @@ function createChannelRunner({
   fetchFeed,
   parseDiscord,
   sendMessage,
-  sendMatrixMessage,
+  sendTelegramMessage,
   dryRun = false,
 } = {}) {
   async function checkFeedsForChannel(index, channelConfig) {
+    throwIfAborted(context().signal);
+    const startedAt = Date.now();
     const cache = cacheStore.getState();
     const channelLabel = getChannelLabel(channelConfig);
-    const channelCache = cacheStore.getChannelBucket(channelConfig.cacheKey || index);
+    // Do not create delivery state until there are entries to consider.
+    let channelCache = cache[channelConfig.cacheKey || index];
+    expert("channel.process.begin", {
+      index: index + 1,
+      channel: channelLabel,
+      feedCount: Array.isArray(channelConfig.RSS) ? channelConfig.RSS.length : 0,
+      hasDiscordSource: Boolean(channelConfig.Discord),
+      targets: getTargetDescriptors(resolveFeedTargets(channelConfig)).map(({ kind }) => kind),
+      dryRun,
+    });
 
     if (channelConfig.Discord) {
       try {
+        expert("discord.source.begin", { channel: channelLabel });
         const discordMsgs = await parseDiscord(channelConfig.Discord);
+        expert("discord.source.complete", { channel: channelLabel, itemCount: discordMsgs.length });
         const targetConfig = resolveDiscordTargets(channelConfig);
         const sourceBucket = "discord";
 
         if (!hasAnyTarget(targetConfig)) {
           console.warn(`[Channel ${index + 1}] ${channelLabel}: Discord source has no delivery target configured.`);
+          expert("discord.source.skipped", { channel: channelLabel, reason: "no delivery target" });
+          expert("channel.process.complete", { index: index + 1, channel: channelLabel, durationMs: Date.now() - startedAt });
           return cache;
         }
 
+        if (discordMsgs.length) channelCache ||= cacheStore.getChannelBucket(channelConfig.cacheKey || index);
         const pendingDiscordMsgs = collectPendingEntries(
           channelCache,
           sourceBucket,
@@ -192,6 +233,12 @@ function createChannelRunner({
           targetConfig,
           (entry) => getCacheKey(entry) || entry?.guid || ""
         );
+        expert("discord.source.pending", {
+          channel: channelLabel,
+          fetched: discordMsgs.length,
+          pending: pendingDiscordMsgs.length,
+          selected: Math.min(pendingDiscordMsgs.length, channelConfig.RequestSend || 5),
+        });
 
         if (pendingDiscordMsgs.length > 0) {
           const toSend = pendingDiscordMsgs.slice(0, channelConfig.RequestSend || 5);
@@ -211,7 +258,7 @@ function createChannelRunner({
                   targetConfig,
                   entry,
                   sendMessage,
-                  sendMatrixMessage,
+                  sendTelegramMessage,
                   dryRun,
                 });
 
@@ -221,9 +268,10 @@ function createChannelRunner({
                     successfulByBucket[bucketName] = [];
                   }
                   successfulByBucket[bucketName].push(entryKey);
+                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) cacheStore.save();
                 }
               } finally {
-                await sleep(SEND_DELAY_MS);
+                if (!dryRun) await abortableSleep(SEND_DELAY_MS, context().signal);
               }
             }
           }
@@ -245,22 +293,33 @@ function createChannelRunner({
           );
         }
       } catch (err) {
-        console.error(`[Channel ${index + 1}] ${channelLabel} Discord Error: ${err.message}`);
+      if (isCancelled(err) || context().signal?.aborted) throw err;
+      context().onFailure?.(err);
+        console.error(`[Channel ${index + 1}] ${channelLabel} Discord Error: ${sanitizeText(err.message)}`);
+        expert("discord.source.failed", { channel: channelLabel, error: err });
       }
     }
 
     if (channelConfig.RSS && Array.isArray(channelConfig.RSS)) {
       for (const feedUrl of channelConfig.RSS) {
+        throwIfAborted(context().signal);
         try {
+          expert("channel.feed.begin", { index: index + 1, channel: channelLabel, url: feedUrl });
           const items = await fetchFeed(feedUrl);
-          if (!items.length) continue;
-
-          const targetConfig = resolveFeedTargets(channelConfig);
-          if (!hasAnyTarget(targetConfig)) {
-            console.warn(`[Channel ${index + 1}] ${channelLabel}: Feed ${feedUrl} has no delivery target configured.`);
+          expert("channel.feed.fetched", { index: index + 1, channel: channelLabel, url: feedUrl, itemCount: items.length });
+          if (!items.length) {
+            expert("channel.feed.empty", { index: index + 1, channel: channelLabel, url: feedUrl });
             continue;
           }
 
+          const targetConfig = resolveFeedTargets(channelConfig);
+          if (!hasAnyTarget(targetConfig)) {
+            console.warn(`[Channel ${index + 1}] ${channelLabel}: Feed ${sanitizeUrl(feedUrl)} has no delivery target configured.`);
+            expert("channel.feed.skipped", { index: index + 1, channel: channelLabel, url: feedUrl, reason: "no delivery target" });
+            continue;
+          }
+
+          channelCache ||= cacheStore.getChannelBucket(channelConfig.cacheKey || index);
           const pendingItems = collectPendingEntries(
             channelCache,
             feedUrl,
@@ -268,6 +327,14 @@ function createChannelRunner({
             targetConfig,
             (entry) => getCacheKey(entry)
           );
+          expert("channel.feed.pending", {
+            index: index + 1,
+            channel: channelLabel,
+            url: feedUrl,
+            fetched: items.length,
+            pending: pendingItems.length,
+            selected: Math.min(pendingItems.length, channelConfig.RequestSend || 5),
+          });
 
           if (pendingItems.length > 0) {
             const toSend = pendingItems.slice(0, channelConfig.RequestSend || 5);
@@ -287,7 +354,7 @@ function createChannelRunner({
                     targetConfig,
                     entry,
                     sendMessage,
-                    sendMatrixMessage,
+                    sendTelegramMessage,
                     dryRun,
                   });
 
@@ -297,9 +364,10 @@ function createChannelRunner({
                       successfulByBucket[bucketName] = [];
                     }
                     successfulByBucket[bucketName].push(entryKey);
+                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) cacheStore.save();
                   }
                 } finally {
-                  await sleep(SEND_DELAY_MS);
+                  if (!dryRun) await abortableSleep(SEND_DELAY_MS, context().signal);
                 }
               }
             }
@@ -317,15 +385,28 @@ function createChannelRunner({
               (entry) => getCacheKey(entry)
             );
             console.log(
-              `[Channel ${index + 1}] ${channelLabel}: ${feedUrl} completed ${completed}/${toSend.length} entries. Partial: ${partial}.`
+              `[Channel ${index + 1}] ${channelLabel}: ${sanitizeUrl(feedUrl)} completed ${completed}/${toSend.length} entries. Partial: ${partial}.`
             );
+            expert("channel.feed.delivery_summary", {
+              index: index + 1,
+              channel: channelLabel,
+              url: feedUrl,
+              completed,
+              selected: toSend.length,
+              partial,
+              dryRun,
+            });
           }
         } catch (err) {
-          console.error(`[Channel ${index + 1}] ${channelLabel} RSS Error ${feedUrl}: ${err.message}`);
+      if (isCancelled(err) || context().signal?.aborted) throw err;
+      context().onFailure?.(err);
+          console.error(`[Channel ${index + 1}] ${channelLabel} RSS Error ${sanitizeUrl(feedUrl)}: ${sanitizeText(err.message)}`);
+          expert("channel.feed.failed", { index: index + 1, channel: channelLabel, url: feedUrl, error: err });
         }
       }
     }
 
+    expert("channel.process.complete", { index: index + 1, channel: channelLabel, durationMs: Date.now() - startedAt });
     return cache;
   }
 

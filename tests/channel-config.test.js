@@ -1,61 +1,30 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-
 const { collectConfiguredChannels, validateChannels } = require("../src/core/channel-config");
-
-test("collectConfiguredChannels merges global Auth and Matrix into channels", () => {
-  const config = {
-    Auth: {
-      Token: "global-token",
-      "x-super-properties": "global-xsp",
-      cookie: "global-cookie",
-    },
-    Matrix: {
-      Enabled: true,
-      Homeserver: "https://matrix.example.org",
-      AccessToken: "matrix-token",
-      RoomID: "!global:matrix.example.org",
-      MsgType: "m.notice",
-    },
-    channels: {
-      feed: {
-        Webhook: "https://discord.com/api/webhooks/example",
-        Feeds: ["https://example.com/feed.xml"],
-        Discord: {
-          ChannelIDs: ["123"],
-        },
-        Matrix: {
-          RoomID: "!override:matrix.example.org",
-        },
-      },
-    },
-  };
-
-  const [channel] = collectConfiguredChannels(config);
-  assert.equal(channel.Discord.Token, "global-token");
-  assert.equal(channel.Discord["x-super-properties"], "global-xsp");
-  assert.equal(channel.Discord.cookie, "global-cookie");
-  assert.equal(channel.Matrix.Homeserver, "https://matrix.example.org");
-  assert.equal(channel.Matrix.RoomID, "!override:matrix.example.org");
-  assert.ok(channel.cacheKey);
-  assert.equal(validateChannels([channel]).length, 0);
+test("channel configuration inherits global auth and Telegram defaults", () => {
+  const [channel] = collectConfiguredChannels({
+    Auth: { Token:"source-token", "x-super-properties":"fixture", cookie:"cookie" },
+    Telegram: {Enabled:true,BotToken:"bot-token",ChatID:"global-chat"},
+    channels: {feed:{Feeds:["https://example.com/feed"],Discord:{ChannelIDs:["123"]},Telegram:{ChatID:"local-chat"}}},
+  });
+  assert.equal(channel.Discord.Token,"source-token");
+  assert.equal(channel.Telegram.BotToken,"bot-token");
+  assert.equal(channel.Telegram.ChatID,"local-chat");
+  assert.equal(validateChannels([channel]).length,0);
+});
+test("incomplete Telegram destination produces a configuration warning", () => {
+  const channels = collectConfiguredChannels({Telegram:{Enabled:true},channels:{feed:{Feeds:["https://example.com/feed"]}}});
+  assert.ok(validateChannels(channels).some(message=>message.includes("BotToken or ChatID is missing")));
 });
 
-test("validateChannels warns when Matrix is enabled but incomplete", () => {
-  const config = {
-    Matrix: {
-      Enabled: true,
-      Homeserver: "https://matrix.example.org",
-    },
-    channels: {
-      feed: {
-        Feeds: ["https://example.com/feed.xml"],
-      },
-    },
-  };
-
-  const [channel] = collectConfiguredChannels(config);
-  const warnings = validateChannels([channel]);
-  assert.ok(warnings.some((warning) => warning.includes("Matrix is enabled but Homeserver, AccessToken or RoomID is missing")));
-  assert.ok(warnings.some((warning) => warning.includes("missing delivery target")));
+test("unsupported integration objects are reported without being executed as channels", async () => {
+  const {unsupportedConfigSections}=require("../src/core/channel-config");
+  const config={RetiredDestination:{Endpoint:"https://example.test",Token:"fixture"},channels:[{Feeds:["https://example.test/feed"],RemovedDestination:{Enabled:true,Token:"fixture"}}]};
+  assert.equal(collectConfiguredChannels(config).length,1);
+  const warnings=unsupportedConfigSections(config);
+  assert.ok(warnings.some(message=>message.includes('"RetiredDestination"')));
+  assert.ok(warnings.some(message=>message.includes('.RemovedDestination"')));
+  assert.ok(warnings.every(message=>message.includes('Discord, Telegram')));
+  const model=await import("../src/dashboard/public/model.mjs");
+  assert.equal(model.channels(config).length,1);
 });

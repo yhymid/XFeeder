@@ -1,22 +1,32 @@
 "use strict";
 
 const { sendMessage } = require("../message");
-const { sendMatrixMessage } = require("../matrix");
+const { sendTelegramMessage } = require("../telegram");
 const { download } = require("../parsers/downloader");
-const { getWithFallback, postWithFallback } = require("../client");
+const { getHttpClient, getWithFallback, postWithFallback } = require("../client");
 const { loadConfig } = require("../config-loader");
+const { getNetwork, resetNetwork } = require("../network/service");
+const { ChannelTasks } = require("./channel-tasks");
+const { startNetworkRuntime } = require("../network/runtime-state");
 const { createCacheStore } = require("../core/cache-store");
-const { collectConfiguredChannels, summarizeChannel, validateChannels } = require("../core/channel-config");
+const {
+  collectConfiguredChannels,
+  hasTelegramDeliveryTarget,
+  summarizeChannel,
+  validateChannels,
+} = require("../core/channel-config");
 const { createFeedPipeline } = require("../core/feed-pipeline");
+const { expert, setExpertDebug } = require("../core/diagnostics");
+const { setTerminalLogEnabled } = require("../core/terminal-log");
 const { createChannelRunner } = require("./channel-runner");
 const { runChannelsOnce, startChannelQueue } = require("./runtime");
+const { closeBrowserSessions } = require("../extensions/Scrapling");
 
 const { parseRSS } = require("../parsers/rss");
 const { parseAtom } = require("../parsers/atom");
 const { parseYouTube } = require("../parsers/youtube");
 const { parseXML } = require("../parsers/xml");
 const { parseJSON } = require("../parsers/json");
-const { parseFreshRSS } = require("../parsers/freshrss");
 const { parseApiX } = require("../parsers/api_x");
 const { parseFallback } = require("../parsers/fallback");
 const { parseDiscord } = require("../parsers/discord");
@@ -31,7 +41,7 @@ function logChannelSummary(channels) {
     const targets = [
       summary.hasWebhook ? "webhook" : null,
       summary.hasDiscord ? "discord-source" : null,
-      summary.hasMatrix ? "matrix" : null,
+      summary.hasTelegram ? "telegram" : null,
     ].filter(Boolean).join("+") || "none";
     console.log(
       `[Config] ${summary.label}: feeds=${summary.feeds}, targets=${targets}, interval=${summary.interval}m, burst=${summary.burst}, cacheKey=${summary.cacheKey}`
@@ -45,7 +55,10 @@ function createApp({
   autostart = true,
   delayBetweenChannels = 30000,
   dryRun = false,
+  debugExpert = false,
 } = {}) {
+  setExpertDebug(debugExpert);
+  expert("app.start", { configPath, cachePath, dryRun, autostart });
   const state = {
     config: {},
     allChannels: [],
@@ -53,14 +66,27 @@ function createApp({
   };
   const cacheStore = createCacheStore(cachePath);
   let queueRuntime = null;
+  let shutdownPromise = null;
+  let stopNetworkRuntime = () => {};
+  const tasks = new ChannelTasks();
+  const network = getNetwork().stopping ? resetNetwork() : getNetwork();
+  network.ownedByApp = true;
 
   const { fetchFeed } = createFeedPipeline({
     getConfig: () => state.config,
+    configPath,
+    getFeedValidator: (feedUrl) => cacheStore.getFeedValidator(feedUrl),
+    getFeedItems: (feedUrl) => cacheStore.getFeedItems(feedUrl),
+    setFeedSnapshot: (feedUrl, validator, items) => cacheStore.setFeedSnapshot(
+      feedUrl,
+      validator,
+      items,
+      { persist: !dryRun }
+    ),
     download,
     getWithFallback,
     postWithFallback,
     builtInParsers: [
-      parseFreshRSS,
       parseYouTube,
       parseAtom,
       parseXML,
@@ -71,17 +97,23 @@ function createApp({
     ],
   });
 
-  const { checkFeedsForChannel } = createChannelRunner({
+  const { checkFeedsForChannel: runChannel } = createChannelRunner({
     cacheStore,
     fetchFeed,
-    parseDiscord,
+    parseDiscord: (discordConfig) => parseDiscord(discordConfig, getHttpClient(configPath, state.config)),
     sendMessage,
-    sendMatrixMessage,
+    sendTelegramMessage,
     dryRun,
   });
 
+  const checkFeedsForChannel = (index, channel) => tasks.run(index, channel, runChannel);
+
   function applyConfig(nextConfig, { quiet = false } = {}) {
+    network.configure(nextConfig.network);
     state.config = nextConfig;
+    const debugExpertEnabled = debugExpert || nextConfig?.Settings?.DebugExpert === true;
+    setExpertDebug(debugExpertEnabled);
+    setTerminalLogEnabled(debugExpertEnabled || nextConfig?.Settings?.Logs === true);
     state.allChannels = collectConfiguredChannels(nextConfig);
 
     if (!quiet) {
@@ -98,22 +130,47 @@ function createApp({
         return false;
       }
 
-      state.configDigest = nextDigest;
       applyConfig(nextConfig, { quiet });
+      state.configDigest = nextDigest;
+      expert("config.loaded", {
+        path: configPath,
+        channelCount: state.allChannels.length,
+        warnings: validateChannels(state.allChannels).length,
+        channels: state.allChannels.map((channel, index) => ({
+          index: index + 1,
+          label: summarizeChannel(channel).label,
+          feeds: channel.RSS || channel.Feeds || channel.URLs || channel.Sources || [],
+          feedCount: summarizeChannel(channel).feeds,
+          intervalMinutes: summarizeChannel(channel).interval,
+          sources: [
+            Array.isArray(channel.RSS) && channel.RSS.length ? "feeds" : null,
+            channel.Discord ? "discord" : null,
+          ].filter(Boolean),
+          deliveryTargets: [
+            channel.Webhook || channel.Discord?.Webhook ? "webhook" : null,
+            hasTelegramDeliveryTarget(channel.Telegram) ? "telegram" : null,
+          ].filter(Boolean),
+          telegramSettingsPresent: Boolean(channel.Telegram),
+        })),
+      });
       return true;
     } catch (error) {
       console.error(`[Config] Failed to load ${configPath}: ${error.message}`);
+      expert("config.load.failed", { path: configPath, error });
+      if (!state.configDigest) throw error;
       return false;
     }
   }
 
   function startQueue() {
+    if (shutdownPromise) return null;
     if (queueRuntime) {
       return queueRuntime;
     }
 
     queueRuntime = startChannelQueue({
       getChannels: () => state.allChannels,
+      getTaskStates: () => tasks.snapshot(),
       checkFeedsForChannel,
       delayBetweenChannels,
       beforeCycle: () => {
@@ -125,32 +182,50 @@ function createApp({
   }
 
   async function runOnce() {
-    return runChannelsOnce({
-      getChannels: () => state.allChannels,
-      checkFeedsForChannel,
-      beforeRun: async () => {
-        refreshConfig({ force: true, quiet: false });
-      },
-    });
+    const startedAt = Date.now();
+    expert("run.once.begin", { channelCount: state.allChannels.length });
+    try {
+      const result = await runChannelsOnce({
+        getChannels: () => state.allChannels,
+        checkFeedsForChannel,
+        shouldStop: () => tasks.stopping,
+        beforeRun: async () => {
+          refreshConfig({ force: true, quiet: false });
+        },
+      });
+      expert("run.once.complete", { ...result, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      expert("run.once.failed", { durationMs: Date.now() - startedAt, error });
+      throw error;
+    }
   }
 
-  function shutdown({ exit = false, exitCode = 0, persistCache = !dryRun } = {}) {
-    if (queueRuntime && typeof queueRuntime.stop === "function") {
-      queueRuntime.stop();
-      queueRuntime = null;
-    }
-
-    if (persistCache) {
-      cacheStore.save();
-    }
-
-    if (exit) {
-      process.exit(exitCode);
-    }
+  function shutdown({ exit = false, exitCode = 0, persistCache = !dryRun, graceMs = network.config.shutdownGraceMs } = {}) {
+    if (shutdownPromise) return shutdownPromise;
+    tasks.stop();
+    const telemetryStopped = stopNetworkRuntime();
+    queueRuntime?.stop();
+    shutdownPromise = (async () => {
+      expert("app.shutdown", { exit, exitCode, persistCache, dryRun });
+      await network.shutdown(graceMs);
+      tasks.abort();
+      await closeBrowserSessions();
+      // Every built-in operation observes cancellation. Bound third-party plugin
+      // cleanup too; a plugin that ignores its signal cannot hold shutdown forever.
+      let cleanupTimer;
+      try { await Promise.race([tasks.idle(), new Promise((resolve) => { cleanupTimer = setTimeout(resolve, 2000); })]); }
+      finally { clearTimeout(cleanupTimer); }
+      await telemetryStopped;
+      if (persistCache) cacheStore.save();
+      if (exit) process.exit(exitCode);
+    })();
+    return shutdownPromise;
   }
 
   refreshConfig({ force: true, quiet: false });
   if (autostart) {
+    stopNetworkRuntime = startNetworkRuntime({ configPath, network, refreshConfig });
     startQueue();
   }
 
@@ -164,6 +239,8 @@ function createApp({
     cacheStore,
     fetchFeed,
     checkFeedsForChannel,
+    get channelStates() { return tasks.snapshot(); },
+    network,
     get queueRuntime() {
       return queueRuntime;
     },

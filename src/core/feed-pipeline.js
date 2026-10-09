@@ -1,13 +1,17 @@
 "use strict";
 
+const { isBlockedPage } = require("./blocked-page");
 const Parser = require("rss-parser");
+const { context } = require("../network/context");
+const { isCancelled, throwIfAborted } = require("../network/abort");
 const { getScrapling } = require("../extensions/Scrapling");
+const { expert, sanitizeUrl } = require("./diagnostics");
 
 function createDefaultParser() {
   return new Parser({
     timeout: 10000,
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.1",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.2.0",
       "Accept": "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
     },
   });
@@ -16,44 +20,131 @@ function createDefaultParser() {
 function createFeedPipeline({
   config,
   getConfig,
+  configPath = "./config.json",
+  getFeedValidator,
+  getFeedItems,
+  setFeedSnapshot,
   download,
   getWithFallback,
   postWithFallback,
   builtInParsers = [],
   parser = createDefaultParser(),
 } = {}) {
-  function createParserHttpClient(url, downloadResult) {
+  function createParserHttpClient(url, downloadResult, requestContext) {
     async function get(requestUrl, opts = {}) {
       if (downloadResult?.ok && requestUrl === url) {
         return {
-          status: downloadResult.status || 200,
+          status: downloadResult.status ?? null,
           data: downloadResult.data,
           headers: downloadResult.headers || {},
         };
       }
 
-      return getWithFallback(requestUrl, opts);
+      return getWithFallback(requestUrl, { ...opts, ...requestContext });
+    }
+
+    async function post(requestUrl, data, opts = {}) {
+      return postWithFallback(requestUrl, data, { ...opts, ...requestContext });
     }
 
     return {
       get,
-      post: postWithFallback,
+      post,
       http: {
         get,
-        post: postWithFallback,
+        post,
       },
+      ...requestContext,
     };
   }
 
-  async function fetchFeed(url) {
+  async function fetchFeed(url, options = {}) {
+    const signal = options.signal || context().signal;
+    throwIfAborted(signal);
     let items = [];
     const activeConfig = typeof getConfig === "function" ? getConfig() : (config || {});
+    const startedAt = Date.now();
 
-    const dl = await download(url, { accept: "auto" });
-    if (dl.ok && dl.notModified) {
+    const requestContext = { configPath, config: activeConfig, signal };
+    const validator = typeof getFeedValidator === "function" ? getFeedValidator(url) : null;
+    expert("feed.begin", {
+      url,
+      hasEtag: Boolean(validator?.etag),
+      hasLastModified: Boolean(validator?.lastModified),
+    });
+    const saveSnapshot = (items, headers = {}) => {
+      if (typeof setFeedSnapshot !== "function" || !dl?.ok || dl.status === 304) return;
+      const responseHeaders = headers || {};
+      const header = (name) => {
+        const key = Object.keys(responseHeaders).find((candidate) => candidate.toLowerCase() === name);
+        return key ? responseHeaders[key] : "";
+      };
+      throwIfAborted(signal);
+      setFeedSnapshot(url, {
+        etag: header("etag"),
+        lastModified: header("last-modified"),
+      }, items);
+    };
+    const dl = await download(url, {
+      accept: "auto",
+      etag: validator?.etag,
+      lastModified: validator?.lastModified,
+      ...requestContext,
+    });
+    const bodyBytes = typeof dl?.data === "string"
+      ? Buffer.byteLength(dl.data)
+      : (Buffer.isBuffer(dl?.data) ? dl.data.length : null);
+    expert("feed.download.complete", {
+      url,
+      ok: Boolean(dl?.ok),
+      status: dl?.status ?? null,
+      reason: dl?.reason ?? null,
+      contentType: dl?.contentType || "",
+      bodyBytes,
+      notModified: Boolean(dl?.notModified),
+      scrapling: Boolean(dl?.scrapling),
+      scraplingMode: dl?.scraplingMode || null,
+      scraplingRuntime: dl?.scraplingRuntime || dl?.scraplingRuntimeResolved || null,
+      elapsedMs: dl?.elapsed || Date.now() - startedAt,
+      antiBot: dl?.antiBotSignals ? {
+        blocked: Boolean(dl.antiBotSignals.blocked),
+        score: dl.antiBotSignals.score,
+        reasons: dl.antiBotSignals.reasons,
+      } : null,
+    });
+    // Never replay or update snapshots/delivery state for an unresolved challenge.
+    if (isBlockedPage(dl.data, { status: dl.status, headers: dl.headers }) ||
+        ["ANTIBOT_CHALLENGE_UNRESOLVED", "SCRAPLING_BLOCKED"].includes(dl.reason)) {
+      context().onFailure?.(new Error("Challenge/error page rejected"));
+      expert("feed.blocked_page", { url, status: dl.status, reason: dl.reason });
       return [];
     }
-
+    if (dl.ok && dl.notModified) {
+      const cachedItems = typeof getFeedItems === "function" ? getFeedItems(url) : [];
+      expert("feed.not_modified", {
+        url,
+        replayedItems: cachedItems.length,
+        durationMs: Date.now() - startedAt,
+      });
+      return cachedItems;
+    }
+    if (!dl.ok && ["INVALID_URL", "UNSUPPORTED_PROTOCOL"].includes(dl.reason)) {
+      console.warn(`[Downloader] Unsupported feed source ${sanitizeUrl(url)}: ${dl.reason}`);
+      expert("feed.unsupported_source", { url, reason: dl.reason, durationMs: Date.now() - startedAt });
+      return [];
+    }
+    if (!dl.ok) {
+      context().onFailure?.(dl.error || new Error(dl.reason || "Feed download failed"));
+      console.warn(`[Downloader] Skipping ${sanitizeUrl(url)}: ${dl.reason || dl.error?.message || "request failed"}`);
+      const cachedItems = typeof getFeedItems === "function" ? getFeedItems(url) : [];
+      expert("feed.skipped", {
+        url,
+        reason: dl.reason || dl.error?.message || "request failed",
+        replayedItems: cachedItems.length,
+        durationMs: Date.now() - startedAt,
+      });
+      return cachedItems;
+    }
     // If Scrapling fetched HTML successfully, parse it immediately with configured selectors.
     if (dl.ok && dl.scrapling && typeof dl.data === "string") {
       try {
@@ -64,30 +155,42 @@ function createFeedPipeline({
           const htmlOptions = perUrl.htmlParseOptions || {};
           const parsed = scrapling.parseHtmlToFeed(dl.data, htmlOptions);
           if (Array.isArray(parsed) && parsed.length) {
-            console.log(`[Scrapling HTML] Success (${parsed.length}) → ${url}`);
+            console.log(`[Scrapling HTML] Success (${parsed.length}) → ${sanitizeUrl(url)}`);
+            expert("feed.parsed", { url, parser: "scrapling-html", itemCount: parsed.length, durationMs: Date.now() - startedAt });
+            saveSnapshot(parsed, dl.headers);
             return parsed;
           }
         }
       } catch (err) {
-        console.warn(`[Scrapling HTML] Error for ${url}: ${err.message}`);
+        if (isCancelled(err) || signal?.aborted) throw err;
+        console.warn(`[Scrapling HTML] Error for ${sanitizeUrl(url)}: ${err.message}`);
+        expert("feed.parser.failed", { url, parser: "scrapling-html", error: err });
       }
     }
 
-    const parserHttpClient = createParserHttpClient(url, dl);
+    throwIfAborted(signal);
+    const parserHttpClient = createParserHttpClient(url, dl, requestContext);
     for (const builtInParser of builtInParsers) {
+      const parserName = builtInParser.name || "anonymous";
+      expert("feed.parser.begin", { url, parser: parserName });
       try {
         const parsed = await builtInParser(url, parserHttpClient);
         if (parsed && parsed.length) {
-          console.log(`[Parser:${builtInParser.name}] Success (${parsed.length}) → ${url}`);
+          console.log(`[Parser:${parserName}] Success (${parsed.length}) → ${sanitizeUrl(url)}`);
+          expert("feed.parsed", { url, parser: parserName, itemCount: parsed.length, durationMs: Date.now() - startedAt });
+          saveSnapshot(parsed, dl.headers);
           return parsed;
         }
+        expert("feed.parser.no_match", { url, parser: parserName });
       } catch (err) {
-        console.warn(`[Parser:${builtInParser.name}] Error: ${err.message}`);
+        if (isCancelled(err) || signal?.aborted) throw err;
+        console.warn(`[Parser:${parserName}] Error: ${err.message}`);
+        expert("feed.parser.failed", { url, parser: parserName, error: err });
       }
     }
 
     try {
-      if (dl.ok && typeof dl.data === "string" && dl.data.includes("<item")) {
+      if (typeof dl.data === "string" && dl.data.includes("<item")) {
         const matches = [...dl.data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
         items = matches.map((match) => {
           const getTag = (tag) =>
@@ -104,44 +207,20 @@ function createFeedPipeline({
           };
         });
         if (items.length) {
-          console.log(`[Downloader/regex] Success (${items.length}) → ${url}`);
+          console.log(`[Downloader/regex] Success (${items.length}) → ${sanitizeUrl(url)}`);
+          expert("feed.parsed", { url, parser: "rss-regex", itemCount: items.length, durationMs: Date.now() - startedAt });
+          saveSnapshot(items, dl.headers);
           return items;
-        }
-      } else if (!dl.ok) {
-        const res = await getWithFallback(url, {
-          headers: {
-            "Accept": "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
-        });
-        if (res && res.status === 304) return [];
-        if (res && res.status === 200 && typeof res.data === "string" && res.data.includes("<item")) {
-          const matches = [...res.data.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-          items = matches.map((match) => {
-            const getTag = (tag) =>
-              (match[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] || "").trim();
-            return {
-              title: getTag("title") || "No title",
-              link: getTag("link"),
-              contentSnippet: (getTag("description") || "").replace(/<[^>]+>/g, "").substring(0, 400),
-              isoDate: getTag("pubDate") || null,
-              enclosure: null,
-              author: getTag("author") || "",
-              guid: getTag("guid") || getTag("link"),
-              categories: [],
-            };
-          });
-          if (items.length) {
-            console.log(`[Axios-regex] Success (${items.length}) → ${url}`);
-            return items;
-          }
         }
       }
     } catch (err) {
-      console.warn(`[Axios-regex] Error for ${url}: ${err.message}`);
+        if (isCancelled(err) || signal?.aborted) throw err;
+      console.warn(`[Axios-regex] Error for ${sanitizeUrl(url)}: ${err.message}`);
+      expert("feed.parser.failed", { url, parser: "rss-regex", error: err });
     }
 
     try {
-      if (dl.ok && typeof dl.data === "string" && dl.data.trim()) {
+      if (typeof dl.data === "string" && dl.data.trim()) {
         const feed = await parser.parseString(dl.data);
         if (feed?.items?.length) {
           items = feed.items.map((entry) => ({
@@ -154,39 +233,20 @@ function createFeedPipeline({
             guid: entry.guid || entry.link,
             categories: entry.categories || [],
           }));
-          console.log(`[RSSParser] Success (${items.length}) → ${url}`);
+          console.log(`[RSSParser] Success (${items.length}) → ${sanitizeUrl(url)}`);
+          expert("feed.parsed", { url, parser: "rss-parser", itemCount: items.length, durationMs: Date.now() - startedAt });
+          saveSnapshot(items, dl.headers);
           return items;
-        }
-      } else {
-        const res = await getWithFallback(url, {
-          headers: {
-            "Accept": "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
-        });
-        if (res && res.status === 304) return [];
-        if (res && typeof res.data === "string" && res.data.trim()) {
-          const feed = await parser.parseString(res.data);
-          if (feed?.items?.length) {
-            items = feed.items.map((entry) => ({
-              title: entry.title || "No title",
-              link: entry.link,
-              contentSnippet: entry.contentSnippet || entry.content || "",
-              isoDate: entry.isoDate || entry.pubDate || null,
-              enclosure: entry.enclosure?.url || null,
-              author: entry.creator || entry.author || null,
-              guid: entry.guid || entry.link,
-              categories: entry.categories || [],
-            }));
-            console.log(`[RSSParser] Success (${items.length}) → ${url}`);
-            return items;
-          }
         }
       }
     } catch (err) {
-      console.warn(`[RSSParser] Error for ${url}: ${err.message}`);
+        if (isCancelled(err) || signal?.aborted) throw err;
+      console.warn(`[RSSParser] Error for ${sanitizeUrl(url)}: ${err.message}`);
+      expert("feed.parser.failed", { url, parser: "rss-parser", error: err });
     }
 
-    console.error(`⚠️ No data from ${url}`);
+    console.error(`⚠️ No data from ${sanitizeUrl(url)}`);
+    expert("feed.empty", { url, durationMs: Date.now() - startedAt });
     return [];
   }
 

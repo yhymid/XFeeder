@@ -4,7 +4,16 @@ const { ScraplingDetector } = require("./detector");
 const { ScraplingConfig } = require("./config");
 const cli = require("./cli");
 const shell = require("./shell");
+const browserWorker = require("./browser-worker");
 const utils = require("./utils");
+const { resolveResourcePolicy } = require("./resource-policy");
+const { getNetwork } = require("../../network/service");
+const { context } = require("../../network/context");
+
+async function closeBrowserSessions() {
+  getNetwork().scrapling.cancelWaiting();
+  await browserWorker.close();
+}
 
 const EXTRACT_MODES = new Set(["get", "post", "put", "delete", "fetch", "stealthy-fetch"]);
 const HTTP_EXTRACT_MODES = new Set(["get", "post", "put", "delete"]);
@@ -111,6 +120,8 @@ function resolveRuntimeAndMode(config, merged) {
 }
 
 function requiresShellRuntime(merged = {}, extractMode = "get") {
+  if (merged.includeResponseMetadata === true) return true;
+
   const hasValue = (value) => {
     if (value === undefined || value === null || value === "") return false;
     if (Array.isArray(value)) return value.length > 0;
@@ -175,6 +186,7 @@ class Scrapling {
       hasShell: this.detector.hasShell,
       hasExtract: this.detector.hasExtract,
       hasMcp: this.detector.hasMcp,
+      hasSessions: this.detector.hasSessions,
       pythonCmd: this.detector.pythonCmd,
       scraplingCmd: this.detector.scraplingCmd,
       extractModes: Array.from(EXTRACT_MODES),
@@ -185,7 +197,7 @@ class Scrapling {
   async fetch(url, options = {}) {
     if (!this.enabled) throw new Error("Scrapling not enabled or not available");
 
-    const merged = {
+    let merged = {
       ...this.config.defaultOptions,
       ...this.config.getUrlConfig(url),
       ...options,
@@ -193,26 +205,58 @@ class Scrapling {
     };
 
     let { runtimeMode, extractMode } = resolveRuntimeAndMode(this.config, merged);
+    if (BROWSER_EXTRACT_MODES.has(extractMode)) {
+      merged = { ...resolveResourcePolicy(this.config.network,
+        this.config.defaultOptions, this.config.getUrlConfig(url), options), url };
+    }
+    const config = this.config;
+    const network = getNetwork({ network: config.network });
+    return network.run("scrapling", merged.signal || context().signal, (signal) =>
+      this.fetchResolved(url, { ...merged, signal }, runtimeMode, extractMode, config));
+  }
+
+  async fetchResolved(url, merged, runtimeMode, extractMode, config) {
     const requestedRuntime = runtimeMode;
     validateOptionsForMode(merged, extractMode);
 
-    if (
-      runtimeMode !== "shell" &&
-      this.config.autoUseShellForAdvancedOptions &&
-      this.detector.hasShell &&
-      requiresShellRuntime(merged, extractMode)
-    ) {
+    const needsMetadataShell = merged.includeResponseMetadata === true;
+    const needsAdvancedShell = config.autoUseShellForAdvancedOptions &&
+      requiresShellRuntime(merged, extractMode);
+    if (runtimeMode !== "shell" && this.detector.hasShell && (needsMetadataShell || needsAdvancedShell)) {
       runtimeMode = "shell";
     }
 
-    const runtimeAutoSwitched = requestedRuntime !== runtimeMode && runtimeMode === "shell";
-    const withRuntimeMeta = (response, runtime) => ({
-      ...(response || {}),
-      runtime: runtime || response?.runtime || runtimeMode,
-      resolvedRuntime: runtimeMode,
-      requestedRuntime,
-      runtimeAutoSwitched,
-    });
+    const withRuntimeMeta = (response, runtime) => {
+      const resolvedRuntime = runtime || response?.runtime || runtimeMode;
+      return {
+        ...(response || {}),
+        runtime: resolvedRuntime,
+        resolvedRuntime,
+        requestedRuntime,
+        runtimeAutoSwitched: requestedRuntime !== resolvedRuntime,
+      };
+    };
+
+    const hasRawCliArguments = [merged.rawCliArgs, merged.cliArgs, merged.extraCliArgs]
+      .some((value) => hasValue(value));
+
+    if (
+      BROWSER_EXTRACT_MODES.has(extractMode) &&
+      config.persistentBrowserSessions &&
+      this.detector.hasSessions &&
+      !hasRawCliArguments
+    ) {
+      const response = await browserWorker.fetch(
+        this.detector.pythonCmd,
+        url,
+        extractMode,
+        merged
+      );
+      if (merged.cssSelector) {
+        response.html = shell.applyCssSelector(response.html, merged.cssSelector);
+      }
+      return withRuntimeMeta(response, "session");
+    }
 
     // Preferred path: CLI extract mode supports all Scrapling options directly.
     if (runtimeMode !== "shell" && this.detector.hasExtract) {
@@ -248,6 +292,10 @@ class Scrapling {
     return cli.runShell(this.detector.scraplingCmd, opts);
   }
 
+  async closeBrowserSessions() {
+    await closeBrowserSessions();
+  }
+
   parseHtmlToFeed(html, options = {}) {
     return utils.htmlToFeedItems(html, options);
   }
@@ -267,6 +315,7 @@ function getScrapling(rootConfig = {}) {
 module.exports = {
   Scrapling,
   getScrapling,
+  closeBrowserSessions,
   requiresShellRuntime,
   ...utils,
 };

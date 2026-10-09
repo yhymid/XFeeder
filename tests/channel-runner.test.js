@@ -27,8 +27,8 @@ function createCacheStoreMock() {
 test("channel runner retries only the failed target on the next pass", async () => {
   const cacheStore = createCacheStoreMock();
   let webhookCalls = 0;
-  let matrixCalls = 0;
-  let failMatrixOnce = true;
+  let telegramCalls = 0;
+  let failTelegramOnce = true;
 
   const { checkFeedsForChannel } = createChannelRunner({
     cacheStore,
@@ -43,11 +43,11 @@ test("channel runner retries only the failed target on the next pass", async () 
     sendMessage: async () => {
       webhookCalls += 1;
     },
-    sendMatrixMessage: async () => {
-      matrixCalls += 1;
-      if (failMatrixOnce) {
-        failMatrixOnce = false;
-        throw new Error("temporary matrix error");
+    sendTelegramMessage: async () => {
+      telegramCalls += 1;
+      if (failTelegramOnce) {
+        failTelegramOnce = false;
+        throw new Error("temporary telegram error");
       }
     },
   });
@@ -58,12 +58,10 @@ test("channel runner retries only the failed target on the next pass", async () 
     sourceKey: "channels",
     Webhook: "https://discord.com/api/webhooks/test",
     Thread: null,
-    Matrix: {
+    Telegram: {
       Enabled: true,
-      Homeserver: "https://matrix.example.org",
-      AccessToken: "token",
-      RoomID: "!room:matrix.example.org",
-      MsgType: "m.notice",
+      BotToken: "token",
+      ChatID: "!room:telegram.example.org",
     },
     RSS: ["https://example.com/feed.xml"],
     RequestSend: 5,
@@ -74,13 +72,13 @@ test("channel runner retries only the failed target on the next pass", async () 
 
   const channelCache = cacheStore.getChannelBucket("channel:test");
   assert.equal(webhookCalls, 1);
-  assert.equal(matrixCalls, 2);
+  assert.equal(telegramCalls, 2);
   assert.deepEqual(channelCache["https://example.com/feed.xml::webhook"], ["https://example.com/post"]);
-  assert.deepEqual(channelCache["https://example.com/feed.xml::matrix"], ["https://example.com/post"]);
+  assert.deepEqual(channelCache["https://example.com/feed.xml::telegram"], ["https://example.com/post"]);
   assert.equal(cacheStore.getSaveCount(), 2);
 });
 
-test("channel runner handles webhook-only feeds when Matrix config is null", async () => {
+test("channel runner handles webhook-only feeds when Telegram config is null", async () => {
   const cacheStore = createCacheStoreMock();
   let webhookCalls = 0;
 
@@ -97,8 +95,8 @@ test("channel runner handles webhook-only feeds when Matrix config is null", asy
     sendMessage: async () => {
       webhookCalls += 1;
     },
-    sendMatrixMessage: async () => {
-      throw new Error("Matrix should not be called for webhook-only channels");
+    sendTelegramMessage: async () => {
+      throw new Error("Telegram should not be called for webhook-only channels");
     },
   });
 
@@ -108,7 +106,7 @@ test("channel runner handles webhook-only feeds when Matrix config is null", asy
     sourceKey: "channels",
     Webhook: "https://discord.com/api/webhooks/test",
     Thread: null,
-    Matrix: null,
+    Telegram: null,
     RSS: ["https://example.com/feed.xml"],
     RequestSend: 5,
   });

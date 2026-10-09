@@ -1,5 +1,9 @@
 // src/message.js - Discord webhook sender (Components V2 format)
 const axios = require("axios");
+const { networkAdapter } = require("./network/http-adapter");
+const { getNetwork } = require("./network/service");
+const { context } = require("./network/context");
+const { isCancelled } = require("./network/abort");
 
 const COMPONENTS_V2_FLAG = 1 << 15;
 const MAX_COMPONENT_TEXT = 1800;
@@ -148,6 +152,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
     });
     console.log(`[ComponentsV2] Sent: ${entry.title || entry.link || "(no title)"}`);
   } catch (err) {
+      if (isCancelled(err) || context().signal?.aborted) throw err;
     if (err.response) {
       console.error(`[ComponentsV2] Send error: ${err.response.status}`, err.response.data);
     } else {
@@ -170,9 +175,11 @@ async function postToWebhook(url, payload) {
   for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt += 1) {
     try {
       return await axios.post(url, sanitizedPayload, {
+        adapter: networkAdapter, signal: context().signal, xfeederDefaultTimeout: 0,
         headers: { "Content-Type": "application/json" },
       });
     } catch (err) {
+      if (isCancelled(err) || context().signal?.aborted) throw err;
       const is429 = err?.response?.status === 429;
       if (!is429 || attempt >= MAX_429_RETRIES) {
         throw err;
@@ -182,7 +189,7 @@ async function postToWebhook(url, payload) {
       console.warn(
         `[ComponentsV2] Rate limited (429), retry ${attempt + 1}/${MAX_429_RETRIES}, wait=${waitMs}ms`
       );
-      await sleep(waitMs);
+      await getNetwork().wait(waitMs, context().signal, "retry:discord");
     }
   }
 }
@@ -318,9 +325,7 @@ function clampDelay(ms) {
   return Math.max(MIN_RETRY_DELAY_MS, Math.min(MAX_RETRY_DELAY_MS, Math.ceil(ms)));
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+
 
 /**
  * Truncates string to specified length with ellipsis.

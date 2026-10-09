@@ -8,7 +8,7 @@ const CHANNEL_FIELD_HINTS = new Set([
   "Webhook",
   "Thread",
   "Discord",
-  "Matrix",
+  "Telegram",
   "TimeChecker",
   "RequestSend",
   "ID",
@@ -17,12 +17,13 @@ const CHANNEL_FIELD_HINTS = new Set([
 ]);
 const RESERVED_ROOT_KEYS = new Set([
   "Settings",
+  "network",
   "Auth",
   "Proxy",
   "Scrapling",
   "ChannelDefaults",
   "DefaultChannel",
-  "Matrix",
+  "Telegram",
 ]);
 
 function isPlainObject(value) {
@@ -43,11 +44,11 @@ function stableStringify(value) {
 
 function looksLikeChannelEntry(value) {
   if (typeof value === "string") {
-    return true;
+    return /^https?:\/\//i.test(value);
   }
 
   if (Array.isArray(value)) {
-    return value.every((item) => typeof item === "string");
+    return value.every((item) => typeof item === "string" && /^https?:\/\//i.test(item));
   }
 
   if (!isPlainObject(value)) {
@@ -168,29 +169,44 @@ function normalizeDiscordConfig(discordConfig, authDefaults = {}) {
   return normalized;
 }
 
-function mergeMatrixConfig(rootMatrixConfig, channelMatrixConfig) {
-  const root = isPlainObject(rootMatrixConfig) ? rootMatrixConfig : null;
-  const local = isPlainObject(channelMatrixConfig) ? channelMatrixConfig : null;
+function mergeTelegramConfig(rootTelegramConfig, channelTelegramConfig) {
+  const root = isPlainObject(rootTelegramConfig) ? rootTelegramConfig : null;
+  const local = isPlainObject(channelTelegramConfig) ? channelTelegramConfig : null;
   if (!root && !local) return null;
 
-  return {
+  const merged = {
     ...(root ? { ...root } : {}),
     ...(local ? { ...local } : {}),
   };
+
+  for (const key of ["BotToken", "ChatID"]) {
+    if (typeof local?.[key] === "string" && !local[key].trim()) {
+      merged[key] = root?.[key] || "";
+    }
+  }
+
+  if (typeof merged.BotToken === "string") merged.BotToken = merged.BotToken.trim();
+  if (merged.ChatID !== undefined && merged.ChatID !== null) merged.ChatID = String(merged.ChatID).trim();
+
+  const threadId = Number(merged.MessageThreadID);
+  merged.MessageThreadID = Number.isSafeInteger(threadId) && threadId > 0 ? threadId : null;
+
+  const timeout = Number(merged.TimeoutMs);
+  merged.TimeoutMs = Number.isFinite(timeout) && timeout > 0 ? Math.max(1, Math.floor(timeout)) : 15000;
+  return merged;
 }
 
 function hasWebhookTarget(webhookUrl) {
   return typeof webhookUrl === "string" && webhookUrl.trim().length > 0;
 }
 
-function hasMatrixDeliveryTarget(matrixConfig) {
+function hasTelegramDeliveryTarget(telegramConfig) {
   return Boolean(
-    matrixConfig &&
-    typeof matrixConfig === "object" &&
-    matrixConfig.Enabled !== false &&
-    String(matrixConfig.Homeserver || "").trim() &&
-    String(matrixConfig.AccessToken || "").trim() &&
-    String(matrixConfig.RoomID || "").trim()
+    telegramConfig &&
+    typeof telegramConfig === "object" &&
+    telegramConfig.Enabled !== false &&
+    String(telegramConfig.BotToken || "").trim() &&
+    String(telegramConfig.ChatID || "").trim()
   );
 }
 
@@ -203,7 +219,7 @@ function cloneDefaults(defaults) {
   return {
     ...defaults,
     Discord: defaults.Discord && typeof defaults.Discord === "object" ? { ...defaults.Discord } : defaults.Discord,
-    Matrix: defaults.Matrix && typeof defaults.Matrix === "object" ? { ...defaults.Matrix } : defaults.Matrix,
+    Telegram: defaults.Telegram && typeof defaults.Telegram === "object" ? { ...defaults.Telegram } : defaults.Telegram,
   };
 }
 
@@ -235,10 +251,10 @@ function buildChannelFromShorthand(input, defaults) {
       };
     }
 
-    if (defaults?.Matrix || input.Matrix) {
-      merged.Matrix = {
-        ...(defaults?.Matrix && typeof defaults.Matrix === "object" ? defaults.Matrix : {}),
-        ...(input.Matrix && typeof input.Matrix === "object" ? input.Matrix : {}),
+    if (defaults?.Telegram || input.Telegram) {
+      merged.Telegram = {
+        ...(defaults?.Telegram && typeof defaults.Telegram === "object" ? defaults.Telegram : {}),
+        ...(input.Telegram && typeof input.Telegram === "object" ? input.Telegram : {}),
       };
     }
 
@@ -285,12 +301,12 @@ function buildChannelCacheKey(channel) {
           thread: channel.Discord.Thread || null,
         }
       : null,
-    matrix: channel?.Matrix
+    telegram: channel?.Telegram
       ? {
-          enabled: channel.Matrix.Enabled !== false,
-          homeserver: channel.Matrix.Homeserver || "",
-          roomId: channel.Matrix.RoomID || "",
-          msgType: channel.Matrix.MsgType || "",
+          enabled: channel.Telegram.Enabled !== false,
+          chatId: channel.Telegram.ChatID || "",
+          messageThreadId: channel.Telegram.MessageThreadID || "",
+          disableWebPagePreview: channel.Telegram.DisableWebPagePreview === true,
         }
       : null,
   });
@@ -314,7 +330,7 @@ function normalizeChannel(channel, index, rootConfig = {}) {
     TimeChecker: normalizeTimeChecker(channel.TimeChecker, 30),
     RequestSend: normalizeRequestSend(channel.RequestSend, 5),
     Discord: normalizeDiscordConfig(channel.Discord, normalizeAuthDefaults(rootConfig.Auth)),
-    Matrix: mergeMatrixConfig(rootConfig.Matrix, channel.Matrix),
+    Telegram: mergeTelegramConfig(rootConfig.Telegram, channel.Telegram),
     raw: channel,
   };
 
@@ -366,7 +382,7 @@ function summarizeChannel(channel) {
     feeds: Array.isArray(channel.RSS) ? channel.RSS.length : 0,
     hasWebhook: hasWebhookTarget(channel.Webhook),
     hasDiscord: hasDiscordSource(channel.Discord),
-    hasMatrix: hasMatrixDeliveryTarget(channel.Matrix),
+    hasTelegram: hasTelegramDeliveryTarget(channel.Telegram),
     interval: channel.TimeChecker,
     burst: channel.RequestSend,
     cacheKey: channel.cacheKey,
@@ -382,10 +398,10 @@ function validateChannels(channels) {
     const hasFeeds = Array.isArray(channel.RSS) && channel.RSS.length > 0;
     const hasDiscord = hasDiscordSource(channel.Discord);
     const hasWebhook = hasWebhookTarget(channel.Webhook);
-    const hasMatrix = hasMatrixDeliveryTarget(channel.Matrix);
+    const hasTelegram = hasTelegramDeliveryTarget(channel.Telegram);
 
-    if (!hasWebhook && !hasMatrix) {
-      warnings.push(`[Config] ${label}: missing delivery target (Webhook or complete Matrix config).`);
+    if (!hasWebhook && !hasTelegram) {
+      warnings.push(`[Config] ${label}: missing delivery target (Webhook or complete Telegram config).`);
     }
 
     if (!hasFeeds && !hasDiscord) {
@@ -410,8 +426,8 @@ function validateChannels(channels) {
       }
     }
 
-    if (channel.Matrix && channel.Matrix.Enabled !== false && !hasMatrix) {
-      warnings.push(`[Config] ${label}: Matrix is enabled but Homeserver, AccessToken or RoomID is missing.`);
+    if (channel.Telegram && channel.Telegram.Enabled !== false && !hasTelegram) {
+      warnings.push(`[Config] ${label}: Telegram is enabled but BotToken or ChatID is missing.`);
     }
 
     if (seenCacheKeys.has(channel.cacheKey)) {
@@ -426,11 +442,34 @@ function validateChannels(channels) {
   return warnings;
 }
 
+// Unknown integration objects are preserved for editing, never interpreted as
+// destinations. Report their actual key without hard-coding retired providers.
+function unsupportedConfigSections(config = {}) {
+  const warnings = [];
+  const report = (label) => warnings.push(
+    `Unsupported configuration section "${label}" is not executed. Supported delivery destinations: Discord, Telegram.`,
+  );
+  for (const [key, value] of Object.entries(config)) {
+    if (!RESERVED_ROOT_KEYS.has(key) && !isChannelConfigGroup(key, value) && isPlainObject(value)) report(key);
+  }
+  const inspectChannel = (channel, label) => {
+    for (const [key, value] of Object.entries(channel || {})) {
+      if (!CHANNEL_FIELD_HINTS.has(key) && isPlainObject(value)) report(`${label}.${key}`);
+    }
+  };
+  inspectChannel(config.ChannelDefaults, "ChannelDefaults");
+  inspectChannel(config.DefaultChannel, "DefaultChannel");
+  for (const channel of collectConfiguredChannels(config)) inspectChannel(channel.raw, getChannelLabel(channel));
+  return [...new Set(warnings)];
+}
+
 module.exports = {
+  unsupportedConfigSections,
   buildChannelCacheKey,
   collectChannelGroupEntries,
   collectConfiguredChannels,
   getChannelLabel,
+  hasTelegramDeliveryTarget,
   isChannelConfigGroup,
   normalizeChannel,
   normalizeDiscordConfig,

@@ -8,8 +8,13 @@ const path = require("path");
 const {
   collectChannelGroupEntries,
   collectConfiguredChannels,
-  validateChannels,
 } = require("../core/channel-config");
+
+const { readActivity } = require("./activity");
+const { validateConfig } = require("./validation");
+const { sanitizeText } = require("../core/diagnostics");
+const { normalizeNetworkConfig } = require("../network/config");
+const { readNetworkSettings, revision } = require("./network");
 
 const { version: appVersion } = require("../../package.json");
 
@@ -25,6 +30,7 @@ const SESSION_COOKIE_NAME = "xfeeder_session";
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
@@ -64,7 +70,13 @@ function sendJson(res, statusCode, payload, extraHeaders = {}) {
   res.end(body);
 }
 
-function sendText(res, statusCode, body, contentType = "text/plain; charset=utf-8", extraHeaders = {}) {
+function sendText(
+  res,
+  statusCode,
+  body,
+  contentType = "text/plain; charset=utf-8",
+  extraHeaders = {},
+) {
   res.writeHead(statusCode, {
     "Content-Type": contentType,
     "Content-Length": Buffer.byteLength(body),
@@ -152,14 +164,24 @@ function parseCookies(header = "") {
     const key = chunk.slice(0, separatorIndex).trim();
     const value = chunk.slice(separatorIndex + 1).trim();
     if (!key) continue;
-    cookies[key] = decodeURIComponent(value);
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      /* Ignore malformed cookies. */
+    }
   }
   return cookies;
 }
 
 function isLoopbackHost(host = "") {
-  const normalized = String(host || "").trim().toLowerCase();
-  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
+  const normalized = String(host || "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "127.0.0.1" ||
+    normalized === "localhost" ||
+    normalized === "::1"
+  );
 }
 
 function compareSecrets(left, right) {
@@ -171,13 +193,19 @@ function compareSecrets(left, right) {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function buildCookie(name, value, { maxAgeSeconds = null } = {}) {
+function buildCookie(
+  name,
+  value,
+  { maxAgeSeconds = null, secure = false } = {},
+) {
   const parts = [
     `${name}=${encodeURIComponent(value)}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Strict",
   ];
+
+  if (secure) parts.push("Secure");
 
   if (typeof maxAgeSeconds === "number") {
     parts.push(`Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`);
@@ -186,22 +214,23 @@ function buildCookie(name, value, { maxAgeSeconds = null } = {}) {
   return parts.join("; ");
 }
 
-function buildExpiredCookie(name) {
-  return buildCookie(name, "", { maxAgeSeconds: 0 });
+function buildExpiredCookie(name, secure = false) {
+  return buildCookie(name, "", { maxAgeSeconds: 0, secure });
 }
 
-function createAuthManager({ host }) {
+function createAuthManager({ host, secure = false }) {
   const password = String(process.env.XFEEDER_DASHBOARD_PASSWORD || "").trim();
   const loopbackOnly = isLoopbackHost(host);
   const sessionHours = Number(process.env.XFEEDER_DASHBOARD_SESSION_TTL_HOURS);
-  const ttlMs = Number.isFinite(sessionHours) && sessionHours > 0
-    ? Math.floor(sessionHours * 60 * 60 * 1000)
-    : 12 * 60 * 60 * 1000;
+  const ttlMs =
+    Number.isFinite(sessionHours) && sessionHours > 0
+      ? Math.floor(sessionHours * 60 * 60 * 1000)
+      : 12 * 60 * 60 * 1000;
   const sessions = new Map();
 
   if (!loopbackOnly && !password) {
     throw new Error(
-      "Dashboard is binding to a non-loopback host. Set XFEEDER_DASHBOARD_PASSWORD before exposing it outside localhost."
+      "Dashboard is binding to a non-loopback host. Set XFEEDER_DASHBOARD_PASSWORD before exposing it outside localhost.",
     );
   }
 
@@ -272,6 +301,7 @@ function createAuthManager({ host }) {
       ok: true,
       cookie: buildCookie(SESSION_COOKIE_NAME, sessionId, {
         maxAgeSeconds: Math.floor(ttlMs / 1000),
+        secure,
       }),
     };
   }
@@ -281,7 +311,7 @@ function createAuthManager({ host }) {
     if (sessionId) {
       sessions.delete(sessionId);
     }
-    return buildExpiredCookie(SESSION_COOKIE_NAME);
+    return buildExpiredCookie(SESSION_COOKIE_NAME, secure);
   }
 
   return {
@@ -293,11 +323,16 @@ function createAuthManager({ host }) {
   };
 }
 
-function createStatePayload(serverInfo = {}, authState = {}) {
-  const config = readJson(CONFIG_PATH, {});
-  const cache = readJson(CACHE_PATH, {});
+function createStatePayload(serverInfo = {}, authState = {}, paths = {}) {
+  const {
+    configPath = CONFIG_PATH,
+    cachePath = CACHE_PATH,
+    envPath = ENV_PATH,
+  } = paths;
+  const config = readJson(configPath, {});
+  const cache = readJson(cachePath, {});
   const channels = collectConfiguredChannels(config);
-  const warnings = validateChannels(channels);
+  const { warnings, errors } = validateConfig(config, envPath);
   const channelGroupEntries = collectChannelGroupEntries(config || {});
   const totalFeeds = channels.reduce((sum, channel) => {
     return sum + (Array.isArray(channel.RSS) ? channel.RSS.length : 0);
@@ -305,8 +340,10 @@ function createStatePayload(serverInfo = {}, authState = {}) {
 
   return {
     config,
+    revision: revision(readText(configPath, "")),
     warnings,
-    envFile: readText(ENV_PATH, ""),
+    errors,
+    envFile: readText(envPath, ""),
     envExample: readText(ENV_EXAMPLE_PATH, ""),
     cacheSummary: summarizeCache(cache),
     stats: {
@@ -315,7 +352,9 @@ function createStatePayload(serverInfo = {}, authState = {}) {
         mode: Array.isArray(value) ? "array" : "object",
         count: Array.isArray(value)
           ? value.length
-          : (value && typeof value === "object" ? Object.keys(value).length : 0),
+          : value && typeof value === "object"
+            ? Object.keys(value).length
+            : 0,
       })),
       totalChannelGroups: channelGroupEntries.length,
       totalChannels: channels.length,
@@ -326,11 +365,12 @@ function createStatePayload(serverInfo = {}, authState = {}) {
     meta: {
       host: serverInfo.host || "127.0.0.1",
       port: serverInfo.port || 3000,
-      configPath: CONFIG_PATH,
-      envPath: ENV_PATH,
-      cachePath: CACHE_PATH,
+      configPath,
+      envPath,
+      cachePath,
       appVersion,
-      configReload: "worker picks up config and .env changes from disk on the next cycle",
+      configReload:
+        "worker picks up config and .env changes from disk on the next cycle",
       security: {
         authMode: authState.mode || "local-open",
         passwordRequired: authState.required === true,
@@ -344,7 +384,7 @@ function serveStatic(reqPath, res) {
   const safePath = path.normalize(normalized).replace(/^(\.\.[/\\])+/, "");
   const filePath = path.join(PUBLIC_DIR, safePath);
 
-  if (!filePath.startsWith(PUBLIC_DIR)) {
+  if (!filePath.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
     sendText(res, 403, "Forbidden");
     return;
   }
@@ -387,18 +427,51 @@ function requireDashboardAccess(req, res, authManager) {
   return authState;
 }
 
-function startDashboard({ host = "127.0.0.1", port = 3000 } = {}) {
-  const authManager = createAuthManager({ host });
+function startDashboard({
+  host = "127.0.0.1",
+  port = 3000,
+  dataDir = ROOT_DIR,
+  publicOrigin = process.env.XFEEDER_DASHBOARD_PUBLIC_ORIGIN || "",
+} = {}) {
+  if (publicOrigin) {
+    const parsedOrigin = new URL(publicOrigin);
+    if (
+      !["http:", "https:"].includes(parsedOrigin.protocol) ||
+      parsedOrigin.origin !== publicOrigin
+    ) {
+      throw new Error(
+        "XFEEDER_DASHBOARD_PUBLIC_ORIGIN must be an exact http(s) origin without a path or trailing slash.",
+      );
+    }
+  }
+  const paths = {
+    configPath: path.join(dataDir, "config.json"),
+    envPath: path.join(dataDir, ".env"),
+    cachePath: path.join(dataDir, "cache.json"),
+  };
+  const authManager = createAuthManager({
+    host,
+    secure: publicOrigin.startsWith("https://"),
+  });
 
   const server = http.createServer(async (req, res) => {
     const requestHost = req.headers.host || `${host}:${port}`;
-    const url = new URL(req.url, `http://${requestHost}`);
+    const url = new URL(req.url, "http://dashboard.local");
     const serverAddress = server.address();
     const serverInfo = {
       host,
-      port: serverAddress && typeof serverAddress === "object" ? serverAddress.port : port,
+      port:
+        serverAddress && typeof serverAddress === "object"
+          ? serverAddress.port
+          : port,
     };
-    const expectedOrigin = `http://${requestHost}`;
+    const expectedOrigin = publicOrigin || `http://${requestHost}`;
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    );
 
     try {
       if (req.method === "GET" && url.pathname === "/api/health") {
@@ -420,9 +493,12 @@ function startDashboard({ host = "127.0.0.1", port = 3000 } = {}) {
       }
 
       if (req.method === "POST" && url.pathname === "/api/login") {
+        if (!ensureSameOrigin(req, res, expectedOrigin)) return;
         const rawBody = await parseRequestBody(req);
         const parsed = JSON.parse(rawBody || "{}");
-        const loginResult = authManager.login(typeof parsed?.password === "string" ? parsed.password : "");
+        const loginResult = authManager.login(
+          typeof parsed?.password === "string" ? parsed.password : "",
+        );
         if (!loginResult.ok) {
           sendJson(res, 401, {
             error: "Invalid dashboard password.",
@@ -442,7 +518,7 @@ function startDashboard({ host = "127.0.0.1", port = 3000 } = {}) {
               mode: authManager.required ? "password" : "local-open",
             },
           },
-          loginResult.cookie ? { "Set-Cookie": loginResult.cookie } : {}
+          loginResult.cookie ? { "Set-Cookie": loginResult.cookie } : {},
         );
         return;
       }
@@ -457,7 +533,54 @@ function startDashboard({ host = "127.0.0.1", port = 3000 } = {}) {
       if (req.method === "GET" && url.pathname === "/api/state") {
         const authState = requireDashboardAccess(req, res, authManager);
         if (!authState) return;
-        sendJson(res, 200, createStatePayload(serverInfo, authState));
+        sendJson(res, 200, createStatePayload(serverInfo, authState, paths));
+        return;
+      }
+
+      if (["/api/settings/network", "/api/network/metrics"].includes(url.pathname)) {
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        if (req.method === "GET") {
+          const { payload } = readNetworkSettings(paths.configPath);
+          sendJson(res, 200, url.pathname === "/api/network/metrics" ? payload.runtime : payload,
+            { ETag: `"${payload.revision}"` });
+          return;
+        }
+        if (req.method === "PUT" && url.pathname === "/api/settings/network") {
+          if (!ensureSameOrigin(req, res, expectedOrigin)) return;
+          const settings = JSON.parse(await parseRequestBody(req));
+          const validation = normalizeNetworkConfig(settings);
+          if (!validation.ok) { sendJson(res, 400, { error: "Invalid network settings.", errors: validation.errors }); return; }
+          const current = readNetworkSettings(paths.configPath);
+          if (!req.headers["if-match"]) { sendJson(res, 428, { error: "Configuration revision required. Reload settings first." }); return; }
+          if (req.headers["if-match"] !== `"${current.payload.revision}"`) {
+            sendJson(res, 412, { error: "Configuration changed elsewhere. Refresh before saving." }); return;
+          }
+          current.config.network = settings;
+          writeTextAtomic(paths.configPath, `${JSON.stringify(current.config, null, 2)}\n`);
+          const { payload } = readNetworkSettings(paths.configPath);
+          sendJson(res, 200, payload, { ETag: `"${payload.revision}"` });
+          return;
+        }
+        sendJson(res, 405, { error: "Method not allowed." }); return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/activity") {
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        sendJson(
+          res,
+          200,
+          await readActivity(path.join(dataDir, "debug/terminal.txt"), {
+            limit: url.searchParams.get("limit"),
+          }),
+        );
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/validate") {
+        if (!ensureSameOrigin(req, res, expectedOrigin)) return;
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        const config = JSON.parse(await parseRequestBody(req));
+        sendJson(res, 200, validateConfig(config, paths.envPath));
         return;
       }
 
@@ -473,8 +596,33 @@ function startDashboard({ host = "127.0.0.1", port = 3000 } = {}) {
           return;
         }
 
-        writeTextAtomic(CONFIG_PATH, `${JSON.stringify(parsed, null, 2)}\n`);
-        sendJson(res, 200, createStatePayload(serverInfo, authState));
+        if (req.headers["if-match"] && req.headers["if-match"] !== `"${revision(readText(paths.configPath, ""))}"`) {
+          sendJson(res, 412, { error: "Configuration changed elsewhere. Refresh before saving." }); return;
+        }
+
+        const validation = validateConfig(parsed, paths.envPath);
+        if (validation.errors.length) {
+          sendJson(res, 400, {
+            error: "Configuration validation failed.",
+            ...validation,
+          });
+          return;
+        }
+        if (
+          validation.warnings.length &&
+          req.headers["x-xfeeder-accept-warnings"] !== "true"
+        ) {
+          sendJson(res, 422, {
+            error: "Review configuration warnings before saving.",
+            ...validation,
+          });
+          return;
+        }
+        writeTextAtomic(
+          paths.configPath,
+          `${JSON.stringify(parsed, null, 2)}\n`,
+        );
+        sendJson(res, 200, createStatePayload(serverInfo, authState, paths));
         return;
       }
 
@@ -485,9 +633,18 @@ function startDashboard({ host = "127.0.0.1", port = 3000 } = {}) {
 
         const rawBody = await parseRequestBody(req);
         const parsed = JSON.parse(rawBody || "{}");
-        const content = typeof parsed?.content === "string" ? parsed.content : "";
-        writeTextAtomic(ENV_PATH, content.endsWith("\n") ? content : `${content}\n`);
-        sendJson(res, 200, createStatePayload(serverInfo, authState));
+        if (typeof parsed?.content !== "string") {
+          sendJson(res, 400, {
+            error: "Environment content must be a string.",
+          });
+          return;
+        }
+        const content = parsed.content;
+        writeTextAtomic(
+          paths.envPath,
+          content.endsWith("\n") ? content : `${content}\n`,
+        );
+        sendJson(res, 200, createStatePayload(serverInfo, authState, paths));
         return;
       }
 
@@ -498,17 +655,23 @@ function startDashboard({ host = "127.0.0.1", port = 3000 } = {}) {
 
       sendJson(res, 405, { error: "Method not allowed." });
     } catch (error) {
-      sendJson(res, 500, {
-        error: error.message || "Unexpected server error.",
+      sendJson(res, error instanceof SyntaxError ? 400 : 500, {
+        error:
+          error instanceof SyntaxError
+            ? "Invalid JSON."
+            : sanitizeText(error.message || "Unexpected server error."),
       });
     }
   });
 
   server.listen(port, host, () => {
     const address = server.address();
-    const resolvedPort = address && typeof address === "object" ? address.port : port;
+    const resolvedPort =
+      address && typeof address === "object" ? address.port : port;
     const authMode = authManager.required ? "password" : "local-open";
-    console.log(`[Dashboard] XFeeder dashboard running at http://${host}:${resolvedPort} (${authMode})`);
+    console.log(
+      `[Dashboard] XFeeder dashboard running at http://${host}:${resolvedPort} (${authMode})`,
+    );
   });
 
   return server;

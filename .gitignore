@@ -1,34 +1,62 @@
-# Dependencies
+# Node dependencies
 node_modules/
 
-# Secrets and local configuration
+# Secrets and user configuration; keep distributable examples
 .env
-.env.local
-.env.*.local
-config.json
+.env.*
+!.env.example
+/config.json
 
-# Runtime data
-cache.json
-http-meta.json
-src/workshop/workshop-cache.json
+# Application state (default paths) and atomic write leftovers
+/cache.json
+/http-meta.json
+/src/workshop/workshop-cache.json
+*.network-runtime.json
+*.network-runtime.json.*.tmp
+*.tmp
+*.temp
+*.bak
+*~
 
-# Local extensions and build artifacts
-src/extensions/Scrapling/.venv/
-src/extensions/Scrapling/upstream/
-playgtav_nosocial_stub.o
-
-# Logs
+# Logs and terminal capture
+/debug/*.txt
+!/debug/.gitkeep
 *.log
-errorlog.txt
-warnlog.txt
-CrashLog.txt
-WarnLog.txt
-ErrorLog.txt
+npm-debug.log*
+/errorlog.txt
+/warnlog.txt
+/CrashLog.txt
+/WarnLog.txt
+/ErrorLog.txt
+/data.txt
 
-# Debug files
-data.txt
+# Python environments and optional upstream checkout (not our adapter)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+/src/extensions/Scrapling/upstream/
 
-# IDE and editors
+# Browser caches, test output and local performance/release artifacts
+/.cache/
+/ms-playwright/
+/browsers/
+coverage/
+playwright-report/
+test-results/
+/benchmark-results/
+/release-artifacts/
+/dist/
+*.cpuprofile
+*.heapprofile
+
+# Editor/OS files and old local build output
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 .idea/
 .vscode/
 *.swp
@@ -37,16 +65,4 @@ data.txt
 *.sublime-workspace
 .project
 .settings/
-
-# OS generated files
-.DS_Store
-.DS_Store?
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*~
+/playgtav_nosocial_stub.o

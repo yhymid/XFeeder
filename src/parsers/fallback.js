@@ -1,12 +1,14 @@
 // src/parsers/fallback.js - Emergency HTML parser (Web Scraping)
+const { isBlockedPage } = require("../core/blocked-page");
 const cheerio = require("cheerio");
 const { parseDate } = require("./utils");
 const { URL } = require("url");
+const { sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 /**
  * Fallback parser that extracts data from HTML meta tags.
  * Used when all other parsers fail.
- * 
+ *
  * @param {string} feedUrl - URL to parse
  * @param {object} httpClient - HTTP client with get method
  * @returns {Promise<Array>} Array with single item or empty
@@ -16,12 +18,13 @@ async function parseFallback(feedUrl, httpClient) {
     const res = await httpClient.get(feedUrl, {
       headers: {
         Accept: "text/html,application/xhtml+xml",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.1 (Fallback)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XFeeder/2.2.0 (Fallback)",
       },
       timeout: 10000,
     });
 
     const html = res.data;
+    if (isBlockedPage(html, res)) return [];
     const $ = cheerio.load(html);
     const base = new URL(feedUrl);
 
@@ -75,11 +78,11 @@ async function parseFallback(feedUrl, httpClient) {
     description = description.replace(/\s+/g, " ").substring(0, 500).trim();
 
     if (!title || !url) {
-      console.warn(`[Fallback Parser] Failed to extract data from ${feedUrl}`);
+      console.warn(`[Fallback Parser] Failed to extract data from ${sanitizeUrl(feedUrl)}`);
       return [];
     }
 
-    console.log(`[Fallback Parser] HTML fallback OK → ${feedUrl}`);
+    console.log(`[Fallback Parser] HTML fallback OK → ${sanitizeUrl(feedUrl)}`);
 
     return [{
       title,
@@ -92,7 +95,7 @@ async function parseFallback(feedUrl, httpClient) {
       categories: [],
     }];
   } catch (err) {
-    console.warn(`[Fallback Parser] Error for ${feedUrl}: ${err.message}`);
+    console.warn(`[Fallback Parser] Error for ${sanitizeUrl(feedUrl)}: ${sanitizeText(err.message)}`);
     return [];
   }
 }

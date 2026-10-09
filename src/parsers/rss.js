@@ -1,6 +1,7 @@
 // src/parsers/rss.js - Hybrid RSS/Atom parser (Regex + heuristics)
 const { parseDate } = require("./utils");
 const { stripHtml } = require("string-strip-html");
+const { sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 /**
  * Removes CDATA wrappers and trims string
@@ -59,7 +60,7 @@ async function parseRSS(feedUrl, httpClient) {
     const data = res.data;
 
     if (!data || typeof data !== "string") {
-      console.warn(`[RSS Parser] No data or invalid format: ${feedUrl}`);
+      console.warn(`[RSS Parser] No data or invalid format: ${sanitizeUrl(feedUrl)}`);
       return [];
     }
 
@@ -74,7 +75,7 @@ async function parseRSS(feedUrl, httpClient) {
     }
 
     if (blocks.length === 0) {
-      console.warn(`[RSS Parser] No <item> or <entry> elements found for ${feedUrl}`);
+      console.warn(`[RSS Parser] No <item> or <entry> elements found for ${sanitizeUrl(feedUrl)}`);
       return [];
     }
 
@@ -130,10 +131,10 @@ async function parseRSS(feedUrl, httpClient) {
       };
     });
 
-    console.log(`[RSS Parser] Success (${items.length}) [${type}] → ${feedUrl}`);
+    console.log(`[RSS Parser] Success (${items.length}) [${type}] → ${sanitizeUrl(feedUrl)}`);
     return items;
   } catch (error) {
-    console.warn(`[RSS Parser] Error fetching ${feedUrl}: ${error.message}`);
+    console.warn(`[RSS Parser] Error fetching ${sanitizeUrl(feedUrl)}: ${sanitizeText(error.message)}`);
     return [];
   }
 }

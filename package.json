@@ -1,21 +1,28 @@
 {
   "name": "xfeeder",
-  "version": "2.1.0",
-  "description": "Modular RSS/Atom/JSON feed reader for Discord webhooks with extensible plugin system.",
+  "version": "2.2.0",
+  "description": "Modular RSS/Atom/JSON feed reader for Discord webhooks and Telegram with an extensible plugin system.",
   "main": "main.js",
   "scripts": {
     "start": "node main.js",
     "start:once": "node main.js --once",
     "start:dry-run": "node main.js --dry-run --once",
+    "start:expert-dry-run": "node main.js --dry-run --once --debug-expert",
     "check-config": "node main.js --check-config",
     "dashboard": "node dashboard.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:scrapling-browser": "node --test tests/scrapling-browser.cjs",
+    "test:dashboard-browser": "node tests/dashboard-browser.cjs",
+    "test:network-browser": "node tests/network-dashboard-browser.cjs",
+    "benchmark:network": "node scripts/benchmark-network.cjs",
+    "release:archive": "node scripts/package-release.cjs"
   },
   "keywords": [
     "rss",
     "atom",
     "json-feed",
     "discord",
+    "telegram",
     "webhook",
     "feed-reader",
     "bot",
@@ -25,7 +32,7 @@
   "author": "!Yhym's",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.18.1"
   },
   "dependencies": {
     "axios": "^1.12.2",
@@ -35,6 +42,7 @@
     "rss-parser": "^3.13.0",
     "string-strip-html": "^8.5.0",
     "ws": "^8.19.0",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "follow-redirects": "^1.16.0"
   }
 }

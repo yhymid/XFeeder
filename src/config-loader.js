@@ -1,7 +1,10 @@
 "use strict";
 
+const { unsupportedConfigSections } = require("./core/channel-config");
+const { sanitizeText } = require("./core/diagnostics");
 const fs = require("fs");
 const path = require("path");
+const { requireNetworkConfig } = require("./network/config");
 
 let envCache = {
   filePath: null,
@@ -110,7 +113,10 @@ function loadConfig(configPath = "./config.json") {
     ...process.env,
   };
   const raw = fs.readFileSync(resolvedConfigPath, "utf8");
-  return resolveEnv(JSON.parse(raw), envMap);
+  const config = resolveEnv(JSON.parse(raw), envMap);
+  requireNetworkConfig(config.network);
+  for (const warning of unsupportedConfigSections(config)) console.warn(`[Config] ${sanitizeText(warning)}`);
+  return config;
 }
 
 module.exports = {

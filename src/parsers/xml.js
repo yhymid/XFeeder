@@ -2,6 +2,7 @@
 const xml2js = require("xml2js");
 const { stripHtml } = require("string-strip-html");
 const { parseDate } = require("./utils");
+const { sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 /**
  * Helper function to find first image URL in HTML string
@@ -68,7 +69,7 @@ async function parseXML(feedUrl, httpClient) {
     }
 
     if (!entries.length) {
-      console.warn(`[XML Parser] No elements detected in ${feedUrl}`);
+      console.warn(`[XML Parser] No elements detected in ${sanitizeUrl(feedUrl)}`);
       return [];
     }
 
@@ -130,10 +131,10 @@ async function parseXML(feedUrl, httpClient) {
       };
     });
 
-    console.log(`[XML Parser] Success (${items.length}) [${type}] → ${feedUrl}`);
+    console.log(`[XML Parser] Success (${items.length}) [${type}] → ${sanitizeUrl(feedUrl)}`);
     return items;
   } catch (error) {
-    console.warn(`[XML Parser] Error fetching ${feedUrl}: ${error.message}`);
+    console.warn(`[XML Parser] Error fetching ${sanitizeUrl(feedUrl)}: ${sanitizeText(error.message)}`);
     return [];
   }
 }

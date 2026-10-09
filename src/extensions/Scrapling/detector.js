@@ -21,6 +21,7 @@ class ScraplingDetector {
     this.hasShell = false;
     this.hasExtract = false;
     this.hasMcp = false;
+    this.hasSessions = false;
 
     this.pythonCmd = this.resolvePython();
     this.scraplingCmd = this.resolveScrapling();
@@ -75,6 +76,14 @@ class ScraplingDetector {
     try {
       execSync(`${this.scraplingCmd} mcp --help`, { stdio: "ignore" });
       this.hasMcp = true;
+    } catch {}
+
+    try {
+      execSync(
+        `${this.pythonCmd} -c "from scrapling.fetchers import DynamicSession, StealthySession"`,
+        { stdio: "ignore" }
+      );
+      this.hasSessions = true;
     } catch {}
   }
 }

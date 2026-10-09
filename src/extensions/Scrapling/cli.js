@@ -4,22 +4,13 @@ const { execFile, spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { runChild } = require("./process-control");
 
 const HTTP_EXTRACT_MODES = new Set(["get", "post", "put", "delete"]);
 const BROWSER_EXTRACT_MODES = new Set(["fetch", "stealthy-fetch"]);
 
-function run(command, args, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      command,
-      args,
-      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message));
-        resolve(String(stdout || ""));
-      }
-    );
-  });
+function run(command, args, timeoutMs, signal) {
+  return runChild(execFile, command, args, timeoutMs, signal);
 }
 
 function normalizeMode(value) {
@@ -170,6 +161,7 @@ async function extract(scraplingCmd, {
   url,
   output = "-",
   timeout = 60,
+  signal,
   ...options
 } = {}) {
   if (!url) throw new Error("Scrapling extract requires URL");
@@ -209,10 +201,9 @@ async function extract(scraplingCmd, {
     args.push(...passthroughArgs);
   }
 
-  await run(scraplingCmd, args, Math.max(5000, Number(timeout) * 1000));
-
   let content = "";
   try {
+    await run(scraplingCmd, args, Math.max(5000, Number(timeout) * 1000), signal);
     content = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : "";
   } finally {
     if (shouldUseTmpOutput) {
@@ -224,7 +215,7 @@ async function extract(scraplingCmd, {
 
   return {
     html: content,
-    status: 200,
+    status: null,
     headers: {},
     fetchMode: normalizedMode,
     runtime: "cli",
@@ -240,11 +231,37 @@ async function install(scraplingCmd, { force = false, timeout = 1800 } = {}) {
   return run(scraplingCmd, args, Math.max(10000, Number(timeout) * 1000));
 }
 
-function startMcp(scraplingCmd, { http = false, host = "0.0.0.0", port = 8000, extraArgs = [] } = {}) {
+function startMcp(scraplingCmd, {
+  http = false,
+  host = "127.0.0.1",
+  port = 8000,
+  authToken = "",
+  noAuth = false,
+  allowedHosts = [],
+  executablePath,
+  extraArgs = [],
+} = {}) {
   const args = ["mcp"];
-  if (http) args.push("--http", "--host", String(host), "--port", String(port));
+  const env = { ...process.env };
+  if (http) {
+    if (noAuth && (authToken || env.SCRAPLING_MCP_AUTH_TOKEN)) {
+      throw new Error("Scrapling MCP cannot use authToken and noAuth together");
+    }
+    if (!noAuth && !authToken && !env.SCRAPLING_MCP_AUTH_TOKEN) {
+      throw new Error("Scrapling MCP HTTP requires authToken or an explicit noAuth: true");
+    }
+    args.push("--http", "--host", String(host), "--port", String(port));
+    if (noAuth) args.push("--no-auth");
+    if (Array.isArray(allowedHosts)) {
+      for (const allowedHost of allowedHosts) {
+        if (String(allowedHost).trim()) args.push("--allowed-host", String(allowedHost).trim());
+      }
+    }
+    if (authToken) env.SCRAPLING_MCP_AUTH_TOKEN = String(authToken);
+  }
+  pushIf(args, "--executable-path", executablePath);
   if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs.map(String));
-  return spawn(scraplingCmd, args, { stdio: "pipe" });
+  return spawn(scraplingCmd, args, { stdio: "pipe", env });
 }
 
 async function runShell(scraplingCmd, { code = "", loglevel = "debug", timeout = 120 } = {}) {

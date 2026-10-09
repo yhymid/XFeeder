@@ -3,25 +3,10 @@
 const { execFile } = require("child_process");
 const cheerio = require("cheerio");
 const { normalizeMode } = require("./cli");
+const { runChild } = require("./process-control");
 
-function runPy(pythonCmd, code, optionsJson, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      pythonCmd,
-      ["-c", code, optionsJson],
-      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          const stderrText = String(stderr || "").trim();
-          if (stderrText) return reject(new Error(stderrText));
-          const raw = String(err.message || "Scrapling shell command failed").replace(/\s+/g, " ").trim();
-          const short = raw.length > 260 ? `${raw.slice(0, 260)}...` : raw;
-          return reject(new Error(short));
-        }
-        resolve(String(stdout || ""));
-      }
-    );
-  });
+function runPy(pythonCmd, code, optionsJson, timeoutMs, signal) {
+  return runChild(execFile, pythonCmd, ["-c", code, optionsJson], timeoutMs, signal);
 }
 
 function normalizeInput(mode, options) {
@@ -49,6 +34,7 @@ async function fetch(pythonCmd, {
   mode = "stealthy-fetch",
   url,
   timeout = 60,
+  signal,
   ...options
 } = {}) {
   if (!url) throw new Error("Scrapling shell fetch requires URL");
@@ -389,9 +375,9 @@ if out is None:
     out = str(page)
 status = getattr(page, "status", None)
 try:
-    status = int(status) if status is not None else 200
+    status = int(status) if status is not None else None
 except Exception:
-    status = 200
+    status = None
 
 result = {
     "html": out if out is not None else "",
@@ -406,12 +392,13 @@ print(json.dumps(result, ensure_ascii=False))
     pythonCmd,
     py,
     JSON.stringify(payload),
-    Math.max(5000, Number(timeout) * 1000)
+    Math.max(5000, Number(timeout) * 1000),
+    signal
   );
 
   let parsed = null;
   let html = "";
-  let status = 200;
+  let status = null;
   let headers = {};
   let resolvedUrl = String(url);
 
@@ -432,7 +419,7 @@ print(json.dumps(result, ensure_ascii=False))
 
   if (parsed && typeof parsed === "object") {
     html = typeof parsed.html === "string" ? parsed.html : String(parsed.html || "");
-    status = Number.isFinite(Number(parsed.status)) ? Number(parsed.status) : 200;
+    status = parsed.status !== null && Number.isFinite(Number(parsed.status)) ? Number(parsed.status) : null;
     headers = (parsed.headers && typeof parsed.headers === "object") ? parsed.headers : {};
     if (parsed.url != null && String(parsed.url).trim()) resolvedUrl = String(parsed.url);
   }
@@ -444,4 +431,4 @@ print(json.dumps(result, ensure_ascii=False))
   return { html, status, headers, url: resolvedUrl, fetchMode: payload.mode, runtime: "shell", elapsed: null };
 }
 
-module.exports = { fetch };
+module.exports = { fetch, applyCssSelector };

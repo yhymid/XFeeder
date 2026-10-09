@@ -1,0 +1,28 @@
+"use strict";
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
+const {execFileSync}=require('node:child_process');
+const {gunzipSync}=require('node:zlib');
+test('release archive includes tracked source/examples and refuses forced tracked secrets',t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'xfeeder-artifact-'));
+ t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const git=(...args)=>execFileSync('git',args,{cwd:dir,stdio:['pipe','pipe','pipe']}).toString().trim();
+ git('init','--quiet');
+ fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name:'xfeeder',version:'2.2.0'}));
+ fs.writeFileSync(path.join(dir,'.gitignore'),'.env\nnode_modules/\n');
+ fs.writeFileSync(path.join(dir,'.env.example'),'TOKEN=example\n');
+ fs.writeFileSync(path.join(dir,'main.js'),'// release source\n');
+ fs.mkdirSync(path.join(dir,'node_modules'));fs.writeFileSync(path.join(dir,'node_modules/unused'),'local dependency');
+ git('add','.');
+ const script=path.join(__dirname,'../scripts/package-release.cjs'), output=path.join(dir,'release.tgz');
+ const run=tree=>execFileSync(process.execPath,[script,tree,output],{cwd:dir,stdio:['pipe','pipe','pipe']}).toString();
+ const result=JSON.parse(run(git('write-tree')));
+ assert.equal(result.files,4);assert.ok(result.sourceBytes>0);assert.ok(result.archiveBytes<4096);
+ const archive=gunzipSync(fs.readFileSync(output)).toString();
+ assert.match(archive,/XFeeder-2.2.0\/main.js/);assert.match(archive,/\.env.example/);assert.ok(!archive.includes('local dependency'));
+ fs.writeFileSync(path.join(dir,'.env'),'SECRET=fixture\n');git('add','-f','.env');
+ assert.throws(()=>run(git('write-tree')),error=>error.stderr.toString().includes('Generated/private files tracked in release: .env'));
+});

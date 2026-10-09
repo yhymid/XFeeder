@@ -28,10 +28,12 @@ function sanitizeModeOrder(value, fallback = ["get", "fetch", "stealthy-fetch"])
 class ScraplingConfig {
   constructor(rootConfig = {}) {
     this.raw = rootConfig?.Scrapling || {};
+    this.network = rootConfig?.network || {};
   }
   get enabled() { return this.raw.Enabled !== false; }
   get autoFallback() { return this.raw.AutoFallback !== false; }
   get autoUseShellForAdvancedOptions() { return this.raw.AutoUseShellForAdvancedOptions !== false; }
+  get persistentBrowserSessions() { return this.raw.PersistentBrowserSessions !== false; }
   get preferredMode() { return this.raw.PreferredMode || "cli"; }
   get fallbackStatusCodes() { return Array.isArray(this.raw.FallbackStatusCodes) ? this.raw.FallbackStatusCodes : [403, 429, 503]; }
   get defaultOptions() { return (this.raw.DefaultOptions && typeof this.raw.DefaultOptions === "object") ? this.raw.DefaultOptions : {}; }
@@ -155,8 +157,9 @@ class ScraplingConfig {
 
   shouldUseScrapling(url, statusCode = null) {
     if (!this.enabled) return false;
-    if (this.raw.ForceGlobal) return true;
     const per = this.getUrlConfig(url);
+    if (per.enabled === false) return false;
+    if (this.raw.ForceGlobal) return true;
     if (per.enabled === true) return true;
     if (!this.autoFallback) return false;
     if (statusCode != null && this.fallbackStatusCodes.includes(Number(statusCode))) return true;

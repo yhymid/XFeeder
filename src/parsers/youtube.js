@@ -2,6 +2,7 @@
 const xml2js = require("xml2js");
 const { stripHtml } = require("string-strip-html");
 const { parseDate } = require("./utils");
+const { sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 // xml2js configuration for Atom/YouTube
 const parser = new xml2js.Parser({
@@ -92,10 +93,10 @@ async function parseYouTube(feedUrl, httpClient) {
       };
     });
 
-    console.log(`[YouTube Parser] Success (${items.length}) → ${feedUrl}`);
+    console.log(`[YouTube Parser] Success (${items.length}) → ${sanitizeUrl(feedUrl)}`);
     return items;
   } catch (error) {
-    console.warn(`[YouTube Parser] Error fetching ${feedUrl}: ${error.message}`);
+    console.warn(`[YouTube Parser] Error fetching ${sanitizeUrl(feedUrl)}: ${sanitizeText(error.message)}`);
     return [];
   }
 }

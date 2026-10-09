@@ -1,18 +1,20 @@
 {
   "Settings": {
-    "Logs": false
+    "Logs": false,
+    "DebugExpert": false
   },
   "Auth": {
     "Token": "${DISCORD_AUTH_TOKEN}",
     "x-super-properties": "${DISCORD_X_SUPER_PROPERTIES}",
     "cookie": "${DISCORD_COOKIE}"
   },
-  "Matrix": {
+  "Telegram": {
     "Enabled": true,
-    "Homeserver": "https://matrix.example.org",
-    "AccessToken": "${MATRIX_ACCESS_TOKEN}",
-    "RoomID": "!yourRoomId:matrix.example.org",
-    "MsgType": "m.notice"
+    "BotToken": "${TELEGRAM_BOT_TOKEN}",
+    "ChatID": "${TELEGRAM_CHAT_ID}",
+    "MessageThreadID": null,
+    "DisableWebPagePreview": false,
+    "TimeoutMs": 15000
   },
   "Proxy": {
     "Enabled": false,
@@ -23,6 +25,7 @@
     "ForceGlobal": false,
     "AutoFallback": true,
     "AutoUseShellForAdvancedOptions": true,
+    "PersistentBrowserSessions": true,
     "PreferredMode": "cli",
     "FallbackStatusCodes": [
       403,
@@ -155,10 +158,8 @@
   "channels": {
     "main": {
       "Webhook": "${DISCORD_WEBHOOK_MAIN}",
-      "Matrix": {
-        "Enabled": true,
-        "Comment": "Per-channel Matrix can override only selected fields, e.g. RoomID",
-        "RoomID": "!roomMain:matrix.example.org"
+      "Telegram": {
+        "MessageThreadID": null
       },
       "Feeds": [
         "https://example.com/rss",
@@ -170,9 +171,9 @@
   "channels2": {
     "dev": {
       "Webhook": "${DISCORD_WEBHOOK_DEV}",
-      "Matrix": {
-        "Enabled": true,
-        "RoomID": "!roomDev:matrix.example.org"
+      "Telegram": {
+        "ChatID": "${TELEGRAM_CHAT_ID_DEV}",
+        "MessageThreadID": null
       },
       "Feeds": [
         "https://example.org/project/commits.atom"

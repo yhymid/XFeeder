@@ -1,5 +1,8 @@
 "use strict";
 
+const { installTerminalLog } = require("./src/core/terminal-log");
+installTerminalLog({ enabled: true, label: "dashboard" });
+
 const { startDashboard } = require("./src/dashboard/server");
 
 const requestedPort = Number(process.env.XFEEDER_DASHBOARD_PORT);

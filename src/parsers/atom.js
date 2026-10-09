@@ -2,6 +2,7 @@
 const xml2js = require("xml2js");
 const { stripHtml } = require("string-strip-html");
 const { parseDate } = require("./utils");
+const { sanitizeText, sanitizeUrl } = require("../core/diagnostics");
 
 const parser = new xml2js.Parser({
   explicitArray: false,
@@ -97,7 +98,7 @@ async function parseAtom(feedUrl, httpClient) {
 
     return items.filter((i) => i.link || i.title);
   } catch (err) {
-    console.warn(`[Atom Parser] Error for ${feedUrl}: ${err.message}`);
+    console.warn(`[Atom Parser] Error for ${sanitizeUrl(feedUrl)}: ${sanitizeText(err.message)}`);
     return [];
   }
 }

@@ -62,6 +62,9 @@
 - These removals are intentional scope decisions before 3.0, not accidental regressions.
 
 ### Release and tests
+- Added a small runtime release asset with application/dashboard code, installation
+  manifests, examples, an empty starter config and the MIT license. Development
+  documentation, tests and commands are excluded; full source archives remain available.
 - Audited tracked source and available Git history for credentials/runtime artifacts;
   strengthened ignore/archive guards and replaced the TLS fixture with an explicitly
   public test-only, non-CA certificate/key pair and documented its trust boundary.

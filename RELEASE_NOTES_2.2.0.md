@@ -14,6 +14,12 @@ This release finishes the 2.x usability and reliability work before 3.0 developm
 
 ## Upgrade
 
+For a fresh installation, download `XFeeder-2.2.0-runtime.tar.gz`, extract it,
+run `npm install`, then `node .`. The included config starts empty; add your feeds
+and destinations using `npm run dashboard` or edit `config.json` before forwarding.
+Restart the worker after adding the first channel. When upgrading, preserve your
+existing config instead of overwriting it with the empty starter.
+
 Use Node.js **20.18.1+**, run `npm ci`, and retain your own `config.json`, `.env` and
 cache. Run `node main.js --check-config` before restarting services. Browser fetching
 requires Python 3.11+ and `npm run scrapling:install`; check it with
@@ -28,8 +34,10 @@ bandwidth/byte totals are not measured by the Node limiter. Upload pacing covers
 buffered bodies, not multipart/streamed bodies or redirect replay. Unlimited still has
 measurable overhead in transport stress tests; measured results are documented.
 
-This is a clean source release: no secrets, .venv, node_modules, cache, logs or browser
-binaries. No 3.0 refactor is included.
+The runtime download omits tests, developer documentation, changelog and release
+notes, while retaining the MIT license. It contains no secrets, .venv, node_modules,
+cache, logs or browser binaries. Full sources remain in the repository and GitHub's
+source archives. No 3.0 refactor is included.
 
 ## Removed before 3.0
 

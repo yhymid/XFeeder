@@ -42,6 +42,25 @@ npm run dashboard
 
 The dashboard listens on `127.0.0.1:3000` by default.
 
+## Optional Scrapling runtime
+
+Normal feeds work without Scrapling. To enable the configured browser/anti-bot
+fallback, install Python **3.11+**, then run from the project directory:
+
+```bash
+npm install
+npm run scrapling:install
+npm run scrapling:check
+```
+
+The installer creates a local, ignored `src/extensions/Scrapling/.venv`, installs
+pinned dependencies and Chromium for Playwright/Patchright, then verifies them.
+Healthy reruns reuse the environment; broken environments produce repair instructions
+without deleting local files. No `upstream/` checkout is needed. Restart the worker
+for automatic detection. Scrapling cannot guarantee access to every blocked website.
+See the [installation and troubleshooting guide](src/extensions/Scrapling/readme.md)
+for system libraries, Windows paths and browser cache handling.
+
 ## Telegram configuration
 
 The root `Telegram` object provides defaults for all channels. Channel-level `Telegram` fields override those defaults:

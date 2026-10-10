@@ -28,19 +28,68 @@ Lokalna integracja Scrapling dla XFeeder (`src/extensions/Scrapling`).
 
 ## Instalacja lokalna (opcjonalna)
 
-W katalogu extension:
+Z katalogu XFeedera:
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-# Reproducible dependency set resolved with Python 3.14:
-pip install -r requirements.lock.txt
-# On other supported Python versions, use the package pin and let pip resolve dependencies:
-# pip install -r requirements.txt
-python -m playwright install chromium
+npm install
+npm run scrapling:install
+npm run scrapling:check
 ```
 
-Uwaga: `scrapling install` próbuje uruchomić `playwright install-deps` (wymaga sudo), więc na hostach bez roota lepiej użyć tylko `playwright install chromium`.
+Scrapling jest **opcjonalny**. Bez niego zwykłe RSS/Atom/JSON nadal działają;
+brak jedynie fallbacku Scrapling/przeglądarki. Zainstalowany runtime jest używany
+zgodnie z konfiguracją, gdy normalne pobranie zostanie zablokowane. Nie ma gwarancji
+obsłużenia każdej blokowanej strony. Zrestartuj działający worker po instalacji.
+
+Instalator wybiera `python3`, potem `python`, wymagając **Python 3.11+**. Sam Scrapling
+0.4.15 dopuszcza 3.10, ale przypięty IPython 9.13.0 wymaga 3.11. Tworzy `.venv` w tym
+katalogu przez `python -m venv`. Wszystkie dalsze operacje używają `.venv/bin/python`
+(lub `.venv/Scripts/python.exe` na Windows) i jego `-m pip`, bez globalnej instalacji.
+
+Instalowane są wyłącznie wersje z `requirements.lock.txt`, przez `pip install
+--no-deps -r ...`, następnie `pip check`. Nie ma przejścia na nieprzypięte latest.
+Lock obejmuje istniejący zestaw `scrapling[all]`: parsery/HTTP, Playwright/Patchright,
+shell oraz MCP używane przez adapter. Dodano wyłącznie Windowsowe zależności już
+wymagane przez ten zestaw: Colorama dla Click/IPython i pywin32 dla MCP, z markerem
+`sys_platform == "win32"`. `requirements.txt` opisuje pin najwyższego poziomu;
+wspierany instalator zawsze korzysta z pełnego lockfile'a. Wersje są przypięte,
+ale plik nie jest lockiem z hashami wheelów dla wszystkich platform.
+
+Instalator uruchamia przez Python z venv:
+
+```text
+-m playwright install chromium
+-m patchright install chromium
+```
+
+Pobierane są rewizje Chromium zgodne z przypiętymi sterownikami dla `fetch` oraz
+`stealthy-fetch` (mogą współdzielić cache). Binariów nie kopiujemy do release.
+Domyślna lokalizacja to cache przeglądarek danego użytkownika; ewentualne
+`PLAYWRIGHT_BROWSERS_PATH` musi być takie samo przy instalacji, checku i pracy workera.
+Na końcu sprawdzany jest import/parser Scrapling, CLI oraz rzeczywisty start obu
+sterowników Chromium na lokalnej stronie, bez odwiedzania zewnętrznej witryny.
+
+Zdrowe istniejące `.venv` jest ponownie używane i aktualizowane do pinów. Uszkodzone
+lub niezgodne środowisko powoduje błąd z instrukcją: zatrzymaj worker, przenieś je
+do kopii zapasowej poza repo i uruchom instalator ponownie. Instalator nigdy sam
+nie usuwa `.venv`. Błędy Pythona, venv, pip, browser install i weryfikacji kończą
+proces kodem niezerowym. Ponowienie instalacji po usunięciu przyczyny jest bezpieczne.
+
+Na Linux mogą być potrzebne pakiety systemowe Pythona/venv oraz biblioteki Chromium.
+Instalator nie uruchamia `sudo` ani `install-deps` automatycznie. W razie braków
+zastosuj komunikat narzędzia; administrator może użyć Python z venv z
+`-m playwright install-deps chromium`. Windows ma obsługę ścieżek `Scripts/*.exe`;
+rzeczywistą instalację zweryfikowano na Linux, a logikę Windows w testach offline.
+
+`npm run scrapling:check` weryfikuje zarządzane `.venv`, pip, Scrapling i start
+przeglądarek, bez instalowania ani pobierania czegokolwiek. Nie zmienia magazynu
+zaufania TLS ani konfiguracji XFeedera.
+
+Runtime automatycznie preferuje lokalne `.venv`, opcjonalnie wykrywa pakiet systemowy
+przez `python3`/`python`. CLI jest parowane z wybranym interpreterem; polecenia są
+uruchamiane bez shella. `upstream/` nie jest tworzony ani potrzebny. `.venv`, upstream
+i cache Pythona są ignorowane przez Git i odrzucane przez packager również po
+wymuszonym dodaniu do indexu.
 
 ## Konfiguracja
 

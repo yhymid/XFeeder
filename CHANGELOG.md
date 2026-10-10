@@ -26,6 +26,10 @@
   approximate rates and active/waiting work; browser byte totals remain unavailable.
 
 ### Scrapling and content safety
+- Added `npm run scrapling:install` and `scrapling:check` for a locally generated
+  virtualenv, pinned dependencies, Chromium installation and actual browser checks.
+  Replaced shell-based detection with paired Python/CLI discovery and Windows paths;
+  neither the virtualenv nor a third-party source checkout is shipped or required.
 - Added native Scrapling Resource Saving (default on), per-URL overrides and shared
   browser admission policy. Pinned the tested Scrapling runtime to 0.4.15 and added
   reproducible Python requirements. Browser traffic is not shaped by the Node limiter.

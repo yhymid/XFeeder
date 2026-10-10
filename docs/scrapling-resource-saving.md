@@ -10,7 +10,7 @@ Sprawdzono 6 października 2026:
 
 - `requirements.txt` przypina `scrapling[all]==0.4.15`; lock ma Scrapling 0.4.15
   i Playwright 1.63.0. Lokalna `.venv` zawiera dokładnie te wersje.
-- Kopia kodu w `upstream/` ma wersję 0.4.7 i nie jest źródłem importu używanego
+- Lokalny checkout `upstream/` jest developerski, nie jest wymagany ani źródłem importu używanego
   przez lokalny runtime. Nie zmieniono zależności ani tej kopii.
 - [Dokumentacja dynamicznych fetcherów dla 0.4.15](https://github.com/D4Vinci/Scrapling/blob/v0.4.15/docs/fetching/dynamic.md)
   oraz zainstalowany kod potwierdzają natywne `disable_resources`,

@@ -16,7 +16,8 @@ This release finishes the 2.x usability and reliability work before 3.0 developm
 
 Use Node.js **20.18.1+**, run `npm ci`, and retain your own `config.json`, `.env` and
 cache. Run `node main.js --check-config` before restarting services. Browser fetching
-requires the separately installed Scrapling/Python/Chromium runtime; it is not bundled.
+requires Python 3.11+ and `npm run scrapling:install`; check it with
+`npm run scrapling:check`. The optional virtualenv and Chromium are not bundled.
 For HTTPS dashboard proxies, set `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` and a dashboard
 password in the service environment. See README for the exact setup.
 

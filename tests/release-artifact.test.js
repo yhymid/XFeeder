@@ -12,18 +12,22 @@ test('release archive includes tracked source/examples and refuses forced tracke
  const git=(...args)=>execFileSync('git',args,{cwd:dir,stdio:['pipe','pipe','pipe']}).toString().trim();
  git('init','--quiet');
  fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name:'xfeeder',version:'2.2.0'}));
- fs.writeFileSync(path.join(dir,'.gitignore'),'.env\nnode_modules/\n');
+ fs.writeFileSync(path.join(dir,'.gitignore'),'.env\nnode_modules/\n.venv/\n/src/extensions/Scrapling/upstream/\n');
  fs.writeFileSync(path.join(dir,'.env.example'),'TOKEN=example\n');
  fs.writeFileSync(path.join(dir,'main.js'),'// release source\n');
  fs.mkdirSync(path.join(dir,'node_modules'));fs.writeFileSync(path.join(dir,'node_modules/unused'),'local dependency');
+ for(const name of ['src/extensions/Scrapling/.venv/bin/python','src/extensions/Scrapling/upstream/source.py']) {
+  fs.mkdirSync(path.dirname(path.join(dir,name)),{recursive:true});fs.writeFileSync(path.join(dir,name),'LOCAL_SCRAPLING_ARTIFACT');
+ }
  git('add','.');
  const script=path.join(__dirname,'../scripts/package-release.cjs'), output=path.join(dir,'release.tgz');
  const run=tree=>execFileSync(process.execPath,[script,tree,output],{cwd:dir,stdio:['pipe','pipe','pipe']}).toString();
  const result=JSON.parse(run(git('write-tree')));
  assert.equal(result.files,4);assert.ok(result.sourceBytes>0);assert.ok(result.archiveBytes<4096);
  const archive=gunzipSync(fs.readFileSync(output)).toString();
- assert.match(archive,/XFeeder-2.2.0\/main.js/);assert.match(archive,/\.env.example/);assert.ok(!archive.includes('local dependency'));
- for (const name of ['.env','.npmrc','.netrc','.git-credentials','.pypirc','.envrc','credentials.json','auth.json','secrets.json','private.pem','private.key','state.sqlite3','state.db-wal']) {
+ assert.match(archive,/XFeeder-2.2.0\/main.js/);assert.match(archive,/\.env.example/);assert.ok(!archive.includes('local dependency'));assert.ok(!archive.includes('LOCAL_SCRAPLING_ARTIFACT'));
+ for (const name of ['.env','.npmrc','.netrc','.git-credentials','.pypirc','.envrc','credentials.json','auth.json','secrets.json','private.pem','private.key','state.sqlite3','state.db-wal','src/extensions/Scrapling/.venv/bin/python','src/extensions/Scrapling/upstream/source.py']) {
+  fs.mkdirSync(path.dirname(path.join(dir,name)),{recursive:true});
   fs.writeFileSync(path.join(dir,name),'PRIVATE_TEST_MARKER=fixture\n');git('add','-f',name);
   assert.throws(()=>run(git('write-tree')),error=>error.stderr.toString().includes(`Generated/private files tracked in release: ${name}`));
   git('rm','--cached','--',name);fs.unlinkSync(path.join(dir,name));

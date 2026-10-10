@@ -32,6 +32,7 @@ npm-debug.log*
 
 # Python environments and optional upstream checkout (not our adapter)
 .venv/
+/src/extensions/Scrapling/.venv/
 venv/
 __pycache__/
 *.py[cod]

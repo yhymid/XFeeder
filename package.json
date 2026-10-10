@@ -15,7 +15,9 @@
     "test:dashboard-browser": "node tests/dashboard-browser.cjs",
     "test:network-browser": "node tests/network-dashboard-browser.cjs",
     "benchmark:network": "node scripts/benchmark-network.cjs",
-    "release:archive": "node scripts/package-release.cjs"
+    "release:archive": "node scripts/package-release.cjs",
+    "scrapling:install": "node scripts/install-scrapling.cjs",
+    "scrapling:check": "node scripts/install-scrapling.cjs --check"
   },
   "keywords": [
     "rss",

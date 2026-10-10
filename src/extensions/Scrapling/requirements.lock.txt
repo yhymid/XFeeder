@@ -1,4 +1,7 @@
-# Resolved with Python 3.14 for Scrapling 0.4.15.
+# Resolved with Python 3.14 for Scrapling 0.4.15; installer requires Python >=3.11.
+# Windows-only transitive requirements of Click/IPython and MCP:
+colorama==0.4.6; sys_platform == "win32"
+pywin32==311; sys_platform == "win32"
 annotated-types==0.7.0
 anyio==4.15.1
 apify_fingerprint_datapoints==0.15.0

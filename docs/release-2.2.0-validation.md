@@ -5,6 +5,10 @@ on `main` of `https://github.com/yhymid/XFeeder`. Source was imported from the
 current developed 2.2.0 workspace; Git history alone did not define the feature set.
 No 3.0 branch, refactor or task was started. Publication is a separate owner action.
 
+Follow-up: [2026-10-10 security/hygiene audit](security-audit-2.2.0.md) adds the
+explicit non-CA TLS fixture, credential guards and a 162-test regression pass.
+The counts below describe the original release candidate.
+
 ## Scope classification
 
 - Current/intended: generic RSS/Atom/JSON, YouTube, Discord source and delivery,

@@ -58,6 +58,9 @@
 - These removals are intentional scope decisions before 3.0, not accidental regressions.
 
 ### Release and tests
+- Audited tracked source and available Git history for credentials/runtime artifacts;
+  strengthened ignore/archive guards and replaced the TLS fixture with an explicitly
+  public test-only, non-CA certificate/key pair and documented its trust boundary.
 - Extended regression coverage for network sharing, profiles, retries/429, timeout
   semantics, shutdown, dashboards, challenge pages and unsupported configuration warnings. Browser
   smoke suites cover real Scrapling resource policies and desktop/mobile workflows.

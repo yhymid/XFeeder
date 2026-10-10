@@ -314,15 +314,29 @@ test(
   async (t) => {
     // Public, test-only self-signed identity; never use this key outside fixtures.
     const cert = await fs.readFile(
-      path.join(__dirname, "fixtures/tls/localhost-cert.pem"),
+      path.join(__dirname, "fixtures/tls/localhost-test-cert.pem"),
     );
     const key = await fs.readFile(
-      path.join(__dirname, "fixtures/tls/localhost-key.pem"),
+      path.join(__dirname, "fixtures/tls/localhost-test-key.pem"),
     );
     const server = await serve(t, (_req, res) => res.end("secure fixture"), {
       key,
       cert,
     });
+    const { X509Certificate, createPrivateKey } = require("node:crypto");
+    const identity = new X509Certificate(cert);
+    assert.equal(identity.ca, false, "the public fixture must not be a CA");
+    assert.equal(identity.checkPrivateKey(createPrivateKey(key)), true);
+    assert.equal(identity.checkHost("localhost"), "localhost");
+    assert.equal(identity.checkIP("127.0.0.1"), "127.0.0.1");
+    assert.equal(identity.checkHost("example.com"), undefined);
+    // No global trust override: the default client must reject this identity.
+    const untrusted = new https.Agent();
+    t.after(() => untrusted.destroy());
+    await assert.rejects(
+      getWithFallback(server.url, options({}, { httpsAgent: untrusted })),
+      error => error.code === "DEPTH_ZERO_SELF_SIGNED_CERT",
+    );
     const direct = new https.Agent({ ca: cert });
     t.after(() => direct.destroy());
     assert.equal(

@@ -12,8 +12,8 @@ test('HTTPS reverse proxy supports login, Network save and logout; forged origin
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'xfeeder-tls-proxy-'));
  fs.writeFileSync(path.join(dir,'config.json'),JSON.stringify({channels:[]}));
  const password=process.env.XFEEDER_DASHBOARD_PASSWORD;process.env.XFEEDER_DASHBOARD_PASSWORD='fixture-password';
- const cert=fs.readFileSync(path.join(__dirname,'fixtures/tls/localhost-cert.pem'));
- const key=fs.readFileSync(path.join(__dirname,'fixtures/tls/localhost-key.pem'));
+ const cert=fs.readFileSync(path.join(__dirname,'fixtures/tls/localhost-test-cert.pem'));
+ const key=fs.readFileSync(path.join(__dirname,'fixtures/tls/localhost-test-key.pem'));
  let backend;
  const proxy=https.createServer({key,cert},(req,res)=>{
   const target=http.request({hostname:'127.0.0.1',port:backend.address().port,path:req.url,method:req.method,headers:{...req.headers,host:'internal.invalid','x-forwarded-proto':'https'}},r=>{res.writeHead(r.statusCode,r.headers);r.pipe(res);});

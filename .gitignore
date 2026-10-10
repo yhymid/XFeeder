@@ -46,6 +46,7 @@ coverage/
 playwright-report/
 test-results/
 /benchmark-results/
+/docs/network-benchmark*.json
 /release-artifacts/
 /dist/
 *.cpuprofile
@@ -66,3 +67,51 @@ Desktop.ini
 .project
 .settings/
 /playgtav_nosocial_stub.o
+
+# Local workspace tooling and cloud credentials (not distributable source)
+/.aws/
+/.ssh/
+/.codex/
+/.agents/
+
+# Local private keys and certificate bundles; retain public loopback test fixtures
+*.key
+*.p12
+*.pfx
+*.pem
+!/tests/fixtures/tls/localhost-test-cert.pem
+!/tests/fixtures/tls/localhost-test-key.pem
+
+# Local package/cloud credentials and directory environment
+.npmrc
+.netrc
+.git-credentials
+.pypirc
+.envrc
+.direnv/
+/secrets.json
+/credentials.json
+/auth.json
+
+# Local databases and journals (no database fixtures are currently tracked)
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Browser profiles and saved authentication/session state
+/browser-profiles/
+/user-data-dir/
+/playwright/.auth/
+/storage-state*.json
+/storageState*.json
+/cookies*.json
+/cookies*.txt

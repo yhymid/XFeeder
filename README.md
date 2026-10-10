@@ -16,6 +16,14 @@ A lightweight RSS/Atom/JSON feed reader that delivers entries to Discord webhook
 
 ## Quick start
 
+For a small runnable download, use the release asset `XFeeder-2.2.0-runtime.tar.gz`.
+Extract it into a new directory, run `npm install`, then `node .`.
+It includes an empty `config.json`: the worker starts without contacting any feeds
+until you configure your channels. Use `npm run dashboard` to edit settings at
+`http://127.0.0.1:3000`, then restart the worker after adding the first channel.
+The examples show how to configure destinations and environment variables.
+When upgrading, **do not overwrite your existing config.json with the empty starter**.
+
 Requires **Node.js 20.18.1 or newer**. This matches the minimum of the locked
 Cheerio/Undici dependencies; the earlier `>=18` declaration was inaccurate.
 The release is tested on Node 20.18.1 and Node 26.10.0. Install dependencies with
@@ -258,6 +266,12 @@ Scrapling is disabled. Browser fallback only runs when the configured policy all
 it; an unresolved challenge does not replay old entries or change delivery snapshots.
 Ordinary feed entries discussing browser checks are not blocked by this document guard.
 
-The archive contains source, fixtures, lockfiles and examples, not dependencies,
-credentials, runtime state or browser binaries. See [release notes](RELEASE_NOTES_2.2.0.md)
-and [validation/hygiene](docs/release-2.2.0-validation.md).
+The runtime asset includes application code, dashboard assets, lockfile, examples,
+an empty starter config, the optional Scrapling installer and LICENSE. It excludes
+dependencies, developer documentation, changelog, release notes, tests, private
+credentials, runtime state and browser binaries. The MIT license notice is retained.
+`npm run release:archive` builds this package from HEAD; append a Git ref and output
+path to select another reviewed revision. The additional `--source` argument builds
+the full source archive instead. GitHub's automatic source downloads also remain
+full source checkouts. See [release notes](RELEASE_NOTES_2.2.0.md) and
+[validation/hygiene](docs/release-2.2.0-validation.md).

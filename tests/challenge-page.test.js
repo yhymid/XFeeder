@@ -2,7 +2,7 @@
 const { test, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const os = require("node:os");
+const { tempDir } = require("./helpers/temp-dir.cjs");
 const path = require("node:path");
 const { isBlockedPage } = require("../src/core/blocked-page");
 const { download } = require("../src/parsers/downloader");
@@ -25,8 +25,7 @@ for (const name of ["one-moment", "just-moment", "checking", "error"]) {
   test(`${name}: real download never enters parsing/delivery or mutates persisted state`, async t => {
     const server = await serve(t, (_req, res) => res.end(fixture(name)));
     const config = { Proxy: { Enabled: false }, Scrapling: { Enabled: false } };
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xfeeder-challenge-"));
-    t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+    const dir = tempDir(t);
     const file = path.join(dir, "cache.json");
     const cache = createCacheStore(file);
     cache.replaceState({ "test-channel": { preserved: ["already-delivered"] } });

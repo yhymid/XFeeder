@@ -1,0 +1,10 @@
+# Intentional malformed lines; the current parser ignores unsupported syntax.
+not-an-assignment
+1INVALID=ignored
+BAD-NAME=ignored
+BAD NAME=ignored
+=ignored
+export X3_ENV_EXPORTED=ignored
+X3_ENV_UNCLOSED="unfinished
+X3_ENV_MISMATCH='mismatched"
+X3_CONFIG_TOKEN=still-valid

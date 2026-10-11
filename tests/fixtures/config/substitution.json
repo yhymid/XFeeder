@@ -1,0 +1,13 @@
+{
+  "Settings": {
+    "token": "${X3_CONFIG_TOKEN}",
+    "nested": [{ "token": "${X3_CONFIG_TOKEN}" }, ["${X3_CONFIG_TOKEN}"], 42, false, null],
+    "number": "${X3_CONFIG_NUMBER}",
+    "boolean": "${X3_CONFIG_BOOLEAN}",
+    "embedded": "prefix-${X3_CONFIG_TOKEN}",
+    "multiple": "${X3_CONFIG_TOKEN}/${X3_CONFIG_NUMBER}",
+    "fallback": "${X3_CONFIG_MISSING:-default}",
+    "invalid": "${BAD-NAME}",
+    "${X3_CONFIG_TOKEN}": "unchanged key"
+  }
+}

@@ -1,0 +1,13 @@
+# Synthetic parser fixture, not a deployment environment file.
+  X3_ENV_PLAIN = plain value
+X3_ENV_SINGLE='  quoted whitespace  '
+X3_ENV_DOUBLE="double quoted"
+X3_ENV_EMPTY=
+X3_ENV_SINGLE_EMPTY=''
+X3_ENV_DOUBLE_EMPTY=""
+X3_ENV_EQUALS=one=two=three
+X3_ENV_DUPLICATE=first
+X3_ENV_DUPLICATE=last
+X3_ENV_INLINE=value # retained
+X3_ENV_ESCAPE="line\nnext"
+_X3_ENV_1=underscore

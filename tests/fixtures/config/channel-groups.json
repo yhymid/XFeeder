@@ -1,0 +1,27 @@
+{
+  "Settings": { "CacheFile": "cache.json" },
+  "ChannelDefaults": {
+    "Webhook": "https://delivery.example.invalid/test-hook",
+    "TimeChecker": 60,
+    "RequestSend": 2
+  },
+  "channels": [
+    "https://feeds.example.invalid/one.xml",
+    ["https://feeds.example.invalid/two.xml", "https://feeds.example.invalid/three.xml"]
+  ],
+  "channels2": {
+    "slower": {
+      "Feeds": "https://feeds.example.invalid/four.xml",
+      "TimeChecker": "120",
+      "RequestSend": "3"
+    }
+  },
+  "community": {
+    "news": {
+      "RSS": [" https://feeds.example.invalid/five.xml ", ""],
+      "URLs": ["https://feeds.example.invalid/five.xml", "https://feeds.example.invalid/six.xml"],
+      "Sources": "https://feeds.example.invalid/seven.xml",
+      "Thread": "test-thread"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Offline video fixture</title>
+  <id>yt:channel:fixture-channel</id>
+  <updated>2026-01-02T12:00:00Z</updated>
+  <entry>
+    <id>yt:video:fixture-one</id>
+    <yt:videoId>fixture-one</yt:videoId>
+    <title>First fixture video</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=fixture-one"/>
+    <published>2026-01-01T10:30:00Z</published>
+    <updated>2026-01-02T12:00:00Z</updated>
+    <author><name>Fixture channel</name></author>
+    <media:group>
+      <media:description>First fixture video description.</media:description>
+      <media:thumbnail url="https://feeds.example.invalid/media/video-small.jpg" width="120" height="90"/>
+      <media:thumbnail url="https://feeds.example.invalid/media/video-large.jpg" width="480" height="360"/>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:fixture-two</id>
+    <yt:videoId>fixture-two</yt:videoId>
+    <title>Second fixture video</title>
+    <published>2026-01-02T12:00:00Z</published>
+    <summary>Second video summary.</summary>
+  </entry>
+</feed>

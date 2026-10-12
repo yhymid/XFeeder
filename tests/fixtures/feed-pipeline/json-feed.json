@@ -1,0 +1,28 @@
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Offline JSON Feed fixture",
+  "home_page_url": "https://feeds.example.invalid/",
+  "author": { "name": "Feed author" },
+  "items": [
+    {
+      "id": "json-first",
+      "url": "https://feeds.example.invalid/articles/json-first",
+      "title": "First JSON article",
+      "content_text": "First  JSON\narticle text.",
+      "content_html": "<p>Lower priority HTML.</p>",
+      "summary": "Lower priority summary.",
+      "date_published": "2026-01-01T10:30:00+02:00",
+      "image": "https://feeds.example.invalid/media/json-first.png",
+      "author": { "name": "Entry author" },
+      "tags": ["news", "testing"]
+    },
+    {
+      "id": "json-second",
+      "external_url": "https://feeds.example.invalid/articles/json-second",
+      "title": "Second JSON article",
+      "content_html": "<p>Second <strong>JSON</strong> article.</p>",
+      "date_modified": "2026-01-02T12:00:00Z",
+      "banner_image": "https://feeds.example.invalid/media/json-banner.png"
+    }
+  ]
+}

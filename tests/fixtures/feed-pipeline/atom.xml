@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Offline Atom fixture</title>
+  <id>urn:fixture:atom</id>
+  <updated>2026-01-02T12:00:00Z</updated>
+  <author><name>Feed author</name></author>
+  <entry>
+    <id>urn:fixture:atom:first</id>
+    <title type="html">First &lt;b&gt;Atom&lt;/b&gt; article</title>
+    <link rel="self" href="https://feeds.example.invalid/atom/first.xml"/>
+    <link rel="alternate" href="https://feeds.example.invalid/articles/atom-first"/>
+    <link rel="enclosure" type="image/png" href="https://feeds.example.invalid/media/atom.png"/>
+    <summary type="html">&lt;p&gt;Atom summary.&lt;/p&gt;</summary>
+    <published>2026-01-01T10:30:00Z</published>
+    <updated>2026-01-02T12:00:00+02:00</updated>
+    <author><name>Entry author</name></author>
+    <category term="updates"/>
+  </entry>
+  <entry>
+    <id>urn:fixture:atom:second</id>
+    <title>Second Atom article</title>
+    <link href="https://feeds.example.invalid/articles/atom-second"/>
+    <content type="html">&lt;p&gt;Atom content.&lt;/p&gt;</content>
+    <updated>2026-01-02T12:00:00Z</updated>
+  </entry>
+</feed>

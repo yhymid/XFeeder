@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Duplicate fixture</title><link>https://feeds.example.invalid/</link><description>Parsing preserves duplicates; delivery state is a separate responsibility.</description>
+  <item><title>Original</title><guid isPermaLink="false">shared-guid</guid><link>https://feeds.example.invalid/duplicate/one</link><pubDate>Thu, 01 Jan 2026 10:30:00 GMT</pubDate></item>
+  <item><title>Same GUID</title><guid isPermaLink="false">shared-guid</guid><link>https://feeds.example.invalid/duplicate/two</link><pubDate>Thu, 01 Jan 2026 10:31:00 GMT</pubDate></item>
+  <item><title>Same link</title><guid isPermaLink="false">different-guid</guid><link>https://feeds.example.invalid/duplicate/one</link><pubDate>Thu, 01 Jan 2026 10:32:00 GMT</pubDate></item>
+</channel></rss>

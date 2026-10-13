@@ -67,6 +67,52 @@ test('runtime archive ships only runnable files and a generated empty config',t=
  assert.throws(()=>execFileSync(process.execPath,[script,git('write-tree'),output],{cwd:dir,stdio:'pipe'}),/Generated\/private files tracked/);
 });
 
+test('source and runtime packaging reject generated files, nested repositories and symlinks even when forced into Git',t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'xfeeder-artifact-guards-'));
+ t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const git=(...args)=>execFileSync('git',args,{cwd:dir,stdio:['pipe','pipe','pipe']}).toString().trim();
+ const write=(name,content)=>{fs.mkdirSync(path.dirname(path.join(dir,name)),{recursive:true});fs.writeFileSync(path.join(dir,name),content);};
+ git('init','--quiet');
+ // Deliberately empty: release guards must also reject known artifacts independently
+ // of local ignore rules (including force-added files in an older reviewed tree).
+ write('.gitignore','');
+ write('package.json',JSON.stringify({name:'xfeeder',version:'2.2.0',main:'main.js'}));
+ for(const name of ['main.js','dashboard.js','package-lock.json','LICENSE','.env.example','config.json.example','scripts/install-scrapling.cjs','src/extensions/Scrapling/browser_worker.py','src/extensions/Scrapling/requirements.txt','src/extensions/Scrapling/requirements.lock.txt','tests/fixtures/tls/localhost-test-key.pem']) write(name,'SOURCE_FIXTURE');
+ git('add','.');
+ const script=path.join(__dirname,'../scripts/package-release.cjs');
+ const run=source=>execFileSync(process.execPath,[script,git('write-tree'),path.join(dir,source?'source.tgz':'runtime.tgz'),...(source?['--source']:[])],{cwd:dir,stdio:['pipe','pipe','pipe']});
+ for(const source of [true,false]) assert.equal(JSON.parse(run(source)).kind,source?'source':'runtime');
+ const rejectsBoth=name=>{
+  for(const source of [true,false]) {
+   const output=path.join(dir,source?'source.tgz':'runtime.tgz');
+   fs.rmSync(output,{force:true});
+   assert.throws(()=>run(source),error=>error.stderr?.toString().includes(`Generated/private files tracked in release: ${name}`),`${source?'source':'runtime'}: ${name}`);
+   assert.equal(fs.existsSync(output),false,`rejected archive must not be written: ${name}`);
+  }
+ };
+ for(const name of [
+  'src/extensions/Scrapling/.venv/bin/python','src/extensions/Scrapling/venv/pyvenv.cfg',
+  'src/extensions/Scrapling/__pycache__/worker.cpython-311.pyc','src/extensions/Scrapling/worker.pyc',
+  'src/extensions/Scrapling/browsers/chromium/chrome','src/extensions/Scrapling/.local-browsers/chromium/chrome',
+  'src/extensions/Scrapling/ms-playwright/chromium/chrome','src/extensions/Scrapling/.cache/browser/chrome',
+  'src/extensions/Scrapling/browser-profiles/Default/Cookies','src/extensions/Scrapling/user-data-dir/Default/Preferences',
+  'src/extensions/Scrapling/upstream/source.py','node_modules/local/index.js',
+  'cache.json','http-meta.json','data.network-runtime.json','data.network-runtime.json.123.tmp',
+  'debug/terminal.txt','src/extensions/Scrapling/worker.log','src/extensions/Scrapling/output.tmp',
+ ]) {
+  write(name,'GENERATED_FIXTURE');git('add','-f','--',name);
+  rejectsBoth(name);
+  git('rm','--cached','--',name);fs.unlinkSync(path.join(dir,name));
+ }
+ const nestedCommit=git('-c','user.name=XFeeder test','-c','user.email=test@example.invalid','commit-tree',git('write-tree'),'-m','Synthetic nested repository');
+ const linkBlob=execFileSync('git',['hash-object','-w','--stdin'],{cwd:dir,input:'../../private-local-file',encoding:'utf8'}).trim();
+ for(const [mode,object,name] of [['160000',nestedCommit,'src/extensions/Scrapling/nested-repository'],['120000',linkBlob,'src/extensions/Scrapling/local-link.py']]) {
+  git('update-index','--add','--cacheinfo',`${mode},${object},${name}`);
+  rejectsBoth(name);
+  git('update-index','--force-remove','--',name);
+ }
+});
+
 test('repository ignore rules protect local credentials and state without hiding source fixtures',t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'xfeeder-ignore-'));
  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
@@ -76,6 +122,12 @@ test('repository ignore rules protect local credentials and state without hiding
   try {execFileSync('git',['check-ignore','--no-index','-q',name],{cwd:dir});return true;}
   catch(error){if(error.status===1)return false;throw error;}
  };
- for(const name of ['.env','.env.local','config.json','cache.json','.npmrc','.netrc','.git-credentials','.pypirc','.envrc','.direnv/state','.aws/credentials','.ssh/id_ed25519','credentials.json','secrets.json','auth.json','local.sqlite','local.sqlite3-wal','local.db-journal','cookies.json','storage-state.json','browser-profiles/Default/Cookies','node_modules/module/index.js','src/extensions/Scrapling/.venv/bin/python','debug/terminal.txt','data.network-runtime.json','data.network-runtime.json.123.tmp','production.pem','production.key','tests/fixtures/tls/other-private.pem']) assert.equal(ignored(name),true,name);
+ for(const name of ['.env','.env.local','config.json','cache.json','.npmrc','.netrc','.git-credentials','.pypirc','.envrc','.direnv/state','.aws/credentials','.ssh/id_ed25519','credentials.json','secrets.json','auth.json','local.sqlite','local.sqlite3-wal','local.db-journal','cookies.json','storage-state.json','browser-profiles/Default/Cookies','node_modules/module/index.js','src/extensions/Scrapling/.venv/bin/python','debug/terminal.txt','data.network-runtime.json','data.network-runtime.json.123.tmp','production.pem','production.key','tests/fixtures/tls/other-private.pem',
+  'src/extensions/Scrapling/.cache/browser/chrome','src/extensions/Scrapling/ms-playwright/chromium/chrome',
+  'src/extensions/Scrapling/browsers/chromium/chrome','src/extensions/Scrapling/.local-browsers/chromium/chrome',
+  'src/extensions/Scrapling/browser-profiles/Default/Cookies','src/extensions/Scrapling/user-data-dir/Default/Preferences',
+  'src/extensions/Scrapling/venv/pyvenv.cfg','src/extensions/Scrapling/__pycache__/worker.pyc',
+  'src/extensions/Scrapling/output.tmp','src/extensions/Scrapling/worker.log',
+ ]) assert.equal(ignored(name),true,name);
  for(const name of ['.env.example','config.json.example','package-lock.json','debug/.gitkeep','src/extensions/Scrapling/browser_worker.py','tests/fixtures/tls/README.md','tests/fixtures/tls/localhost-test-cert.pem','tests/fixtures/tls/localhost-test-key.pem']) assert.equal(ignored(name),false,name);
 });

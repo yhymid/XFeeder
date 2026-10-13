@@ -201,6 +201,8 @@ function createChannelRunner({
     const channelLabel = getChannelLabel(channelConfig);
     // Do not create delivery state until there are entries to consider.
     let channelCache = cache[channelConfig.cacheKey || index];
+    // Simulated successes and legacy bucket migration must not alter live state.
+    if (dryRun) channelCache = structuredClone(channelCache || {});
     expert("channel.process.begin", {
       index: index + 1,
       channel: channelLabel,

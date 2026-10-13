@@ -15,7 +15,7 @@ const files = entries.map(entry => entry.slice(entry.indexOf("\t") + 1));
 const forbidden = files.filter((file, index) => {
   const parts = file.split("/"), base = parts.at(-1);
   return !entries[index].startsWith("100") ||
-    parts.some(p => [".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "coverage", "playwright-report", "test-results", "benchmark-results", "release-artifacts", "ms-playwright", ".cache", ".aws", ".ssh", ".codex", ".agents", ".direnv", "browser-profiles", "user-data-dir", ".auth"].includes(p)) ||
+    parts.some(p => [".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "coverage", "playwright-report", "test-results", "benchmark-results", "release-artifacts", "ms-playwright", "browsers", ".local-browsers", ".cache", ".aws", ".ssh", ".codex", ".agents", ".direnv", "browser-profiles", "user-data-dir", ".auth"].includes(p)) ||
     [".npmrc", ".netrc", ".git-credentials", ".pypirc", ".envrc"].includes(base) ||
     ["secrets.json", "credentials.json", "auth.json"].includes(file) ||
     /\.(?:sqlite3?|db)(?:-(?:journal|shm|wal))?$/i.test(base) ||

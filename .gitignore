@@ -39,10 +39,13 @@ __pycache__/
 .pytest_cache/
 /src/extensions/Scrapling/upstream/
 
-# Browser caches, test output and local performance/release artifacts
-/.cache/
-/ms-playwright/
-/browsers/
+# Browser caches may be placed below the Scrapling adapter as well as at root
+.cache/
+ms-playwright/
+browsers/
+.local-browsers/
+
+# Test output and local performance/release artifacts
 coverage/
 playwright-report/
 test-results/
@@ -109,8 +112,8 @@ Desktop.ini
 *.sqlite3-wal
 
 # Browser profiles and saved authentication/session state
-/browser-profiles/
-/user-data-dir/
+browser-profiles/
+user-data-dir/
 /playwright/.auth/
 /storage-state*.json
 /storageState*.json

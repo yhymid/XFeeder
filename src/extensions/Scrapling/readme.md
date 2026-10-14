@@ -81,6 +81,12 @@ zastosuj komunikat narzędzia; administrator może użyć Python z venv z
 `-m playwright install-deps chromium`. Windows ma obsługę ścieżek `Scripts/*.exe`;
 rzeczywistą instalację zweryfikowano na Linux, a logikę Windows w testach offline.
 
+Na systemach POSIX zamykanie drzewa przeglądarki wymaga systemowego `ps`
+(na Linux pakiet `procps`/`procps-ng`). Runtime zapisuje PID i czas startu potomków
+przed zamknięciem Pythona, obejmując również odłączoną grupę Chromium. Najpierw
+pozwala Pythonowi zamknąć sesje, następnie kończy pozostałe procesy; nie uznaje
+samego wyjścia Pythona za zakończenie całego drzewa. Windows używa `taskkill /T`.
+
 `npm run scrapling:check` weryfikuje zarządzane `.venv`, pip, Scrapling i start
 przeglądarek, bez instalowania ani pobierania czegokolwiek. Nie zmienia magazynu
 zaufania TLS ani konfiguracji XFeedera.

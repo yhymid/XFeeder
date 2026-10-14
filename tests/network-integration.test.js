@@ -93,11 +93,15 @@ test("TASK 13: chunked response preserves byte order, trailers and deferred EOF 
   const expected = Buffer.from(Array.from({ length: 512 }, (_, index) => index % 256));
   const server = await serve(t, (_req, res) => {
     res.writeHead(200, { Trailer: "x-complete" });
-    res.cork();
+    // Batch socket writes, not HTTP chunks: ServerResponse.cork() produces
+    // malformed framing on supported Node 22/24 when used with trailers.
+    // Keep all 512 individual HTTP chunks to exercise the download queue.
+    const socket = res.socket;
+    socket.cork();
     for (const byte of expected) res.write(Buffer.from([byte]));
     res.addTrailers({ "x-complete": "yes" });
     res.end();
-    res.uncork();
+    socket.uncork();
   });
   const start = performance.now();
   const response = await getWithFallback(server.url, options({

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24", "26"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node main.js --check-config --config tests/fixtures/config/channel-groups.json
+      - run: npm audit --audit-level=high
+
+  scrapling:
+    name: Scrapling browser smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - run: npm ci
+      # The installer verifies browser launch but deliberately does not install
+      # OS packages. Bootstrap its pinned driver before installing those packages.
+      - name: Install pinned driver and browser system dependencies
+        run: |
+          python -m venv src/extensions/Scrapling/.venv
+          src/extensions/Scrapling/.venv/bin/python -m pip install --disable-pip-version-check --no-deps -r src/extensions/Scrapling/requirements.lock.txt
+          src/extensions/Scrapling/.venv/bin/python -m playwright install-deps chromium
+      - run: npm run scrapling:install
+      - run: npm run test:scrapling-browser

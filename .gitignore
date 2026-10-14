@@ -119,3 +119,6 @@ user-data-dir/
 /storageState*.json
 /cookies*.json
 /cookies*.txt
+
+# Local review / diagnostic artifacts
+review/

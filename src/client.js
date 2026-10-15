@@ -6,6 +6,15 @@ const { finished } = require("node:stream");
 const { validateTimeoutOptions } = require("./network/http-adapter");
 const { createManagedClient } = require("./network/http-client");
 const { getNetwork } = require("./network/service");
+const {
+  DEFAULT_MAX_ATTEMPTS,
+  DEFAULT_RETRY_BASE_DELAY_MS,
+  DEFAULT_RETRY_MAX_DELAY_MS,
+  getHeader,
+  getRetryAfterMs,
+  getRetryDelayMs,
+  isRetryableRequestError,
+} = require("./network/retry-policy");
 const { isCancelled } = require("./network/abort");
 const { HttpProxyAgent } = require("http-proxy-agent");
 const { HttpsProxyAgent } = require("https-proxy-agent");
@@ -88,66 +97,6 @@ function getHttpClient(configPath = "./config.json", configOverride = null) {
   };
 
   return clientCache.client;
-}
-
-const RETRYABLE_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
-const RETRYABLE_NETWORK_CODES = new Set([
-  "ECONNABORTED",
-  "ECONNRESET",
-  "EAI_AGAIN",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "EPIPE",
-  "ETIMEDOUT",
-  "ERR_NETWORK",
-]);
-const DEFAULT_MAX_ATTEMPTS = 3;
-const DEFAULT_RETRY_BASE_DELAY_MS = 500;
-const DEFAULT_RETRY_MAX_DELAY_MS = 8000;
-
-
-function getHeader(headers, name) {
-  if (!headers) return undefined;
-  if (typeof headers.get === "function") return headers.get(name);
-  const target = name.toLowerCase();
-  const key = Object.keys(headers).find((headerName) => headerName.toLowerCase() === target);
-  return key ? headers[key] : undefined;
-}
-
-function getRetryAfterMs(headers, now = Date.now()) {
-  const value = getHeader(headers, "retry-after");
-  if (value === undefined || value === null || String(value).trim() === "") return null;
-
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    const milliseconds = seconds * 1000;
-    return Number.isFinite(milliseconds) ? Math.ceil(milliseconds) : null;
-  }
-
-  const timestamp = Date.parse(String(value));
-  if (!Number.isFinite(timestamp)) return null;
-  return Math.max(0, timestamp - now);
-}
-
-function isRetryableRequestError(error) {
-  if (isCancelled(error) || error?.phase === "deadline") return false;
-  const status = Number(error?.response?.status);
-  if (Number.isFinite(status)) return RETRYABLE_HTTP_STATUS.has(status);
-  return RETRYABLE_NETWORK_CODES.has(String(error?.code || ""));
-}
-
-function getRetryDelayMs(error, attempt, baseDelayMs, maxDelayMs) {
-  const [minJitter, maxJitter] = getNetwork().policy.retryJitterMs;
-  const friendlyDelay = minJitter + (maxJitter > minJitter ? Math.round(Math.random() * (maxJitter - minJitter)) : 0);
-  const status = Number(error?.response?.status);
-  if (status === 429 || status === 503) {
-    const retryAfterMs = getRetryAfterMs(error?.response?.headers);
-    if (retryAfterMs !== null) return retryAfterMs + friendlyDelay;
-  }
-
-  const exponentialDelay = baseDelayMs * (2 ** attempt);
-  const boundedDelay = Math.min(maxDelayMs, exponentialDelay);
-  return Math.round(boundedDelay * (0.8 + Math.random() * 0.4)) + friendlyDelay;
 }
 
 function assertHttpUrl(url) {

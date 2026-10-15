@@ -5,7 +5,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { venvPaths } = require("../src/extensions/Scrapling/runtime-paths");
 const { ScraplingDetector } = require("../src/extensions/Scrapling/detector");
-const { prepare } = require("../scripts/install-scrapling.cjs");
+const { prepare, VERIFY_IMPORT } = require("../scripts/install-scrapling.cjs");
 const baseDir = "/a path/with spaces/Scrapling";
 const info = (prefix, scrapling = "0.4.15", version = [3,14,7]) => ({
   prefix, basePrefix: "/system", version, scripts: [path.join(prefix, "bin")], scrapling,
@@ -103,4 +103,20 @@ test("Windows detector resolves the managed Scripts CLI",()=>{
   const dir="C:\\XFeeder Files\\Scrapling",local=venvPaths(dir,"win32");
   const d=new ScraplingDetector(dir,{platform:"win32",exists:p=>[local.python,local.scrapling].includes(p),run:(_cmd,args)=>args[1]?.includes('sysconfig')?{status:0,stdout:JSON.stringify({...info(local.directory),scripts:[path.win32.dirname(local.python)]})}:{status:0}});
   assert.equal(d.available,true);assert.equal(d.scraplingCmd,local.scrapling);
+});
+
+
+test("X3-24: pinned Scrapling version and both Chromium drivers match installer checks", () => {
+  const lock = fs.readFileSync(path.join(__dirname, "../src/extensions/Scrapling/requirements.lock.txt"), "utf8");
+  const pins = lock.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const scrapling = pins.filter(line => /^scrapling==/i.test(line));
+  assert.equal(scrapling.length, 1, "one unambiguous Scrapling runtime pin");
+  const version = scrapling[0].match(/^scrapling==(\d+\.\d+\.\d+)$/i)?.[1];
+  assert.ok(version, "Scrapling must be pinned to one exact stable version");
+  assert.ok(VERIFY_IMPORT.includes(`version("scrapling") == "${version}"`),
+    "installer import verification must be updated with the lockfile");
+  for (const dependency of ["playwright", "patchright"]) {
+    assert.equal(pins.filter(line => new RegExp(`^${dependency}==[0-9]+\\.[0-9]+\\.[0-9]+$`).test(line)).length, 1,
+      dependency + " must stay deterministically pinned");
+  }
 });

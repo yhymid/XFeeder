@@ -81,8 +81,10 @@ redirect and proxy compatibility; there is no implicit private-host allowlist.
 When `maxResponseBytes` is set, buffered managed Axios responses get a
 bounded `maxContentLength`. Stream responses are wrapped in a bounded
 Transform, which counts bytes delivered after Axios decoding and destroys
-the underlying source on overflow. The stream reports
-`ERR_RESPONSE_TOO_LARGE`, and the managed operation/HTTP permit is released
+the underlying source on overflow. Depending on the installed Axios
+version, an oversized stream may report its native
+`ERR_BAD_RESPONSE` with `maxContentLength`, or the supplementary
+`ERR_RESPONSE_TOO_LARGE` guard. The managed operation/HTTP permit is released
 through the existing cleanup lifecycle. This prevents bypasses where
 `responseType: "stream"` does not enforce buffered-body limits.
 

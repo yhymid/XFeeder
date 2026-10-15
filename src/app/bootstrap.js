@@ -16,7 +16,10 @@ const {
   validateChannels,
 } = require("../core/channel-config");
 const { createFeedPipeline } = require("../core/feed-pipeline");
-const { expert, setExpertDebug } = require("../core/diagnostics");
+const { expert, setExpertDebug, subscribeActivity } = require("../core/diagnostics");
+const { createEventBus } = require("../core/event-bus");
+const { createMetricsRegistry } = require("../core/metrics-registry");
+const { startActivityRuntime } = require("../core/activity-runtime");
 const { setTerminalLogEnabled } = require("../core/terminal-log");
 const { createLogger } = require("../core/logger");
 const logger = createLogger("App");
@@ -78,6 +81,19 @@ function createApp({
   const tasks = new ChannelTasks();
   const network = getNetwork().stopping ? resetNetwork() : getNetwork();
   network.ownedByApp = true;
+  const events = createEventBus();
+  const metrics = createMetricsRegistry(events, {
+    getGauges: () => {
+      const schedules = queueRuntime?.getState()?.scheduleByCacheKey || {};
+      return {
+        active_jobs: tasks.active.size,
+        queue_due_channels: Object.values(schedules)
+          .filter(item => item && Number(item.nextRunAt) <= Date.now()).length,
+      };
+    },
+  });
+  let unsubscribeActivity = () => {};
+  let stopActivityRuntime = async () => {};
 
   const sources = createSourceAdapters({
     getDiscordHttpClient: () => getHttpClient(configPath, state.config),
@@ -241,6 +257,10 @@ function createApp({
       } finally { clearTimeout(cleanupTimer); }
       await cleanup(() => telemetryStopped);
       if (persistCache) await cleanup(() => stateStore.saveAsync());
+      events.emit("worker.stopped");
+      await cleanup(() => stopActivityRuntime());
+      unsubscribeActivity();
+      metrics.close();
 
       if (failures.length) {
         const failure = failures.length === 1
@@ -258,7 +278,10 @@ function createApp({
   }
 
   refreshConfig({ force: true, quiet: false });
+  unsubscribeActivity = subscribeActivity((name, details) => events.fromExpert(name, details));
+  events.emit("worker.started", { dryRun });
   if (autostart) {
+    stopActivityRuntime = startActivityRuntime({ configPath, events, metrics });
     stopNetworkRuntime = startNetworkRuntime({
       configPath, network, refreshConfig,
       isWorkerReady: () => Boolean(
@@ -278,6 +301,8 @@ function createApp({
       return state.allChannels;
     },
     cacheStore,
+    events,
+    metrics,
     fetchFeed,
     checkFeedsForChannel,
     get channelStates() { return tasks.snapshot(); },

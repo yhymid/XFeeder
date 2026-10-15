@@ -125,13 +125,12 @@ test("X3-21: bootstrap preserves its cacheStore API while using separate feed pe
   fs.writeFileSync(configPath, JSON.stringify({ channels: {} }));
   const { createApp } = require("../src/app/bootstrap");
   const app = createApp({ cachePath, configPath, autostart: false });
-  t.after(async () => {
-    await app.shutdown({ exit: false });
-    require("../src/network/service").resetNetwork();
-  });
+  t.after(() => require("../src/network/service").resetNetwork());
   app.cacheStore.setFeedSnapshot(url, { etag: '"bootstrap"' }, [entry]);
   assert.equal(app.cacheStore.getFeedValidator(url).etag, '"bootstrap"');
   assert.deepEqual(app.cacheStore.getFeedItems(url), [entry]);
   assert.equal(app.cacheStore.getState().__xfeeder, undefined);
   assert.ok(fs.existsSync(defaultFeedStatePath(cachePath)));
+  // Finish persisted writes while the fixture directory still exists.
+  await app.shutdown({ exit: false });
 });

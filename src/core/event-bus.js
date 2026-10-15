@@ -47,6 +47,7 @@ function makeEvent(type, details = {}, id, now = Date.now()) {
     level,
     type,
     channelId: channelId(details.channel),
+    sourceId: channelId(details.url || details.source),
     destination: target,
     durationMs: safeNumber(details.durationMs ?? details.elapsedMs),
     httpStatus: Number.isInteger(details.status) && details.status >= 100 && details.status <= 599
@@ -79,7 +80,8 @@ function createEventBus({ capacity = MAX_EVENTS, now = Date.now } = {}) {
   return Object.freeze({
     emit,
     fromExpert(name, details) {
-      const type = EVENTS[name];
+      const type = name === "feed.download.complete" && details?.ok === false
+        ? "feed.failed" : EVENTS[name];
       if (!type) return null;
       return emit(type, details);
     },

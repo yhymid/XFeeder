@@ -685,14 +685,15 @@ function startDashboard({
         }
 
         const validation = validateConfig(parsed, paths.envPath);
-        // X3-29 validates v2 drafts, but X3-30 migration is not implemented.
-        // Do not let the editor persist a config the running worker cannot load.
+        // The worker now loads validated v2, but the dashboard's legacy
+        // editor still assumes uppercase groups. Prevent lossy UI rewrites
+        // until the dedicated v2 dashboard editor lands in X3-32.
         if (validation.schemaVersion === 2 && !validation.errors.length) {
           sendJson(res, 409, {
-            error: "Schema v2 is not yet supported by the worker. Migration is required.",
-            code: "CONFIG_MIGRATION_REQUIRED",
-            issues: [{ path: "schemaVersion", code: "migration_required",
-              message: "Migrate the configuration before activation" }],
+            error: "Schema v2 runs in the worker but cannot yet be saved by the legacy dashboard editor.",
+            code: "CONFIG_EDITOR_V2_UNSUPPORTED",
+            issues: [{ path: "schemaVersion", code: "editor_unsupported",
+              message: "Use the config:migrate CLI or edit the v2 JSON outside the dashboard" }],
           });
           return;
         }

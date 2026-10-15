@@ -5,10 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/xfeeder
-ExecStart=/usr/bin/node /opt/xfeeder/main.js
-Restart=always
+WorkingDirectory=/var/lib/xfeeder
+ExecStart=/usr/bin/node /opt/xfeeder/main.js --config /var/lib/xfeeder/config.json --cache /var/lib/xfeeder/cache.json
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGTERM
+StateDirectory=xfeeder
+UMask=0077
 User=xfeeder
 Group=xfeeder
 Environment=NODE_ENV=production

@@ -1,7 +1,6 @@
 "use strict";
 
-const axios = require("axios");
-const { networkAdapter } = require("./network/http-adapter");
+const { postManaged } = require("./network/http-client");
 const { context } = require("./network/context");
 const { isCancelled } = require("./network/abort");
 
@@ -113,12 +112,12 @@ async function sendTelegramMessage(telegramConfig, entry) {
 
   let response;
   try {
-    response = await axios.post(
+    response = await postManaged(
       `https://api.telegram.org/bot${config.botToken}/sendMessage`,
       payload,
       {
         timeout: config.timeout,
-        adapter: networkAdapter, signal: context().signal,
+        signal: context().signal,
         xfeederDefaultTimeout: telegramConfig?.TimeoutMs == null ? DEFAULT_TIMEOUT_MS : undefined,
         headers: { "Content-Type": "application/json" },
       }

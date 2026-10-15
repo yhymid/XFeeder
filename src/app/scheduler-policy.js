@@ -20,8 +20,8 @@ function nextChannelIndex(channels, expectedKey, fallbackIndex = 0) {
 function validateQueueDelay(delayMs) {
   // Never allow a bad programmatic option to create a hot setTimeout(0) loop.
   // This is an application scheduling delay, not an HTTP retry duration.
-  if (!Number.isSafeInteger(delayMs) || delayMs < 100 || delayMs > 2147000000)
-    throw new RangeError("delayBetweenChannels must be an integer from 100 to 2147000000 milliseconds");
+  if (!Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > 2147000000)
+    throw new RangeError("delayBetweenChannels must be an integer from 1 to 2147000000 milliseconds");
   return delayMs;
 }
 

@@ -1,8 +1,8 @@
 # XFeeder
 
-**XFeeder 3.0 development branch** — a modular RSS, Atom, JSON Feed, YouTube and Discord-source monitor that delivers new entries to Discord webhooks and Telegram.
+**XFeeder 3.0 alpha prerelease branch** — a modular RSS, Atom, JSON Feed, YouTube and Discord-source monitor that delivers new entries to Discord webhooks and Telegram.
 
-> **Release status:** This branch is `3.0-dev` and is **not a released version 3.0**. The npm package still identifies itself as `2.2.0`. Use an official release for production unless you accept development-branch changes.
+> **Release status:** This is the `3.0-alpha` testing branch (`3.0.0-alpha.0`), not a stable production release. Do not deploy over live state without a backup. The `3.0-dev` and `main` branches are unchanged.
 
 XFeeder provides source adapters, destination-specific delivery history, rate limiting, an optional Scrapling browser fallback and a local operations dashboard. It supports an existing legacy configuration and gradual migration to the newer schema.
 

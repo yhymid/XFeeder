@@ -259,7 +259,14 @@ function createApp({
 
   refreshConfig({ force: true, quiet: false });
   if (autostart) {
-    stopNetworkRuntime = startNetworkRuntime({ configPath, network, refreshConfig });
+    stopNetworkRuntime = startNetworkRuntime({
+      configPath, network, refreshConfig,
+      isWorkerReady: () => Boolean(
+        queueRuntime && !shutdownPromise && !tasks.stopping &&
+        !network.stopping && state.allChannels.length > 0 &&
+        stateStore.isUsable()
+      ),
+    });
     startQueue();
   }
 

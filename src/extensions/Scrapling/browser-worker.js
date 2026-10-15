@@ -5,6 +5,10 @@ const { spawn } = require("child_process");
 const readline = require("readline");
 const { TaskGate, abortError } = require("./task-gate");
 const { terminateChildTree } = require("./process-control");
+const { createLogger } = require("../../core/logger");
+const { sanitizeText } = require("../../core/diagnostics");
+
+const logger = createLogger("Scrapling session");
 
 const WORKER_SCRIPT = path.join(__dirname, "browser_worker.py");
 const DEFAULT_TIMEOUT_MS = 120000;
@@ -42,12 +46,12 @@ class BrowserWorker {
     child.stderr.on("data", (chunk) => {
       this.lastStderr = `${this.lastStderr}${chunk}`.slice(-4000);
       const message = String(chunk).trim();
-      if (message) console.warn(`[Scrapling Session] ${message}`);
+      if (message) logger.warn("Browser stderr", { message });
     });
     child.on("error", (error) => { if (this.child === child) this.stop(error); });
     child.on("exit", (code, signal) => {
       const detail = code === 0 ? "closed" : `exited (${signal || code})`;
-      const suffix = this.lastStderr.trim();
+      const suffix = sanitizeText(this.lastStderr.trim());
       const error = new Error(`Scrapling browser worker ${detail}${suffix ? `: ${suffix}` : ""}`);
       if (this.child === child) this.stop(error);
     });
@@ -58,7 +62,7 @@ class BrowserWorker {
     try {
       response = JSON.parse(line);
     } catch {
-      console.warn(`[Scrapling Session] Ignored non-protocol output: ${String(line).slice(0, 200)}`);
+      logger.warn("Ignored non-protocol output", { line: String(line).slice(0, 200) });
       return;
     }
 

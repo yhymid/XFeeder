@@ -24,7 +24,7 @@ const EVENTS = Object.freeze({
 });
 const LEVELS = new Set(["info", "warn", "error"]);
 const MAX_EVENTS = 2000;
-const TYPES = new Set(Object.values(EVENTS));
+const TYPES = new Set([...Object.values(EVENTS), "feed.failed"]);
 
 function safeNumber(value, max = 86400000) {
   return Number.isFinite(value) && value >= 0

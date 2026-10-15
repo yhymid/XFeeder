@@ -520,13 +520,13 @@ function startDashboard({
       }
       if (req.headers.origin && !ensureSameOrigin(req, res, expectedOrigin)) return;
       // Dashboard liveness is independent of its worker and external services.
-      if (req.method === "GET" && url.pathname === "/api/live") {
+      if (req.method === "GET" && ["/api/live", "/api/health/live"].includes(url.pathname)) {
         sendJson(res, 200, { ok: true, service: "xfeeder-dashboard", status: "live" });
         return;
       }
       // Readiness depends on fresh, applied worker telemetry and safe state.
       // Only expose a boolean; no config, paths, credentials or worker PID.
-      if (req.method === "GET" && url.pathname === "/api/ready") {
+      if (req.method === "GET" && ["/api/ready", "/api/health/ready"].includes(url.pathname)) {
         const ready = workerReady(paths.configPath);
         sendJson(res, ready ? 200 : 503, {
           ok: ready, service: "xfeeder-worker", status: ready ? "ready" : "not-ready",

@@ -31,11 +31,14 @@ function startConcurrentChannelQueue({
   delayBetweenChannels = 30000,
   beforeCycle,
   maxConcurrentChannels = 2,
+  onFatal,
 } = {}) {
   validateConcurrency(maxConcurrentChannels);
   validateQueueDelay(delayBetweenChannels);
   if (typeof checkFeedsForChannel !== "function")
     throw new TypeError("checkFeedsForChannel must be a function");
+  if (onFatal !== undefined && typeof onFatal !== "function")
+    throw new TypeError("onFatal must be a function");
 
   const initial = channelsFrom(getChannels);
   if (initial.length === 0) return null;
@@ -79,9 +82,15 @@ function startConcurrentChannelQueue({
       const retryAfter = getRetryAfterMs(err?.response?.headers, finishedAt) || 0;
       schedule.nextRunAt = finishedAt + Math.max(minDelay, backoff, retryAfter);
       if (err?.code === "CACHE_UNSAFE") {
-        // Storage is no longer trustworthy; don't poll/feed more channels.
+        // Stop admission first, then cancel in-flight ChannelTasks through
+        // the owning app. A store with uncertain delivery IDs cannot safely
+        // continue launching provider requests.
         logger.error("Persistent state is unsafe; stopping scheduler", { failure: errorRecord(err, { context: "state" }) });
         stop();
+        try { onFatal?.(err); }
+        catch (failure) {
+          logger.error("Fatal cancellation callback failed", { failure: errorRecord(failure) });
+        }
       } else if (!isCancelled(err)) {
         logger.error("Channel failed", { label, failure: errorRecord(err, { context: "source" }) });
         expert("queue.channel.failed", { index: index + 1, channel: label, durationMs: finishedAt - startedAt, error: err });

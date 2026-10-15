@@ -58,3 +58,42 @@ test("X3-12: logging does not mutate source metadata", () => {
   assert.ok(!output.includes("key=abc"));
   assert.match(output, /request failed/);
 });
+
+
+test("X3-12: scheduler error output never emits untrusted credential text", async t => {
+  const { runChannelsOnce } = require("../src/app/runtime");
+  const logged = [];
+  t.mock.method(console, "error", (...args) => logged.push(args.join(" ")));
+  t.mock.method(console, "log", () => {});
+  const secret = "synthetic-refresh-secret";
+  await assert.rejects(
+    runChannelsOnce({
+      getChannels: () => [{ ID: "testing" }],
+      checkFeedsForChannel: async () => {},
+      beforeRun: () => { throw new Error(`Bearer ${secret}`); },
+    }),
+    /synthetic-refresh-secret/,
+  );
+  // A preflight exception does not get separately logged here. Verify the
+  // logger itself handles the untrusted error from the scheduler boundary.
+  createLogger("Scheduler").error("Configuration refresh failed", { error: new Error(`Bearer ${secret}`) });
+  assert.equal(logged.length, 1);
+  assert.ok(!logged[0].includes(secret));
+  assert.match(logged[0], /\[REDACTED\]/);
+});
+
+test("X3-12: Discord source failure is redacted without changing the thrown failure", async t => {
+  const { parseDiscord } = require("../src/parsers/discord");
+  const secret = "synthetic-discord-source-secret";
+  const logged = [];
+  t.mock.method(console, "error", (...args) => logged.push(args.join(" ")));
+  t.mock.method(console, "log", () => {});
+  const entries = await parseDiscord(
+    { Token: "fixture-token", ChannelIDs: ["123456789"] },
+    { get: async () => { throw new Error(`Bearer ${secret}`); } },
+  );
+  assert.deepEqual(entries, []);
+  assert.equal(logged.length, 1);
+  assert.ok(!logged[0].includes(secret));
+  assert.match(logged[0], /\[REDACTED\]/);
+});

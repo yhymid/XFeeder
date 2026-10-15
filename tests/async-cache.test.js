@@ -143,3 +143,32 @@ test("X3-22: async feed persistence errors cannot be swallowed as parser fallthr
   await assert.rejects(pipeline.fetchFeed(url), failure => failure === error);
   assert.equal(nextParser, false);
 });
+
+test("X3-22: a failed delivery save halts the channel before another destination POST", { timeout: 8000 }, async t => {
+  const { createChannelRunner } = require("../src/app/channel-runner");
+  const file = path.join(tempDir(t), "cache.json");
+  const store = createCacheStore(file);
+  store.save();
+  const before = fs.readFileSync(file, "utf8");
+  const calls = [];
+  const mock = t.mock.method(fs.promises, "rename", async () => {
+    throw Object.assign(new Error("synthetic storage failure"), { code: "EIO" });
+  });
+  const channel = {
+    cacheKey: "fixture", name: "fixture", RequestSend: 1,
+    RSS: ["https://example.invalid/rss"], Discord: null,
+    Webhook: "https://example.invalid/webhook",
+    Telegram: { BotToken: "test-token", ChatID: "test-chat" },
+  };
+  const runner = createChannelRunner({
+    cacheStore: { ...store, save: store.saveAsync },
+    fetchFeed: async () => [{ title: "test", link: "https://example.invalid/entry" }],
+    sendMessage: async () => { calls.push("webhook"); },
+    sendTelegramMessage: async () => { calls.push("telegram"); },
+  });
+  await assert.rejects(runner.checkFeedsForChannel(0, channel), { code: "CACHE_UNSAFE" });
+  assert.deepEqual(calls, ["webhook"], "Telegram must not start before webhook success is durable");
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+  assert.throws(() => store.getState(), { code: "CACHE_UNSAFE" });
+  mock.mock.restore();
+});

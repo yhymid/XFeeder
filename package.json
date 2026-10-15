@@ -21,7 +21,8 @@
     "scrapling:check": "node scripts/install-scrapling.cjs --check",
     "deps:check": "node scripts/check-dependencies.cjs",
     "deps:refresh": "node scripts/refresh-dependency.cjs",
-    "config:migrate": "node scripts/migrate-config.cjs"
+    "config:migrate": "node scripts/migrate-config.cjs",
+    "release:alpha-check": "node scripts/check-alpha-readiness.cjs"
   },
   "keywords": [
     "rss",

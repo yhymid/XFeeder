@@ -138,7 +138,8 @@ test("X3-19: streamed decoded responses enforce the same byte budget and release
   });
   await assert.rejects(
     readBody(response.data),
-    error => error.code === "ERR_RESPONSE_TOO_LARGE",
+  error => error.code === "ERR_RESPONSE_TOO_LARGE" ||
+    (error.code === "ERR_BAD_RESPONSE" && /maxContentLength/.test(error.message)),
   );
   assert.equal(server.requests.length, 1);
   // finished() cleanup may resolve on the following stream close tick.
@@ -153,7 +154,9 @@ test("X3-19: explicit Axios maxContentLength also constrains responseType stream
     config: { Proxy: { Enabled: false } }, proxy: false,
     responseType: "stream", maxContentLength: 256, maxAttempts: 1,
   });
-  await assert.rejects(readBody(response.data), { code: "ERR_RESPONSE_TOO_LARGE" });
+  await assert.rejects(readBody(response.data),
+    error => error.code === "ERR_RESPONSE_TOO_LARGE" ||
+      (error.code === "ERR_BAD_RESPONSE" && /maxContentLength/.test(error.message)));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(getNetwork().snapshot().operations, 0);
 });

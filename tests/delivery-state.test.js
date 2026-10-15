@@ -216,3 +216,55 @@ test("an already-aborted channel neither fetches nor sends nor changes delivery 
   assert.deepEqual(run.store.getState(), {});
   assert.equal(fs.readFileSync(run.file, "utf8"), diskBefore);
 });
+
+
+for (const source of ["feed", "discord"]) {
+  test(`X3-14: ${source} uses the original entry payload while storing the unchanged legacy identity`, bounded, async t => {
+    const raw = {
+      title: "Original post",
+      link: "https://articles.example.invalid/preserved?utm_source=fixture#comments",
+      guid: "permanent-feed-id",
+      contentSnippet: "Do not change the payload",
+      isoDate: "2026-10-15T00:00:00.000Z",
+      enclosure: "https://example.invalid/asset.png",
+      categories: ["discord"],
+      attachments: ["https://example.invalid/attachment.png"],
+      referenced: { author: "another user", content: "quoted reply" },
+      discordData: { messageId: "123", channelId: "456" },
+      customMetadata: { opaque: true },
+    };
+    const before = structuredClone(raw);
+    const seen = [];
+    const run = harness(t, {
+      source,
+      items: [raw],
+      hooks: {
+        webhook: ({ item }) => { assert.strictEqual(item, raw); seen.push("webhook"); },
+        telegram: ({ item }) => { assert.strictEqual(item, raw); seen.push("telegram"); },
+      },
+    });
+    await run.run();
+    await run.run();
+    assert.deepEqual(seen, ["webhook", "telegram"], "a second pass must not replay delivered entries");
+    assert.deepEqual(raw, before, "normalization must not modify original provider data");
+    const sourceBucket = source === "feed" ? feed : "discord";
+    const state = run.store.getState()[cacheKey];
+    const expectedKey = getCacheKey(raw);
+    assert.equal(expectedKey, "https://articles.example.invalid/preserved");
+    for (const target of ["webhook", "telegram"])
+      assert.deepEqual(state[`${sourceBucket}::${target}`], [expectedKey]);
+    assert.ok(!JSON.stringify(state).includes("NormalizedEntry"), "no cache schema upgrade");
+  });
+
+  test(`X3-14: ${source} honors already delivered legacy source keys without resending`, bounded, async t => {
+    const sourceBucket = source === "feed" ? feed : "discord";
+    const run = harness(t, { source, initial: {
+      [cacheKey]: { [sourceBucket]: [entry.link] },
+    } });
+    await run.run();
+    assert.deepEqual(run.calls, []);
+    const cache = run.store.getState()[cacheKey];
+    assert.deepEqual(cache[`${sourceBucket}::webhook`], [entry.link]);
+    assert.deepEqual(cache[`${sourceBucket}::telegram`], [entry.link]);
+  });
+}

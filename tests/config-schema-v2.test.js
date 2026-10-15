@@ -95,10 +95,8 @@ test("X3-30: worker accepts supported v2 configs but rejects malformed URLs", t 
   const directory = tempDir(t), configPath = path.join(directory, "config.json");
   const config = example();
   fs.writeFileSync(configPath, JSON.stringify(config));
-  assert.throws(() => loadConfig(configPath), error =>
-    error.code === "CONFIG_MIGRATION_REQUIRED" &&
-    error.errors[0].code === "migration_required");
-  assert.throws(() => assertRuntimeConfigSchema(config), { code: "CONFIG_MIGRATION_REQUIRED" });
+  assert.equal(loadConfig(configPath).channels.news.CacheKey, "stable-id");
+  assert.equal(assertRuntimeConfigSchema(config).channels.news.CacheKey, "stable-id");
   config.channels.news.sources[0].url = "ssh://example.invalid/feed";
   fs.writeFileSync(configPath, JSON.stringify(config));
   assert.throws(() => loadConfig(configPath), error =>

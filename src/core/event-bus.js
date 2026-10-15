@@ -12,7 +12,7 @@ const EVENTS = Object.freeze({
   "queue.channel.failed": "channel.failed",
   "channel.process.begin": "channel.started",
   "channel.process.complete": "channel.completed",
-  "channel.feed.failed": "feed.failed",
+  "channel.feed.failed": "feed.processing.failed",
   "feed.begin": "feed.fetch.started",
   "feed.download.complete": "feed.fetch.completed",
   "feed.not_modified": "feed.not_modified",

@@ -70,8 +70,16 @@ function createEventBus({ capacity = MAX_EVENTS, now = Date.now } = {}) {
   let sequence = 0;
   function emit(type, details = {}) {
     // An event should never break delivery. No raw details are retained.
-    const event = makeEvent(type, details, ++sequence, now());
+    // Provider errors and parser payloads may include throwing getters.
+    // Event collection must never change the delivery control flow.
+    let event;
+    try {
+      event = makeEvent(type, details, sequence + 1, now());
+    } catch {
+      return null;
+    }
     if (!event) return null;
+    sequence++;
     if (events.length >= capacity) events.shift();
     events.push(event);
     for (const listener of listeners) {

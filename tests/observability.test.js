@@ -10,6 +10,8 @@ const { startActivityRuntime, activityPath } = require("../src/core/activity-run
 const { expert, subscribeActivity, setExpertDebug } = require("../src/core/diagnostics");
 const { startTestDashboard } = require("./helpers/dashboard.cjs");
 const { tempDir } = require("./helpers/temp-dir.cjs");
+const sessionCookie = headers => (Array.isArray(headers["set-cookie"])
+  ? headers["set-cookie"][0] : headers["set-cookie"]).split(";")[0];
 
 test("X3-24: records bounded allowlisted event fields without secrets or URLs", () => {
   const bus = createEventBus({ capacity: 3, now: () => Date.parse("2026-10-15T12:00:00Z") });
@@ -109,7 +111,7 @@ test("X3-24/X3-25: authenticated dashboard reads first-class activity and metric
   assert.equal((await fixture.request("/api/activity")).status, 401);
   const login = await fixture.login();
   assert.equal(login.status, 200);
-  const cookie = login.headers["set-cookie"].split(";")[0];
+  const cookie = sessionCookie(login.headers);
   const headers = { Cookie: cookie };
   const activity = await fixture.request("/api/activity", { headers });
   assert.equal(activity.status, 200);
@@ -141,7 +143,7 @@ test("X3-25: metric payload cannot disclose extra fields from a tampered runtime
     },
   }));
   const login = await fixture.login();
-  const headers = { Cookie: login.headers["set-cookie"].split(";")[0] };
+  const headers = { Cookie: sessionCookie(login.headers) };
   const metrics = await fixture.request("/api/metrics", { headers });
   assert.equal(metrics.status, 200);
   assert.equal(metrics.data.metrics.counters.feed_fetch_total, 2);

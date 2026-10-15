@@ -62,27 +62,35 @@ JSON Schema subset includes objects, strict properties, required keys,
 arrays, typed scalars, integer bounds, `const`, reference-backed
 discriminated source/destination options, and a custom HTTP(S) URL format.
 
-## Runtime compatibility: explicitly NOT migrated
+## Runtime compatibility after X3-30
 
-X3-29 is **schema/validation only**. Current production configs without
-`schemaVersion` or with `schemaVersion: 1` continue through the old
-loader, env resolution, channel normalization and cache identity logic.
-Their file contents are never rewritten.
+Legacy configs without schemaVersion or with version 1 still use their
+original loader and cache identifiers. Existing legacy config files are
+never rewritten by startup.
 
-A structurally valid v2 draft can be checked by the validator and dashboard,
-but **cannot yet be started by the worker**. The loader fails closed with
-`CONFIG_MIGRATION_REQUIRED`. The dashboard similarly rejects saving a valid
-v2 draft as the active worker configuration (HTTP 409). Invalid drafts
-produce path-aware validation errors. Unsupported versions fail explicitly.
-This avoids silently starting a worker with zero channels under the new
-lowercase keys.
+The X3-30 migrator now provides a restricted v1-to-v2 converter with an
+explicit preview-only CLI:
 
-X3-30 will implement the explicit `read -> migrate -> validate ->
-resolve secrets -> runtime normalize` pipeline, a deterministic
-`migrateConfig` API, preview-only CLI command, and fixtures. It should
-retain legacy secrets, IDs and cache-key identities and must not change
-old configuration files without explicit opt-in. X3-31 will review secrets
-exposure through the dashboard independently.
+    npm run config:migrate
+    npm run config:migrate -- --write
+
+The second command creates a separate sibling v2 config file without
+overwriting its source. Use --write --in-place only with the automatic
+.legacy.bak backup. A migrated channel always retains its historical
+delivery cache key through the v2 id field and the runtime CacheKey.
+
+The worker accepts a validated v2 document only when all fields have
+a safe mapping back to the existing runtime. Advanced legacy sections
+not represented in v2 (for example Network Usage Control or advanced
+Scrapling configuration) cause CONFIG_MIGRATION_UNSAFE instead of being
+silently dropped. Invalid versions or malformed v2 fail closed.
+
+The dashboard validates v2 with the same converter but its legacy
+editor still refuses to write active v2 configs with HTTP 409 and
+CONFIG_EDITOR_V2_UNSUPPORTED, pending the X3-32 editor/API migration.
+See docs/config-migration.md for exact supported fields, CLI usage,
+backup behavior, and rollout constraints. X3-31 reviews secret exposure
+independently.
 
 ## Regression
 

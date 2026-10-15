@@ -32,6 +32,7 @@ function createFeedPipeline({
   postWithFallback,
   builtInParsers = [],
   parser = createDefaultParser(),
+  circuit,
 } = {}) {
   function createParserHttpClient(url, downloadResult, requestContext) {
     async function get(requestUrl, opts = {}) {
@@ -61,7 +62,7 @@ function createFeedPipeline({
     };
   }
 
-  async function fetchFeed(url, options = {}) {
+  async function fetchFeedCore(url, options = {}, health = null) {
     const signal = options.signal || context().signal;
     throwIfAborted(signal);
     let items = [];
@@ -93,6 +94,7 @@ function createFeedPipeline({
       etag: validator?.etag,
       lastModified: validator?.lastModified,
       ...requestContext,
+      ...(health ? { allowScrapling: health.allowScrapling } : {}),
     });
     const bodyBytes = typeof dl?.data === "string"
       ? Buffer.byteLength(dl.data)
@@ -120,6 +122,7 @@ function createFeedPipeline({
         ["ANTIBOT_CHALLENGE_UNRESOLVED", "SCRAPLING_BLOCKED"].includes(dl.reason)) {
       context().onFailure?.(new Error("Challenge/error page rejected"));
       expert("feed.blocked_page", { url, status: dl.status, reason: dl.reason });
+      await health?.failed(dl.reason || "ANTIBOT_CHALLENGE_UNRESOLVED", { scrapling: Boolean(dl.scrapling) });
       return [];
     }
     if (dl.ok && dl.notModified) {
@@ -129,11 +132,13 @@ function createFeedPipeline({
         replayedItems: cachedItems.length,
         durationMs: Date.now() - startedAt,
       });
+      await health?.succeeded();
       return cachedItems;
     }
     if (!dl.ok && ["INVALID_URL", "UNSUPPORTED_PROTOCOL"].includes(dl.reason)) {
       logger.warn("Unsupported feed source", { url, reason: dl.reason });
       expert("feed.unsupported_source", { url, reason: dl.reason, durationMs: Date.now() - startedAt });
+      await health?.failed(dl.reason);
       return [];
     }
     if (!dl.ok) {
@@ -145,6 +150,9 @@ function createFeedPipeline({
         reason: dl.reason || dl.error?.message || "request failed",
         replayedItems: cachedItems.length,
         durationMs: Date.now() - startedAt,
+      });
+      await health?.failed(dl.reason || dl.error?.code || "REQUEST_FAILED", {
+        scrapling: Boolean(dl.scrapling),
       });
       return cachedItems;
     }
@@ -251,6 +259,42 @@ function createFeedPipeline({
     logger.error("No data from feed", { url });
     expert("feed.empty", { url, durationMs: Date.now() - startedAt });
     return [];
+  }
+
+  async function fetchFeed(url, options = {}) {
+    if (!circuit) return fetchFeedCore(url, options);
+    // Each feed owns an independent, durable failure streak; the scheduler
+    // may continue serving healthy feeds even when one is cooling down.
+    const admission = circuit.beforeFetch(url);
+    if (!admission.allowed) return [];
+    let reported = false;
+    const health = {
+      allowScrapling: admission.allowScrapling,
+      async succeeded() {
+        reported = true;
+        await circuit.succeeded(url);
+      },
+      async failed(reason, details) {
+        reported = true;
+        await circuit.failed(url, { reason, ...details });
+      },
+    };
+    try {
+      const result = await fetchFeedCore(url, options, health);
+      if (!reported) {
+        if (Array.isArray(result) && result.length) await health.succeeded();
+        else await health.failed("NO_FEED_ENTRIES");
+      }
+      return result;
+    } catch (error) {
+      if (!reported && error?.code !== "CACHE_UNSAFE" &&
+          !isCancelled(error) && !(options.signal || context().signal)?.aborted) {
+        await health.failed(error?.code || "REQUEST_FAILED");
+      }
+      throw error;
+    } finally {
+      circuit.release(url, admission);
+    }
   }
 
   return {

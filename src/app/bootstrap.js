@@ -8,7 +8,7 @@ const { loadConfig } = require("../config-loader");
 const { getNetwork, resetNetwork } = require("../network/service");
 const { ChannelTasks } = require("./channel-tasks");
 const { startNetworkRuntime } = require("../network/runtime-state");
-const { createCacheStore } = require("../core/cache-store");
+const { createStateStore } = require("../core/state-store");
 const {
   collectConfiguredChannels,
   hasTelegramDeliveryTarget,
@@ -58,7 +58,15 @@ function createApp({
     allChannels: [],
     configDigest: "",
   };
-  const cacheStore = createCacheStore(cachePath);
+  const stateStore = createStateStore({ cachePath, persistMigration: !dryRun });
+  // Retain the app.cacheStore compatibility facade while feed state lives in a
+  // separate JSON file. Channel-runner still uses the original delivery APIs.
+  const cacheStore = {
+    ...stateStore.delivery,
+    getFeedValidator: stateStore.feeds.getFeedValidator,
+    getFeedItems: stateStore.feeds.getFeedItems,
+    setFeedSnapshot: stateStore.feeds.setFeedSnapshot,
+  };
   let queueRuntime = null;
   let shutdownPromise = null;
   let stopNetworkRuntime = () => {};
@@ -89,6 +97,7 @@ function createApp({
 
   const { checkFeedsForChannel: runChannel } = createChannelRunner({
     cacheStore,
+    stateStore,
     fetchFeed,
     parseDiscord: (discordConfig) => sources.discord.read(discordConfig),
     sendMessage,
@@ -219,7 +228,7 @@ function createApp({
         ]));
       } finally { clearTimeout(cleanupTimer); }
       await cleanup(() => telemetryStopped);
-      if (persistCache) await cleanup(() => cacheStore.save());
+      if (persistCache) await cleanup(() => stateStore.save());
 
       if (failures.length) {
         const failure = failures.length === 1

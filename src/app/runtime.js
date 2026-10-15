@@ -3,6 +3,7 @@
 const { getChannelLabel } = require("../core/channel-config");
 const { expert } = require("../core/diagnostics");
 const { isCancelled } = require("../network/abort");
+const { getRetryAfterMs } = require("../client");
 
 function normalizeChannels(getChannels) {
   if (typeof getChannels === "function") {
@@ -71,6 +72,7 @@ function startChannelQueue({
   }
 
   const lastCheckByCacheKey = new Map();
+  const scheduleByCacheKey = new Map();
   let currentIndex = 0;
   let timer = null;
   let stopped = false;
@@ -112,7 +114,10 @@ function startChannelQueue({
     const minutes = channel.TimeChecker || 30;
     const minDelay = minutes * 60 * 1000;
     const cacheKey = channel.cacheKey || `${currentIndex}`;
-    const lastCheck = lastCheckByCacheKey.get(cacheKey) || 0;
+    const schedule = scheduleByCacheKey.get(cacheKey) || {
+      lastAttemptAt: null, lastSuccessAt: null, nextRunAt: 0, failures: 0,
+    };
+    const lastCheck = schedule.lastSuccessAt || 0;
     expert("queue.channel.selected", {
       index: currentIndex + 1,
       totalChannels: channels.length,
@@ -122,15 +127,27 @@ function startChannelQueue({
       delayBetweenChannelsMs: delayBetweenChannels,
     });
 
-    if (now - lastCheck >= minDelay) {
+    if (now >= schedule.nextRunAt) {
       const label = getChannelLabel(channel);
       const startedAt = Date.now();
+      schedule.lastAttemptAt = startedAt;
+      scheduleByCacheKey.set(cacheKey, schedule);
       console.log(`[Queue] Checking ${label} (${currentIndex + 1}/${channels.length})`);
       try {
         await checkFeedsForChannel(currentIndex, channel);
-        lastCheckByCacheKey.set(cacheKey, Date.now());
+        schedule.lastSuccessAt = Date.now();
+        schedule.failures = 0;
+        schedule.nextRunAt = schedule.lastSuccessAt + minDelay;
+        lastCheckByCacheKey.set(cacheKey, schedule.lastSuccessAt);
         expert("queue.channel.complete", { index: currentIndex + 1, channel: label, durationMs: Date.now() - startedAt });
       } catch (err) {
+        const completedAt = Date.now();
+        if (!isCancelled(err)) schedule.failures = Math.min(32, schedule.failures + 1);
+        // A failed attempt still consumes the base interval. Backoff is per
+        // channel, at most 8 intervals / one hour (never below TimeChecker).
+        const backoff = Math.min(minDelay * 2 ** Math.min(3, Math.max(0, schedule.failures - 1)), Math.max(minDelay, 3600000));
+        const retryAfter = getRetryAfterMs(err?.response?.headers, completedAt) || 0;
+        schedule.nextRunAt = completedAt + Math.max(minDelay, backoff, retryAfter);
         if (isCancelled(err)) { expert("queue.channel.cancelled", { channel: label }); }
         else {
         console.error(`[Queue] ${label} error: ${err.message}`);
@@ -142,7 +159,7 @@ function startChannelQueue({
         index: currentIndex + 1,
         channel: getChannelLabel(channel),
         reason: "interval not elapsed",
-        remainingMs: Math.max(0, minDelay - (now - lastCheck)),
+        remainingMs: Math.max(0, schedule.nextRunAt - now),
       });
     }
 
@@ -166,6 +183,7 @@ function startChannelQueue({
         currentIndex,
         totalChannels: channels.length,
         lastCheckByCacheKey: Object.fromEntries(lastCheckByCacheKey.entries()),
+        scheduleByCacheKey: Object.fromEntries([...scheduleByCacheKey].map(([key, state]) => [key, { ...state }])),
         channels: getTaskStates(),
       };
     },

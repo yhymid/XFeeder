@@ -69,12 +69,13 @@ function startChannelQueue({
   delayBetweenChannels = 30000,
   beforeCycle,
   maxConcurrentChannels = 1,
+  onFatal,
 } = {}) {
   validateConcurrency(maxConcurrentChannels);
   delayBetweenChannels = validateQueueDelay(delayBetweenChannels);
   if (maxConcurrentChannels > 1) return startConcurrentChannelQueue({
     getChannels, getTaskStates, checkFeedsForChannel,
-    delayBetweenChannels, beforeCycle, maxConcurrentChannels,
+    delayBetweenChannels, beforeCycle, maxConcurrentChannels, onFatal,
   });
   const initialChannels = normalizeChannels(getChannels);
   if (initialChannels.length === 0) {
@@ -166,6 +167,14 @@ function startChannelQueue({
         expert("queue.channel.complete", { index: currentIndex + 1, channel: label, durationMs: Date.now() - startedAt });
       } catch (err) {
         const completedAt = Date.now();
+        if (err?.code === "CACHE_UNSAFE") {
+          stopped = true;
+          if (timer !== null) { clearTimeout(timer); timer = null; }
+          try { onFatal?.(err); }
+          catch (failure) {
+            logger.error("Fatal cancellation callback failed", { failure: errorRecord(failure) });
+          }
+        }
         if (!isCancelled(err)) schedule.failures = Math.min(32, schedule.failures + 1);
         // A failed attempt still consumes the base interval. Backoff is per
         // channel, at most 8 intervals / one hour (never below TimeChecker).

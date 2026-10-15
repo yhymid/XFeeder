@@ -9,7 +9,7 @@ const TYPES = new Set([
   "worker.started", "worker.stopped", "channel.started",
   "channel.completed", "channel.failed", "feed.fetch.started",
   "feed.fetch.completed", "feed.not_modified", "feed.parse.completed",
-  "feed.failed", "delivery.sent", "delivery.failed",
+  "feed.failed", "feed.processing.failed", "delivery.sent", "delivery.failed",
   "retry.scheduled", "scrapling.used", "config.reloaded",
 ]);
 function number(value, fallback = 0) {

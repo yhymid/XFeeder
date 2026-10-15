@@ -71,9 +71,37 @@ function createStateStore({
     if (persist) feedCache.save();
   }
 
+  async function setFeedStateAsync(feedUrl, value, options = {}) {
+    setFeedState(feedUrl, value, { ...options, persist: false });
+    if (options.persist !== false) await feedCache.saveAsync();
+  }
+
+  async function setFeedSnapshotAsync(feedUrl, validator, items, options = {}) {
+    const changed = setFeedSnapshotInMemory(feedUrl, validator, items);
+    if (changed && options.persist !== false) await feedCache.saveAsync();
+    return changed;
+  }
+
+  function setFeedSnapshotInMemory(feedUrl, validator, items) {
+    const old = getFeedState(feedUrl) || {};
+    const next = {
+      etag: String(validator?.etag || ""),
+      lastModified: String(validator?.lastModified || ""),
+      items: Array.isArray(items) ? items : [],
+    };
+    if (next.etag === (old.etag || "") &&
+        next.lastModified === (old.lastModified || "") &&
+        JSON.stringify(next.items) === JSON.stringify(old.items || []))
+      return false;
+    setFeedState(feedUrl, next, { persist: false });
+    return true;
+  }
+
   const feeds = Object.freeze({
     getFeedState,
     setFeedState,
+    setFeedStateAsync,
+    setFeedSnapshotAsync,
     getFeedValidator(feedUrl) {
       const state = getFeedState(feedUrl);
       return state ? { etag: String(state.etag || ""), lastModified: String(state.lastModified || "") } : null;
@@ -83,20 +111,9 @@ function createStateStore({
       return Array.isArray(state?.items) ? state.items : [];
     },
     setFeedSnapshot(feedUrl, validator, items, { persist = true } = {}) {
-      const old = getFeedState(feedUrl) || {};
-      const next = {
-        etag: String(validator?.etag || ""),
-        lastModified: String(validator?.lastModified || ""),
-        items: Array.isArray(items) ? items : [],
-      };
-      if (next.etag === (old.etag || "") &&
-          next.lastModified === (old.lastModified || "") &&
-          JSON.stringify(next.items) === JSON.stringify(old.items || []))
-        return false;
-      // Preserve empty-validator deletes as tombstones to prevent legacy
-      // snapshots from reappearing during a dry-run migration window.
-      setFeedState(feedUrl, next, { persist });
-      return true;
+      const changed = setFeedSnapshotInMemory(feedUrl, validator, items);
+      if (changed && persist) feedCache.save();
+      return changed;
     },
   });
 
@@ -118,10 +135,18 @@ function createStateStore({
     }),
     feedStatePath,
     save() {
-      // Delivery persists first so successful destinations are never lost
-      // behind a noncritical snapshot flush.
+      // Legacy synchronous contract for migration tools and older callers.
       delivery.save();
       feedCache.save();
+    },
+    async saveAsync() {
+      // Delivery must finish before the optional feed snapshot flush.
+      await delivery.saveAsync();
+      await feedCache.saveAsync();
+    },
+    async flush() {
+      await delivery.flush();
+      await feedCache.flush();
     },
   });
 }

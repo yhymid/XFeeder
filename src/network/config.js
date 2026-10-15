@@ -21,6 +21,8 @@ const FIELDS = new Set([
   "idleTimeoutMs",
   "requestDeadlineMs",
   "shutdownGraceMs",
+  "outboundPolicy",
+  "maxResponseBytes",
 ]);
 
 function normalizeNetworkConfig(input = {}) {
@@ -95,6 +97,17 @@ function normalizeNetworkConfig(input = {}) {
     }
     return value;
   };
+  const outboundPolicy = input.outboundPolicy ?? "unrestricted";
+  if (outboundPolicy !== "unrestricted" && outboundPolicy !== "public-only")
+    fail("outboundPolicy", "UNKNOWN_POLICY", "Expected unrestricted or public-only");
+
+  const maxResponseBytes = input.maxResponseBytes ?? null;
+  if (maxResponseBytes !== null &&
+      (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1 ||
+       maxResponseBytes > 268435456))
+    fail("maxResponseBytes", "OUT_OF_RANGE",
+      "Must be an integer from 1 to 268435456 bytes");
+
   const value = {
     bandwidthProfile: profile,
     downloadBytesPerSecond:
@@ -115,6 +128,8 @@ function normalizeNetworkConfig(input = {}) {
     idleTimeoutMs: integer("idleTimeoutMs", 15000, 0, 2_147_000_000),
     requestDeadlineMs: integer("requestDeadlineMs", null, 1, 2_147_000_000),
     shutdownGraceMs: integer("shutdownGraceMs", 5000, 0, 60000),
+    outboundPolicy,
+    maxResponseBytes,
   };
   return errors.length
     ? { ok: false, errors }

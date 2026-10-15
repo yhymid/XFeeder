@@ -60,7 +60,7 @@ export function activityList(items, compact = false) {
   if (!items.length)
     return empty(
       "No activity in this period",
-      "Enable Expert diagnostics in Settings to record structured worker activity. Try a wider time range.",
+      "No recent worker events were recorded. Try a wider time range or check worker readiness.",
     );
   return el(
     "div",
@@ -205,7 +205,7 @@ export function renderActivity() {
     el("section", { class: "card table-card" }, results),
     el("p", {
       class: "muted footnote",
-      text: `Showing events available in the last 2 MB of the terminal log (up to 1,000 records). ${state.activity?.summary?.observedSince ? `Coverage starts ${new Date(state.activity.summary.observedSince).toLocaleString()}.` : "No structured worker events have been recorded."} Filters apply to this available history.`,
+      text: `${state.activity?.source === "structured" ? "Showing bounded, sanitized worker events (up to 2,000 records)." : "Showing legacy terminal activity (up to 1,000 records)."} ${state.activity?.summary?.observedSince ? `Coverage starts ${new Date(state.activity.summary.observedSince).toLocaleString()}.` : "No worker events have been recorded."} Filters apply to this available history.`,
     }),
   );
 }

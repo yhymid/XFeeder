@@ -152,3 +152,15 @@ test("X3-25: metric payload cannot disclose extra fields from a tampered runtime
   assert.equal(activity.status, 200);
   assert.equal(activity.text.includes("secret-string"), false);
 });
+
+test("X3-25: queue and runner completion represent one channel duration", () => {
+  const bus = createEventBus();
+  const metrics = createMetricsRegistry(bus);
+  const runner = bus.fromExpert("channel.process.complete", { channel: "fixture", durationMs: 800 });
+  const scheduler = bus.fromExpert("queue.channel.complete", { channel: "fixture", durationMs: 820 });
+  assert.equal(runner.origin, "channel");
+  assert.equal(scheduler.origin, "queue");
+  assert.equal(metrics.snapshot().durations.channel_run_duration_ms.count, 1);
+  assert.equal(metrics.snapshot().durations.channel_run_duration_ms.sum, 800);
+  metrics.close();
+});

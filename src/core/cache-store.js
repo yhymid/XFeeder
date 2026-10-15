@@ -9,6 +9,8 @@ function createCacheStore(cacheFile = "./cache.json") {
   const META_KEY = "__xfeeder";
 
   let blockedError = null;
+  let saveSequence = 0;
+  let pendingSave = Promise.resolve();
   function assertUsable() {
     if (blockedError) throw blockedError;
   }
@@ -71,6 +73,54 @@ function createCacheStore(cacheFile = "./cache.json") {
     const tempFile = `${cacheFile}.tmp`;
     fs.writeFileSync(tempFile, JSON.stringify(cache, null, 2), "utf8");
     fs.renameSync(tempFile, cacheFile);
+  }
+
+  // Serialize whole snapshots at invocation time. A later destination
+  // success must never overwrite a newer snapshot with an older write.
+  async function saveAsync() {
+    assertUsable();
+    const snapshot = JSON.stringify(cache, null, 2);
+    const job = pendingSave.then(async () => {
+      assertUsable();
+      const directory = path.dirname(path.resolve(cacheFile));
+      const temporary = path.join(directory,
+        `${path.basename(cacheFile)}.${process.pid}.${++saveSequence}.${crypto.randomBytes(6).toString("hex")}.tmp`);
+      let handle;
+      try {
+        handle = await fs.promises.open(temporary, "wx", 0o600);
+        await handle.writeFile(snapshot, "utf8");
+        await handle.sync();
+        await handle.close();
+        handle = null;
+        await fs.promises.rename(temporary, cacheFile);
+        // The rename is atomic on the same filesystem; sync the parent
+        // directory so the directory entry survives a host crash on
+        // filesystems that support directory fsync.
+        let directoryHandle;
+        try {
+          directoryHandle = await fs.promises.open(directory, "r");
+          await directoryHandle.sync();
+        } catch (error) {
+          if (!["EINVAL", "ENOTSUP", "EISDIR", "EBADF", "EPERM"].includes(error?.code))
+            throw error;
+        } finally {
+          if (directoryHandle) await directoryHandle.close();
+        }
+      } catch (error) {
+        if (handle) await handle.close().catch(() => {});
+        await fs.promises.unlink(temporary).catch(() => {});
+        block(`Cannot persist ${cacheFile}; delivery state is now unsafe. Refusing further operation.`, error);
+      }
+    });
+    // Drain rejected writes too, but the fail-closed latch above prevents
+    // any subsequent write or read from silently continuing.
+    pendingSave = job.catch(() => {});
+    return job;
+  }
+
+  async function flush() {
+    await pendingSave;
+    assertUsable();
   }
 
   function getState() {
@@ -138,6 +188,8 @@ function createCacheStore(cacheFile = "./cache.json") {
   return {
     load,
     save,
+    saveAsync,
+    flush,
     getState,
     getChannelBucket,
     getFeedValidator,

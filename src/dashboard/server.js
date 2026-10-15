@@ -16,6 +16,7 @@ const { loadDotEnv } = require("../config-loader");
 const { sanitizeText } = require("../core/diagnostics");
 const { normalizeNetworkConfig } = require("../network/config");
 const { readNetworkSettings, revision } = require("./network");
+const { workerReady } = require("./health");
 
 const { version: appVersion } = require("../../package.json");
 
@@ -516,6 +517,20 @@ function startDashboard({
         sendJson(res, 403, { error: "Untrusted Host." }); return;
       }
       if (req.headers.origin && !ensureSameOrigin(req, res, expectedOrigin)) return;
+      // Dashboard liveness is independent of its worker and external services.
+      if (req.method === "GET" && url.pathname === "/api/live") {
+        sendJson(res, 200, { ok: true, service: "xfeeder-dashboard", status: "live" });
+        return;
+      }
+      // Readiness depends on fresh, applied worker telemetry and safe state.
+      // Only expose a boolean; no config, paths, credentials or worker PID.
+      if (req.method === "GET" && url.pathname === "/api/ready") {
+        const ready = workerReady(paths.configPath);
+        sendJson(res, ready ? 200 : 503, {
+          ok: ready, service: "xfeeder-worker", status: ready ? "ready" : "not-ready",
+        });
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/api/health") {
         sendJson(res, 200, {
           ok: true,

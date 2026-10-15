@@ -4,6 +4,8 @@ const { getChannelLabel } = require("../core/channel-config");
 const { expert } = require("../core/diagnostics");
 const { isCancelled } = require("../network/abort");
 const { getRetryAfterMs } = require("../client");
+const { createLogger } = require("../core/logger");
+const logger = createLogger("Scheduler");
 
 function normalizeChannels(getChannels) {
   if (typeof getChannels === "function") {
@@ -26,7 +28,7 @@ async function runChannelsOnce({
   const channels = normalizeChannels(getChannels);
   expert("run.channels.begin", { channelCount: channels.length });
   if (channels.length === 0) {
-    console.error("[System] No valid channels configured. Nothing to run.");
+    logger.error("No valid channels configured for one-shot execution");
     return {
       totalChannels: 0,
       checkedChannels: 0,
@@ -38,7 +40,7 @@ async function runChannelsOnce({
     if (shouldStop()) break;
     const label = getChannelLabel(channel);
     const startedAt = Date.now();
-    console.log(`[Once] Checking ${label} (${index + 1}/${channels.length})`);
+    logger.info("Checking channel", { mode: "once", label, index: index + 1, total: channels.length });
     expert("channel.begin", { index: index + 1, label });
     try {
       await checkFeedsForChannel(index, channel);
@@ -66,7 +68,7 @@ function startChannelQueue({
 } = {}) {
   const initialChannels = normalizeChannels(getChannels);
   if (initialChannels.length === 0) {
-    console.error("[System] No valid channels configured. Queue not started.");
+    logger.error("No valid channels configured; queue not started");
     expert("queue.not_started", { reason: "no channels" });
     return null;
   }
@@ -85,14 +87,14 @@ function startChannelQueue({
       try {
         await beforeCycle();
       } catch (err) {
-        console.error(`[Queue] Config refresh error: ${err.message}`);
+        logger.error("Configuration refresh failed", { error: err });
       }
     }
 
     if (stopped) return;
     const channels = normalizeChannels(getChannels);
     if (channels.length === 0) {
-      console.warn("[Queue] No channels available after refresh. Waiting...");
+      logger.warn("No channels available after refresh; waiting");
       expert("queue.wait", { reason: "no channels", delayMs: delayBetweenChannels });
       timer = setTimeout(processNextChannel, delayBetweenChannels);
       return;
@@ -132,7 +134,7 @@ function startChannelQueue({
       const startedAt = Date.now();
       schedule.lastAttemptAt = startedAt;
       scheduleByCacheKey.set(cacheKey, schedule);
-      console.log(`[Queue] Checking ${label} (${currentIndex + 1}/${channels.length})`);
+      logger.info("Checking channel", { mode: "queue", label, index: currentIndex + 1, total: channels.length });
       try {
         await checkFeedsForChannel(currentIndex, channel);
         schedule.lastSuccessAt = Date.now();
@@ -150,7 +152,7 @@ function startChannelQueue({
         schedule.nextRunAt = completedAt + Math.max(minDelay, backoff, retryAfter);
         if (isCancelled(err)) { expert("queue.channel.cancelled", { channel: label }); }
         else {
-        console.error(`[Queue] ${label} error: ${err.message}`);
+        logger.error("Channel failed", { label, error: err });
         expert("queue.channel.failed", { index: currentIndex + 1, channel: label, durationMs: Date.now() - startedAt, error: err });
         }
       }

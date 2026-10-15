@@ -7,10 +7,19 @@ const {
 const { loadDotEnv } = require("../config-loader");
 const { normalizeNetworkConfig } = require("../network/config");
 const { sanitizeText } = require("../core/diagnostics");
+const { validateConfigSchema } = require("../core/config-schema");
 
 function validateConfig(config, envPath) {
   if (!config || typeof config !== "object" || Array.isArray(config))
     return { errors: ["Config root must be a JSON object."], warnings: [] };
+  const structural = validateConfigSchema(config);
+  if (structural.schemaVersion !== 1 || !structural.ok) return {
+    errors: structural.errors.map(e => sanitizeText(e.path + ": " + e.message)),
+    warnings: [],
+    issues: structural.errors,
+    schemaVersion: structural.schemaVersion,
+    runtimeSupported: false,
+  };
   const env = { ...loadDotEnv(envPath, { reload: true }), ...process.env };
   const resolve = (value) => {
     if (typeof value === "string") {

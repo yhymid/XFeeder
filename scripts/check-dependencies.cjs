@@ -15,7 +15,8 @@ function withinCaret(range, actual) {
   if (!minimum || !current) return false;
   const [major, minor, patch] = current;
   const [minMajor, minMinor, minPatch] = minimum;
-  if (major !== minMajor || (minMajor === 0 && minor !== minMinor)) return false;
+  if (major !== minMajor || (minMajor === 0 && minor !== minMinor) ||
+      (minMajor === 0 && minMinor === 0 && patch !== minPatch)) return false;
   return minor > minMinor || (minor === minMinor && patch >= minPatch);
 }
 

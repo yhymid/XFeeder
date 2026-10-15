@@ -115,8 +115,8 @@ function loadConfig(configPath = "./config.json") {
   };
   const raw = fs.readFileSync(resolvedConfigPath, "utf8");
   const parsed = JSON.parse(raw);
-  assertRuntimeConfigSchema(parsed);
-  const config = resolveEnv(parsed, envMap);
+  const runtimeConfig = assertRuntimeConfigSchema(parsed);
+  const config = resolveEnv(runtimeConfig, envMap);
   requireNetworkConfig(config.network);
   const concurrency = config?.Settings?.MaxConcurrentChannels;
   if (concurrency !== undefined && concurrency !== null &&

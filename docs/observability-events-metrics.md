@@ -75,3 +75,41 @@ Reference material:
 - https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
 - https://prometheus.io/docs/concepts/metric_types/
 - https://opentelemetry.io/docs/languages/js/
+
+## NET-10 — Network accounting bridge
+
+The worker Metrics Registry now samples the existing NetworkService
+metricsSnapshot() in-process. Its network field reports actual HTTP
+transport-body accounting alongside transfer rates, HTTP/Scrapling
+concurrency, effective bandwidth preset and limits, and Friendly Mode.
+It does not install a second byte counter or re-count responses from
+EventBus. No per-chunk events or new log lines are emitted.
+
+The network counters count **bytes the managed HTTP transport observes**.
+An HTTP 503 followed by a successful retry is genuine traffic twice and
+both attempted responses count; a gzip response contributes compressed
+wire-body bytes, **not** the expanded parser payload length.
+Response headers, TLS framing and redirects may be outside the
+available body-byte accounting. Upload stream/replay enforcement is
+still limited as documented by Network Service.
+
+Current speeds use existing fixed-size five-second windows calculated
+using Node's monotonic performance clock. This provides an approximate
+rate, not bandwidth measurement at the NIC.
+
+The browser/Python Scrapling transport is outside Node HTTP byte
+accounting. The metrics explicitly report
+scraplingBytes.status = "unavailable" and null byte totals, rather than
+inventing an estimate or silently mixing browser bytes into HTTP totals.
+Scrapling active and waiting *task counts* remain available.
+
+Only a fixed whitelist of numeric counters, limits, profile and booleans
+reaches the dashboard via authenticated GET /api/metrics. Snapshot
+redaction deliberately ignores additional runtime JSON fields.
+The original GET /api/network/metrics API remains unchanged.
+
+Regression coverage: tests/network-metrics-bridge.test.js verifies
+a retry plus gzip response's actual managed transport-body byte count,
+no extra counting from repeated metrics snapshots, fixed field
+whitelisting, missing browser byte totals, and nonfatal measurement
+callback failures.

@@ -18,6 +18,8 @@ const {
 const { createFeedPipeline } = require("../core/feed-pipeline");
 const { expert, setExpertDebug } = require("../core/diagnostics");
 const { setTerminalLogEnabled } = require("../core/terminal-log");
+const { createLogger } = require("../core/logger");
+const logger = createLogger("App");
 const { createChannelRunner } = require("./channel-runner");
 const { runChannelsOnce, startChannelQueue } = require("./runtime");
 const { closeBrowserSessions } = require("../extensions/Scrapling");
@@ -34,7 +36,7 @@ const { parseDiscord } = require("../parsers/discord");
 function logChannelSummary(channels) {
   const warnings = validateChannels(channels);
   for (const warning of warnings) {
-    console.warn(warning);
+    logger.warn(warning);
   }
 
   for (const summary of (channels || []).map(summarizeChannel)) {
@@ -43,9 +45,7 @@ function logChannelSummary(channels) {
       summary.hasDiscord ? "discord-source" : null,
       summary.hasTelegram ? "telegram" : null,
     ].filter(Boolean).join("+") || "none";
-    console.log(
-      `[Config] ${summary.label}: feeds=${summary.feeds}, targets=${targets}, interval=${summary.interval}m, burst=${summary.burst}, cacheKey=${summary.cacheKey}`
-    );
+    logger.info("Channel configured", { label: summary.label, feeds: summary.feeds, targets, intervalMinutes: summary.interval, burst: summary.burst, cacheKey: summary.cacheKey });
   }
 }
 
@@ -117,7 +117,7 @@ function createApp({
     state.allChannels = collectConfiguredChannels(nextConfig);
 
     if (!quiet) {
-      console.log(`[System] Channels to process: ${state.allChannels.length}`);
+      logger.info("Channels to process", { count: state.allChannels.length });
       logChannelSummary(state.allChannels);
     }
   }
@@ -155,7 +155,7 @@ function createApp({
       });
       return true;
     } catch (error) {
-      console.error(`[Config] Failed to load ${configPath}: ${error.message}`);
+      logger.error("Configuration reload failed", { configPath, error });
       expert("config.load.failed", { path: configPath, error });
       if (!state.configDigest) throw error;
       return false;
@@ -236,7 +236,7 @@ function createApp({
           ? failures[0]
           : new AggregateError(failures, "Multiple XFeeder shutdown steps failed");
         if (exit) {
-          console.error("[Shutdown] Cleanup failed; exiting with an error.");
+          logger.error("Shutdown cleanup failed; exiting with an error");
           process.exit(1);
         }
         throw failure;

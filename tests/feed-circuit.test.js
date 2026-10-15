@@ -164,3 +164,19 @@ test("X3-23: cancellation and unsafe persistence do not create another failure s
   await assert.rejects(broken.fetchFeed(url), candidate => candidate === error);
   assert.equal(circuit.status(url).consecutiveFailures, 0);
 });
+
+test("X3-23: a valid empty feed is not punished as a failed request", async t => {
+  const f = fixture(t), circuit = f.makeBreaker();
+  let calls = 0;
+  const pipeline = createFeedPipeline({
+    circuit,
+    download: async () => { calls++; return { ok: true, status: 200, data: "" }; },
+    builtInParsers: [async () => []],
+  });
+  for (let i = 0; i < 5; i++) {
+    assert.deepEqual(await pipeline.fetchFeed(url), []);
+    assert.equal(circuit.status(url).status, "Healthy");
+    assert.equal(circuit.status(url).consecutiveFailures, 0);
+  }
+  assert.equal(calls, 5, "empty feed must remain eligible for normal polling");
+});

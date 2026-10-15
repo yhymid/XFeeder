@@ -21,7 +21,7 @@ const forbidden = files.filter((file, index) => {
     /\.(?:sqlite3?|db)(?:-(?:journal|shm|wal))?$/i.test(base) ||
     (/\.(?:pem|key|p12|pfx)$/i.test(base) && !["tests/fixtures/tls/localhost-test-key.pem", "tests/fixtures/tls/localhost-test-cert.pem"].includes(file)) ||
     (base.startsWith(".env") && base !== ".env.example") ||
-    ["config.json", "cache.json", "http-meta.json"].includes(file) ||
+    (["config.json", "cache.json", "http-meta.json"].includes(file) || /\.feeds\.json$/i.test(file)) ||
     /(?:\.py[cod]|\.log|\.tmp|\.temp|\.cpuprofile|\.heapprofile|\.network-runtime\.json)$/.test(file) ||
     /\.corrupt-/.test(base) ||
     /^debug\/.*\.txt$/.test(file) || file.startsWith("src/extensions/Scrapling/upstream/");

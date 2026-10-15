@@ -48,6 +48,7 @@ function createApp({
   cachePath = "./cache.json",
   autostart = true,
   delayBetweenChannels = 30000,
+  maxConcurrentChannels,
   dryRun = false,
   debugExpert = false,
 } = {}) {
@@ -176,6 +177,7 @@ function createApp({
       getTaskStates: () => tasks.snapshot(),
       checkFeedsForChannel,
       delayBetweenChannels,
+      maxConcurrentChannels: maxConcurrentChannels ?? state.config?.Settings?.MaxConcurrentChannels ?? 1,
       beforeCycle: () => {
         refreshConfig({ quiet: false });
       },

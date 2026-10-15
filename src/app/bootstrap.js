@@ -25,14 +25,7 @@ const { createChannelRunner } = require("./channel-runner");
 const { runChannelsOnce, startChannelQueue } = require("./runtime");
 const { closeBrowserSessions } = require("../extensions/Scrapling");
 
-const { parseRSS } = require("../parsers/rss");
-const { parseAtom } = require("../parsers/atom");
-const { parseYouTube } = require("../parsers/youtube");
-const { parseXML } = require("../parsers/xml");
-const { parseJSON } = require("../parsers/json");
-const { parseApiX } = require("../parsers/api_x");
-const { parseFallback } = require("../parsers/fallback");
-const { parseDiscord } = require("../parsers/discord");
+const { createSourceAdapters } = require("../core/source-adapters");
 
 function logChannelSummary(channels) {
   const warnings = validateChannels(channels);
@@ -73,6 +66,10 @@ function createApp({
   const network = getNetwork().stopping ? resetNetwork() : getNetwork();
   network.ownedByApp = true;
 
+  const sources = createSourceAdapters({
+    getDiscordHttpClient: () => getHttpClient(configPath, state.config),
+  });
+
   const { fetchFeed } = createFeedPipeline({
     getConfig: () => state.config,
     configPath,
@@ -87,21 +84,13 @@ function createApp({
     download,
     getWithFallback,
     postWithFallback,
-    builtInParsers: [
-      parseYouTube,
-      parseAtom,
-      parseXML,
-      parseJSON,
-      parseApiX,
-      parseRSS,
-      parseFallback,
-    ],
+    builtInParsers: sources.feedParsers,
   });
 
   const { checkFeedsForChannel: runChannel } = createChannelRunner({
     cacheStore,
     fetchFeed,
-    parseDiscord: (discordConfig) => parseDiscord(discordConfig, getHttpClient(configPath, state.config)),
+    parseDiscord: (discordConfig) => sources.discord.read(discordConfig),
     sendMessage,
     sendTelegramMessage,
     dryRun,

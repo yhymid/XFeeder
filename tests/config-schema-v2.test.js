@@ -143,6 +143,6 @@ test("X3-29: dashboard validates v2 draft but refuses to save it as active worke
     json: draft,
   });
   assert.equal(saving.status, 409);
-  assert.equal(saving.data.code, "CONFIG_MIGRATION_REQUIRED");
+  assert.equal(saving.data.code, "CONFIG_EDITOR_V2_UNSUPPORTED");
   assert.equal(fs.readFileSync(path.join(fixture.dir, "config.json"), "utf8"), before);
 });

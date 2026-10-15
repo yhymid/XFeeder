@@ -685,6 +685,17 @@ function startDashboard({
         }
 
         const validation = validateConfig(parsed, paths.envPath);
+        // X3-29 validates v2 drafts, but X3-30 migration is not implemented.
+        // Do not let the editor persist a config the running worker cannot load.
+        if (validation.schemaVersion === 2 && !validation.errors.length) {
+          sendJson(res, 409, {
+            error: "Schema v2 is not yet supported by the worker. Migration is required.",
+            code: "CONFIG_MIGRATION_REQUIRED",
+            issues: [{ path: "schemaVersion", code: "migration_required",
+              message: "Migrate the configuration before activation" }],
+          });
+          return;
+        }
         if (validation.errors.length) {
           sendJson(res, 400, {
             error: "Configuration validation failed.",

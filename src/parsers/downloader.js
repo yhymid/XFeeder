@@ -3,6 +3,7 @@
 
 const { isBlockedPage } = require("../core/blocked-page");
 const { getWithFallback } = require("../client");
+const { getNetwork } = require("../network/service");
 const { isCancelled, throwIfAborted } = require("../network/abort");
 const { context } = require("../network/context");
 const { getScrapling } = require("../extensions/Scrapling");
@@ -247,6 +248,8 @@ async function download(url, opts = {}) {
   const rootConfig = opts.config && typeof opts.config === "object"
     ? opts.config
     : loadConfig(configPath);
+  const network = getNetwork(rootConfig);
+  const publicOnly = network.config.outboundPolicy === "public-only";
   const scrapling = getScrapling(rootConfig);
 
   const urlConfig = scrapling.config.getUrlConfig(url);
@@ -260,6 +263,11 @@ async function download(url, opts = {}) {
     configuredUrl: urlConfig.enabled === true,
     conditionalRequest: { etag: Boolean(opts.etag), lastModified: Boolean(opts.lastModified) },
   });
+  if (forceScrapling && publicOnly) {
+    // Browser/Python networking bypasses Node's protected socket lookup.
+    // Never silently bypass public-only mode via a forced browser session.
+    return { ok: false, reason: "SCRAPLING_DISALLOWED_BY_PUBLIC_ONLY" };
+  }
   if (forceScrapling) {
     const result = await fetchWithScrapling(scrapling, url, opts);
     if (result.ok) {
@@ -296,7 +304,9 @@ async function download(url, opts = {}) {
     });
     if (res?.status === 304) return { ok: true, status: 304, headers: res.headers || {}, data: "", notModified: true };
 
-    const decision = evaluateScraplingNeed(scrapling, res, url, opts);
+    const decision = publicOnly
+      ? { use: false }
+      : evaluateScraplingNeed(scrapling, res, url, opts);
     if (decision.use) {
       expert("download.scrapling.fallback", {
         url,
@@ -364,7 +374,9 @@ async function download(url, opts = {}) {
       return limited;
     }
 
-    const decision = evaluateScraplingNeed(scrapling, err, url, opts);
+    const decision = publicOnly
+      ? { use: false }
+      : evaluateScraplingNeed(scrapling, err, url, opts);
     if (decision.use) {
       const s = await fetchWithScrapling(scrapling, url, opts, decision.analysis);
       if (s.ok) {

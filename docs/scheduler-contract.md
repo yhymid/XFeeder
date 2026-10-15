@@ -2,9 +2,11 @@
 
 ## Scope and design
 
-The existing **serial round-robin queue** remains the scheduler. This task
-hardens its identity cursor, refresh recovery and timer admission; it does not
-introduce parallel workers, durable job queues or additional request bursts.
+The default **serial round-robin queue** is unchanged. An opt-in parallel
+scheduler now supports bounded overlap for distinct channel identities.
+It reuses the existing stable cache keys, per-channel backoff, Network Service,
+ChannelTasks and X3-22's awaited atomic delivery persistence; it does not
+introduce a durable job queue or parallel delivery inside one channel.
 Delivery-state persistence, per-target deduplication and the source/destination
 adapter contracts remain unchanged.
 
@@ -61,3 +63,51 @@ between two simultaneously running XFeeder processes. Cache-key collisions
 still produce configuration warnings and should be fixed with explicit
 unique IDs. Extremely slow channels can still delay later channels since
 execution remains serial; parallelism is a separately reviewed feature.
+
+
+## X3-20 follow-up — bounded parallel channels
+
+Enable concurrency in `config.json`:
+
+```json
+{
+  "Settings": { "MaxConcurrentChannels": 2 }
+}
+```
+
+The valid range is 1–8; **1 is the backwards-compatible default**. Changing
+this setting requires restarting the application to change the scheduler mode.
+Programmatic `createApp({ maxConcurrentChannels: 2 })` overrides the config
+on startup. Invalid values fail configuration validation. The delay between
+polling turns is still `delayBetweenChannels` (default 30 seconds), so
+enabling two slots does not create unbounded bursts.
+
+With `MaxConcurrentChannels > 1`, `src/app/concurrent-scheduler.js` starts
+at most one eligible distinct channel per polling turn. A single timer moves
+the identity-aware cursor independently of in-flight work; up to N different
+channels may execute at once. Each cache key has one active task, so duplicate
+entries in configuration never overlap. Per-channel `TimeChecker`, failure
+counter, exponential backoff and `Retry-After` remain independent.
+The Network Service still limits aggregate bandwidth, HTTP concurrency
+and request deadlines; per-target delivery is sequential and a confirmed
+success is written before the next provider POST.
+
+`queue.stop()` stops all future admissions and cancels the polling timer.
+Existing app shutdown signals and cancels active ChannelTasks through
+`tasks.stop()`, `network.shutdown()`, `tasks.abort()` and `tasks.idle()`.
+The parallel scheduler also exposes `idle()` for diagnostics/tests.
+A `CACHE_UNSAFE` write failure stops further queue admission to avoid
+delivering from uncertain persisted state.
+
+Limits: configuration hot reload retains the active concurrency capacity
+until restart. The queue makes one selection per interval and may postpone
+a channel when all slots are occupied; it is fair under stable configuration
+once capacity is available, but is not a real-time deadline scheduler.
+There is no multi-process lock: running two independent XFeeder instances on
+the same cache directory remains unsafe. Enabling concurrency can increase
+network/delivery load; test with two slots before increasing it.
+
+`tests/concurrent-scheduler.test.js` covers overlapping distinct channels,
+repeated-key exclusion, per-channel Retry-After, graceful stop, storage
+failure admission shutdown, default serial compatibility and setting
+validation. Existing serial scheduler tests remain unchanged.

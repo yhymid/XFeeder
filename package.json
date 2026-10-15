@@ -1,6 +1,6 @@
 {
   "name": "xfeeder",
-  "version": "2.2.0",
+  "version": "3.0.0-alpha.0",
   "description": "Modular RSS/Atom/JSON feed reader for Discord webhooks and Telegram with an extensible plugin system.",
   "main": "main.js",
   "scripts": {

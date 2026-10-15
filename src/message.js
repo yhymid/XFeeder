@@ -4,6 +4,9 @@ const { networkAdapter } = require("./network/http-adapter");
 const { getNetwork } = require("./network/service");
 const { context } = require("./network/context");
 const { isCancelled } = require("./network/abort");
+const { createLogger } = require("./core/logger");
+
+const logger = createLogger("Discord delivery");
 
 const COMPONENTS_V2_FLAG = 1 << 15;
 const MAX_COMPONENT_TEXT = 1800;
@@ -27,7 +30,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
     try {
       urlObj = new URL(webhookUrl);
     } catch (e) {
-      throw new Error("Invalid webhookUrl: " + webhookUrl);
+      throw new Error("Invalid webhookUrl.");
     }
 
     urlObj.searchParams.set("with_components", "true");
@@ -52,7 +55,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
         flags: COMPONENTS_V2_FLAG,
         components: [container],
       });
-      console.log(`[ComponentsV2] Sent (YouTube): ${entry.title}`);
+      logger.info("Sent YouTube entry", { title: entry.title });
       return;
     }
 
@@ -91,7 +94,7 @@ async function sendMessage(webhookUrl, threadId, entry) {
         flags: COMPONENTS_V2_FLAG,
         components: [container],
       });
-      console.log(`[ComponentsV2] Sent (Discord message from ${username})`);
+      logger.info("Sent Discord-source entry", { author: username });
       return;
     }
 
@@ -150,13 +153,13 @@ async function sendMessage(webhookUrl, threadId, entry) {
       flags: COMPONENTS_V2_FLAG,
       components: [container],
     });
-    console.log(`[ComponentsV2] Sent: ${entry.title || entry.link || "(no title)"}`);
+    logger.info("Sent feed entry", { title: entry.title || entry.link || "(no title)" });
   } catch (err) {
       if (isCancelled(err) || context().signal?.aborted) throw err;
     if (err.response) {
-      console.error(`[ComponentsV2] Send error: ${err.response.status}`, err.response.data);
+      logger.error("Webhook delivery failed", { status: err.response.status, response: err.response.data });
     } else {
-      console.error(`[ComponentsV2] Error:`, err.message);
+      logger.error("Webhook delivery failed", { message: err.message });
     }
     throw err;
   }
@@ -186,9 +189,7 @@ async function postToWebhook(url, payload) {
       }
 
       const waitMs = getRetryDelayMs(err.response, attempt);
-      console.warn(
-        `[ComponentsV2] Rate limited (429), retry ${attempt + 1}/${MAX_429_RETRIES}, wait=${waitMs}ms`
-      );
+      logger.warn("Rate limited (429)", { attempt: attempt + 1, maxAttempts: MAX_429_RETRIES, waitMs });
       await getNetwork().wait(waitMs, context().signal, "retry:discord");
     }
   }

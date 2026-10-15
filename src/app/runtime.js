@@ -96,7 +96,17 @@ function startChannelQueue({
     }
 
     if (stopped) return;
-    const channels = normalizeChannels(getChannels);
+    let channels;
+    try {
+      channels = normalizeChannels(getChannels);
+    } catch (error) {
+      // A transient config/provider failure must not kill the async timer
+      // callback and strand the queue with no future scheduled turn.
+      logger.error("Channel list refresh failed", { failure: errorRecord(error, { context: "configuration" }) });
+      expert("queue.refresh.failed", { error });
+      if (!stopped) timer = setTimeout(processNextChannel, delayBetweenChannels);
+      return;
+    }
     if (channels.length === 0) {
       logger.warn("No channels available after refresh; waiting");
       expert("queue.wait", { reason: "no channels", delayMs: delayBetweenChannels });

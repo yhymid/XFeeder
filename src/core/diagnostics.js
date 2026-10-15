@@ -5,6 +5,15 @@ const SENSITIVE_QUERY_KEY = /(token|secret|password|auth|key|signature|sig|crede
 const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi;
 
 let expertDebugEnabled = false;
+const activityListeners = new Set();
+
+// Publish from the existing instrumentation regardless of debug console mode.
+// One failing listener must never change delivery/control-flow semantics.
+function subscribeActivity(listener) {
+  if (typeof listener !== "function") throw new TypeError("Activity listener must be a function");
+  activityListeners.add(listener);
+  return () => activityListeners.delete(listener);
+}
 
 function sanitizeUrl(input) {
   const value = String(input ?? "");
@@ -82,6 +91,9 @@ function isExpertDebugEnabled() {
 }
 
 function expert(event, details = {}) {
+  for (const listener of activityListeners) {
+    try { listener(event, details); } catch { /* Observability is best effort. */ }
+  }
   if (!expertDebugEnabled) return;
   const payload = sanitize(details);
   console.log(`[Expert] ${JSON.stringify({ time: new Date().toISOString(), event, ...payload })}`);
@@ -94,4 +106,5 @@ module.exports = {
   sanitizeText,
   sanitizeUrl,
   setExpertDebug,
+  subscribeActivity,
 };

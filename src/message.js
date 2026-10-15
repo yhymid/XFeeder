@@ -1,5 +1,6 @@
 // src/message.js - Discord webhook sender (Components V2 format)
 const { postManaged } = require("./network/http-client");
+const { getDiscordRetryDelayMs } = require("./network/retry-policy");
 const { getNetwork } = require("./network/service");
 const { context } = require("./network/context");
 const { isCancelled } = require("./network/abort");
@@ -12,8 +13,6 @@ const MAX_COMPONENT_TEXT = 1800;
 const MAX_BUTTON_LABEL = 80;
 const MAX_MEDIA_ITEMS = 10;
 const MAX_429_RETRIES = 3;
-const MIN_RETRY_DELAY_MS = 500;
-const MAX_RETRY_DELAY_MS = 15000;
 
 /**
  * Sends an entry to Discord channel via webhook (Components V2).
@@ -187,7 +186,7 @@ async function postToWebhook(url, payload) {
         throw err;
       }
 
-      const waitMs = getRetryDelayMs(err.response, attempt);
+      const waitMs = getDiscordRetryDelayMs(err.response, attempt);
       logger.warn("Rate limited (429)", { attempt: attempt + 1, maxAttempts: MAX_429_RETRIES, waitMs });
       await getNetwork().wait(waitMs, context().signal, "retry:discord");
     }
@@ -301,29 +300,6 @@ function isHttpUrl(url) {
   }
 }
 
-function getRetryDelayMs(response, attempt) {
-  const fromBody = Number(response?.data?.retry_after);
-  if (Number.isFinite(fromBody) && fromBody > 0) {
-    // Discord usually gives retry_after in seconds (float).
-    return clampDelay(fromBody * 1000);
-  }
-
-  const fromResetAfter = Number(response?.headers?.["x-ratelimit-reset-after"]);
-  if (Number.isFinite(fromResetAfter) && fromResetAfter > 0) {
-    return clampDelay(fromResetAfter * 1000);
-  }
-
-  const fromRetryAfter = Number(response?.headers?.["retry-after"]);
-  if (Number.isFinite(fromRetryAfter) && fromRetryAfter > 0) {
-    return clampDelay(fromRetryAfter < 100 ? fromRetryAfter * 1000 : fromRetryAfter);
-  }
-
-  return clampDelay(MIN_RETRY_DELAY_MS * Math.pow(2, attempt));
-}
-
-function clampDelay(ms) {
-  return Math.max(MIN_RETRY_DELAY_MS, Math.min(MAX_RETRY_DELAY_MS, Math.ceil(ms)));
-}
 
 
 

@@ -32,6 +32,7 @@ jobs:
       - run: npm ci
       - run: npm run deps:check
       - run: npm test
+      - run: npm run release:alpha-check
       - run: node main.js --check-config --config tests/fixtures/config/channel-groups.json
       - run: npm audit --audit-level=high
 

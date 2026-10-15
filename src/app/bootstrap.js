@@ -63,8 +63,12 @@ function createApp({
   // separate JSON file. Channel-runner still uses the original delivery APIs.
   const cacheStore = {
     ...stateStore.delivery,
+    // Production delivery writes are awaited after each confirmed send.
+    save: stateStore.delivery.saveAsync,
     getFeedValidator: stateStore.feeds.getFeedValidator,
     getFeedItems: stateStore.feeds.getFeedItems,
+    // Keep direct synchronous callers compatible; feed pipeline uses the
+    // async path below and waits for state to reach disk before returning.
     setFeedSnapshot: stateStore.feeds.setFeedSnapshot,
   };
   let queueRuntime = null;
@@ -83,7 +87,7 @@ function createApp({
     configPath,
     getFeedValidator: (feedUrl) => cacheStore.getFeedValidator(feedUrl),
     getFeedItems: (feedUrl) => cacheStore.getFeedItems(feedUrl),
-    setFeedSnapshot: (feedUrl, validator, items) => cacheStore.setFeedSnapshot(
+    setFeedSnapshot: (feedUrl, validator, items) => stateStore.feeds.setFeedSnapshotAsync(
       feedUrl,
       validator,
       items,
@@ -228,7 +232,7 @@ function createApp({
         ]));
       } finally { clearTimeout(cleanupTimer); }
       await cleanup(() => telemetryStopped);
-      if (persistCache) await cleanup(() => stateStore.save());
+      if (persistCache) await cleanup(() => stateStore.saveAsync());
 
       if (failures.length) {
         const failure = failures.length === 1

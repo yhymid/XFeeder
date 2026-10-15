@@ -8,6 +8,7 @@ const { loadDotEnv } = require("../config-loader");
 const { normalizeNetworkConfig } = require("../network/config");
 const { sanitizeText } = require("../core/diagnostics");
 const { validateConfigSchema } = require("../core/config-schema");
+const { toLegacyRuntime } = require("../core/config-migration");
 
 function validateConfig(config, envPath) {
   if (!config || typeof config !== "object" || Array.isArray(config))

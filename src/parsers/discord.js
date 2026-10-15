@@ -2,6 +2,8 @@
 const axios = require("axios");
 const { context } = require("../network/context");
 const { isCancelled } = require("../network/abort");
+const { createLogger } = require("../core/logger");
+const logger = createLogger("Discord source");
 
 /**
  * Parses messages from Discord channel.
@@ -14,17 +16,17 @@ async function parseDiscord(discordConfig, httpClient = axios) {
   const messages = [];
 
   if (!discordConfig || !discordConfig.Token) {
-    console.error("[Discord parser] Missing Discord configuration or token");
+    logger.error("Missing Discord configuration or token");
     return [];
   }
 
   const channelIds = getChannelIds(discordConfig);
   if (channelIds.length === 0) {
-    console.error('[Discord parser] Missing ChannelIDs; add "ChannelIDs" (GuildID is not channel ID).');
+    logger.error('Missing ChannelIDs; add "ChannelIDs" (GuildID is not channel ID).');
     return [];
   }
 
-  console.log(`[Discord parser] Checking ${channelIds.length} channels...`);
+  logger.info("Checking source channels", { count: channelIds.length });
 
   for (const channelId of channelIds) {
     try {
@@ -33,11 +35,11 @@ async function parseDiscord(discordConfig, httpClient = axios) {
     } catch (err) {
       if (isCancelled(err) || context().signal?.aborted) throw err;
       context().onFailure?.(err);
-      console.error(`[Discord parser] Error for channel ${channelId}:`, err.message);
+      logger.error("Channel fetch failed", { channelId, error: err });
     }
   }
 
-  console.log(`[Discord parser] Found ${messages.length} messages`);
+  logger.info("Source fetch complete", { messages: messages.length });
   return messages;
 }
 

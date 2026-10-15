@@ -135,3 +135,27 @@ test("X3-23: worker telemetry marker changes as scheduling readiness changes", a
   }
   assert.fail("worker readiness telemetry did not update");
 });
+
+test("X3-26: canonical probe aliases match the previous liveness/readiness API", async t => {
+  const fixture = await startTestDashboard(t, { config: { network: {} } });
+  const configPath = path.join(fixture.dir, "config.json");
+  const live = await fixture.request("/api/health/live");
+  assert.equal(live.status, 200);
+  assert.deepEqual(live.data, (await fixture.request("/api/live")).data);
+  assert.equal(live.headers["cache-control"], "no-store");
+  assert.equal((await fixture.request("/api/health/ready")).status, 503);
+
+  publishFixture(configPath);
+  const ready = await fixture.request("/api/health/ready");
+  assert.equal(ready.status, 200);
+  assert.deepEqual(ready.data, (await fixture.request("/api/ready")).data);
+
+  publishFixture(configPath, { stopping: true });
+  assert.equal((await fixture.request("/api/health/ready")).status, 503);
+  assert.equal((await fixture.request("/api/health/live")).status, 200);
+  for (const endpoint of ["/api/health/live", "/api/health/ready"]) {
+    assert.equal((await fixture.request(endpoint, {
+      headers: { Host: "untrusted.example" },
+    })).status, 403);
+  }
+});

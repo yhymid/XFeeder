@@ -178,6 +178,12 @@ function createApp({
       checkFeedsForChannel,
       delayBetweenChannels,
       maxConcurrentChannels: maxConcurrentChannels ?? state.config?.Settings?.MaxConcurrentChannels ?? 1,
+      onFatal: () => {
+        // An unsafe cache cannot be used for further delivery decisions.
+        // Abort all running channels, not only the channel whose save failed.
+        tasks.stop();
+        tasks.abort();
+      },
       beforeCycle: () => {
         refreshConfig({ quiet: false });
       },

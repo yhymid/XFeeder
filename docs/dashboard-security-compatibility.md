@@ -121,3 +121,23 @@ capped at 256. A saturated login window can delay legitimate logins for up to a
 minute; authenticated sessions and health reads remain available. This is local
 process protection, not a distributed abuse prevention service. Env writes still
 replace the full file and do not provide merge or revision semantics.
+
+
+## X3-11 reverse-proxy/auth gap closure
+
+A loopback bind is not sufficient evidence that the dashboard is private: a
+reverse proxy can expose `127.0.0.1` to remote clients. A configured
+`XFEEDER_DASHBOARD_PUBLIC_ORIGIN` whose hostname is non-loopback now requires
+`XFEEDER_DASHBOARD_PASSWORD` even if the HTTP backend binds only to loopback.
+A loopback public origin may still use the existing passwordless local mode.
+
+The server continues to ignore untrusted `Forwarded` / `X-Forwarded-*` headers.
+For an externally reachable deployment use an explicit public origin, a password,
+and preferably HTTPS on the reverse proxy. A password is not a substitute for
+transport encryption on an untrusted network. This change does not introduce
+implicit proxy trust, alter cookies, or change config/cache formats.
+
+New regression coverage verifies that external HTTPS/HTTP public origins cannot
+silently expose a passwordless backend, while an explicitly local public origin
+remains compatible. Existing real-HTTPS reverse-proxy tests continue to cover
+authenticated login, secure cookies, settings writes and logout.

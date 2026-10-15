@@ -56,7 +56,7 @@ function createMetricsRegistry(bus, { getGauges = () => ({}) } = {}) {
         }
         observe("feed_fetch_duration_ms", event.durationMs);
         break;
-      case "feed_not_modified":
+      case "feed.not_modified":
         counters.feed_not_modified_total++;
         if (event.sourceId) failingSources.delete(event.sourceId);
         break;

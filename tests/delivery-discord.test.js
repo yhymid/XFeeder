@@ -224,3 +224,23 @@ for (const shutdown of [false, true]) {
     assert.equal(getNetwork().snapshot().http.active, 0);
   });
 }
+
+
+test("X3-12: Discord delivery error logs redact provider credentials", bounded, async (t) => {
+  const secret = "synthetic-provider-credential";
+  const server = await webhook(t, () => ({
+    status: 403,
+    body: {
+      authorization: `Bearer ${secret}`,
+      details: `https://discord.com/api/webhooks/123456789/${secret}`,
+    },
+  }));
+  const logged = [];
+  t.mock.method(console, "error", (...values) => logged.push(values.join(" ")));
+  await assert.rejects(sendMessage(server.url, null, entry), error => error.response?.status === 403);
+  assert.equal(server.requests.length, 1);
+  assert.equal(logged.length, 1);
+  assert.ok(!logged[0].includes(secret), "provider credentials must not be logged");
+  assert.match(logged[0], /\[Discord delivery\]\[error\]/);
+  assert.match(logged[0], /\[REDACTED\]/);
+});

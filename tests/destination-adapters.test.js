@@ -52,6 +52,6 @@ test("X3-16: unsupported sender is isolated to its own configured destination", 
   });
   await adapters.webhook.send({ webhookUrl: "https://example.invalid/hook" }, { title: "entry" });
   assert.deepEqual(calls, ["webhook"]);
-  await assert.rejects(adapters.telegram.send({ telegramConfig: {} }, {}), /Telegram sender is not available/);
+  assert.throws(() => adapters.telegram.send({ telegramConfig: {} }, {}), /Telegram sender is not available/);
   assert.equal(adapters.missing, undefined);
 });

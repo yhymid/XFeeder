@@ -1,0 +1,58 @@
+{
+  "Settings": {
+    "Logs": false,
+    "DebugExpert": false,
+    "MaxConcurrentChannels": 2
+  },
+  "Auth": {
+    "Token": "${DISCORD_TOKEN}",
+    "cookie": "${DISCORD_COOKIE}",
+    "x-super-properties": "${DISCORD_SUPER_PROPERTIES}"
+  },
+  "Telegram": {
+    "Enabled": true,
+    "BotToken": "${TELEGRAM_TOKEN}",
+    "ChatID": "${TELEGRAM_CHAT}",
+    "TimeoutMs": 15000
+  },
+  "Proxy": {
+    "Enabled": false,
+    "Url": "http://127.0.0.1:8080"
+  },
+  "Scrapling": {
+    "Enabled": false,
+    "AutoFallback": false
+  },
+  "ChannelDefaults": {
+    "TimeChecker": 30,
+    "RequestSend": 5
+  },
+  "channels": {
+    "news": {
+      "Feeds": [
+        "https://example.invalid/news.xml",
+        "https://example.invalid/commits.atom"
+      ],
+      "Webhook": "${DISCORD_WEBHOOK}",
+      "Thread": "12345",
+      "Discord": {
+        "ChannelID": "discord-channel-id",
+        "Token": "${DISCORD_SOURCE_TOKEN}"
+      },
+      "Telegram": {
+        "ChatID": "${TELEGRAM_CHAT_NEWS}",
+        "MessageThreadID": 7
+      }
+    }
+  },
+  "channels2": {
+    "alerts": {
+      "Feeds": [
+        "https://example.invalid/alerts.json"
+      ],
+      "Webhook": "https://discord.example.invalid/webhook",
+      "TimeChecker": 60,
+      "RequestSend": 2
+    }
+  }
+}

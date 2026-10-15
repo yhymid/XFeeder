@@ -211,7 +211,9 @@ async function networkAdapter(config) {
     });
     response.config = config;
     if (response.data && typeof response.data.pipe === "function") {
-      if (responseLimit !== null) {
+      // Enforce both the network-wide budget and an explicit Axios
+      // maxContentLength when the caller requests streamed output.
+      if (Number.isSafeInteger(maxContentLength) && maxContentLength >= 0) {
         response.data = limitResponseStream(response.data, maxContentLength, config);
       }
       detachFinished = finished(response.data, cleanup);

@@ -3,7 +3,7 @@
 // External dashboard boundary: never trust additional fields in the
 // worker-published snapshot. The UI/API only sees fixed allowlisted fields.
 const { readActivityRuntime } = require("../core/activity-runtime");
-const { COUNTER_NAMES, DURATION_NAMES, BUCKETS } = require("../core/metrics-registry");
+const { COUNTER_NAMES, DURATION_NAMES, BUCKETS, networkMetricSnapshot } = require("../core/metrics-registry");
 
 const TYPES = new Set([
   "worker.started", "worker.stopped", "channel.started",
@@ -22,6 +22,8 @@ function publicMetrics(input = {}) {
       delivery_total: Object.fromEntries(["webhook", "telegram"].map(dest => [dest,
         Object.fromEntries(["success", "error"].map(s => [s, number(input.counters?.delivery_total?.[dest]?.[s])]))])),
     },
+    network: input.network?.available === true
+      ? networkMetricSnapshot(input.network) : { available: false },
     gauges: Object.fromEntries(["active_jobs", "failing_feeds", "queue_due_channels"]
       .map(n => [n, number(input.gauges?.[n])])),
     durations: Object.fromEntries(DURATION_NAMES.map(n => {

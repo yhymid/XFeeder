@@ -146,3 +146,33 @@ test("X3-19: streamed decoded responses enforce the same byte budget and release
   assert.equal(getNetwork().snapshot().operations, 0);
   assert.equal(getNetwork().snapshot().http.active, 0);
 });
+
+test("X3-19: explicit Axios maxContentLength also constrains responseType stream", bounded, async t => {
+  const server = await serve(t, (_req, res) => res.end("C".repeat(1024)));
+  const response = await getWithFallback(server.url, {
+    config: { Proxy: { Enabled: false } }, proxy: false,
+    responseType: "stream", maxContentLength: 256, maxAttempts: 1,
+  });
+  await assert.rejects(readBody(response.data), { code: "ERR_RESPONSE_TOO_LARGE" });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(getNetwork().snapshot().operations, 0);
+});
+
+test("X3-19: strict egress refuses forced Scrapling browser bypass", bounded, async t => {
+  const { mockScraplingDetector } = require("./fixtures/network.cjs");
+  const { getScrapling } = require("../src/extensions/Scrapling");
+  const { download } = require("../src/parsers/downloader");
+  mockScraplingDetector(t, true);
+  const config = {
+    Proxy: { Enabled: false },
+    network: { outboundPolicy: "public-only" },
+    Scrapling: { Enabled: true, ForceGlobal: true },
+  };
+  const scrapling = getScrapling(config);
+  const fetch = t.mock.method(scrapling, "fetch", async () =>
+    assert.fail("Strict public-only egress must not invoke the browser"));
+  const result = await download("https://feeds.example.com/feed", { config });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "SCRAPLING_DISALLOWED_BY_PUBLIC_ONLY");
+  assert.equal(fetch.mock.callCount(), 0);
+});

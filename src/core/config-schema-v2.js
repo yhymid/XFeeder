@@ -69,6 +69,8 @@ const CONFIG_SCHEMA_V2 = Object.freeze({
       channelIds: { type: "array", minItems: 1, items: string },
       token: secret,
       guildId: string,
+      cookie: secret,
+      superProperties: secret,
     }, ["type", "channelIds"]),
     webhookDestination: object({
       type: { const: "webhook" }, url, threadId: string,
@@ -78,6 +80,7 @@ const CONFIG_SCHEMA_V2 = Object.freeze({
       botToken: secret, chatId: string,
       messageThreadId: { type: "integer", minimum: 1 },
       disableWebPagePreview: { type: "boolean" },
+      timeoutMs: { type: "integer", minimum: 1, maximum: 2147000000 },
     }, ["type", "chatId"]),
   },
 });

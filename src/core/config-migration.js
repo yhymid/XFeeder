@@ -64,6 +64,17 @@ function toLegacyRuntime(v2) {
     channels: {},
   };
 
+  // Absent v2 integrations must stay absent in the runtime. Creating an
+  // empty root Telegram object would otherwise make every legacy channel
+  // look like it has a broken Telegram destination.
+  for (const [section, enabled] of [
+    ["Settings", Object.keys(settings).length > 0],
+    ["Auth", Boolean(ints.discord)],
+    ["Proxy", Boolean(ints.proxy)],
+    ["Scrapling", Boolean(ints.scrapling)],
+    ["Telegram", Boolean(ints.telegram)],
+  ]) if (!enabled) delete legacy[section];
+
   for (const [name, channel] of Object.entries(v2.channels)) {
     const at = "channels." + name;
     if (channel.enabled === false)

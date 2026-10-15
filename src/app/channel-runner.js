@@ -130,7 +130,7 @@ async function deliverToTarget({
     expert("delivery.complete", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt });
     return true;
   } catch (err) {
-    if (isCancelled(err) || context().signal?.aborted) throw err;
+    if (err?.code === "CACHE_UNSAFE" || isCancelled(err) || context().signal?.aborted) throw err;
     context().onFailure?.(err);
     console.error(
       `[Channel ${index + 1}] ${channelLabel} send failed (${sanitizeUrl(contextLabel)} -> ${target.kind}): ${sanitizeText(entryLabel)}: ${sanitizeText(err.message)}`
@@ -256,7 +256,7 @@ function createChannelRunner({
                     successfulByBucket[bucketName] = [];
                   }
                   successfulByBucket[bucketName].push(entryKey);
-                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) cacheStore.save();
+                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) await cacheStore.save();
                 }
               } finally {
                 if (!dryRun) await abortableSleep(SEND_DELAY_MS, context().signal);
@@ -266,7 +266,7 @@ function createChannelRunner({
 
           const changed = applySuccessfulDeliveries(channelCache, successfulByBucket);
           if (changed && !dryRun) {
-            cacheStore.save();
+            await cacheStore.save();
           }
 
           const { completed, partial } = summarizeEntryCompletion(
@@ -281,7 +281,7 @@ function createChannelRunner({
           );
         }
       } catch (err) {
-      if (isCancelled(err) || context().signal?.aborted) throw err;
+      if (err?.code === "CACHE_UNSAFE" || isCancelled(err) || context().signal?.aborted) throw err;
       context().onFailure?.(err);
         console.error(`[Channel ${index + 1}] ${channelLabel} Discord Error: ${sanitizeText(err.message)}`);
         expert("discord.source.failed", { channel: channelLabel, error: err });
@@ -351,7 +351,7 @@ function createChannelRunner({
                       successfulByBucket[bucketName] = [];
                     }
                     successfulByBucket[bucketName].push(entryKey);
-                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) cacheStore.save();
+                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) await cacheStore.save();
                   }
                 } finally {
                   if (!dryRun) await abortableSleep(SEND_DELAY_MS, context().signal);
@@ -361,7 +361,7 @@ function createChannelRunner({
 
             const changed = applySuccessfulDeliveries(channelCache, successfulByBucket);
             if (changed && !dryRun) {
-              cacheStore.save();
+              await cacheStore.save();
             }
 
             const { completed, partial } = summarizeEntryCompletion(
@@ -385,7 +385,7 @@ function createChannelRunner({
             });
           }
         } catch (err) {
-      if (isCancelled(err) || context().signal?.aborted) throw err;
+      if (err?.code === "CACHE_UNSAFE" || isCancelled(err) || context().signal?.aborted) throw err;
       context().onFailure?.(err);
           console.error(`[Channel ${index + 1}] ${channelLabel} RSS Error ${sanitizeUrl(feedUrl)}: ${sanitizeText(err.message)}`);
           expert("channel.feed.failed", { index: index + 1, channel: channelLabel, url: feedUrl, error: err });

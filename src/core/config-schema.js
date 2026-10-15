@@ -135,17 +135,13 @@ class ConfigSchemaError extends Error {
   }
 }
 
-// Parsing/migration support is deliberately deferred to X3-30.
-// Never let the legacy channel scanner silently accept v2's lowercase keys.
+// V2 is validated before converting to a strictly equivalent legacy runtime
+// shape; unsupported v2 combinations fail closed instead of disappearing.
 function assertRuntimeConfigSchema(config) {
   const result = validateConfigSchema(config);
   if (!result.ok) throw new ConfigSchemaError(result.errors);
-  if (result.schemaVersion === 2)
-    throw new ConfigSchemaError([
-      issue("schemaVersion", "migration_required",
-        "Schema v2 is valid but requires the X3-30 runtime migration"),
-    ], "CONFIG_MIGRATION_REQUIRED");
-  return config;
+  return result.schemaVersion === 2
+    ? require("./config-migration").toLegacyRuntime(config) : config;
 }
 
 module.exports = {

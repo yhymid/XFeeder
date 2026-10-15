@@ -5,7 +5,10 @@ const Parser = require("rss-parser");
 const { context } = require("../network/context");
 const { isCancelled, throwIfAborted } = require("../network/abort");
 const { getScrapling } = require("../extensions/Scrapling");
-const { expert, sanitizeUrl } = require("./diagnostics");
+const { expert } = require("./diagnostics");
+const { createLogger } = require("./logger");
+const { errorRecord } = require("./errors");
+const logger = createLogger("Feed pipeline");
 
 function createDefaultParser() {
   return new Parser({
@@ -129,13 +132,13 @@ function createFeedPipeline({
       return cachedItems;
     }
     if (!dl.ok && ["INVALID_URL", "UNSUPPORTED_PROTOCOL"].includes(dl.reason)) {
-      console.warn(`[Downloader] Unsupported feed source ${sanitizeUrl(url)}: ${dl.reason}`);
+      logger.warn("Unsupported feed source", { url, reason: dl.reason });
       expert("feed.unsupported_source", { url, reason: dl.reason, durationMs: Date.now() - startedAt });
       return [];
     }
     if (!dl.ok) {
       context().onFailure?.(dl.error || new Error(dl.reason || "Feed download failed"));
-      console.warn(`[Downloader] Skipping ${sanitizeUrl(url)}: ${dl.reason || dl.error?.message || "request failed"}`);
+      logger.warn("Feed download failed; replaying saved entries if available", { url, failure: errorRecord(dl.error || new Error(dl.reason || "Request failed"), { context: "source" }) });
       const cachedItems = typeof getFeedItems === "function" ? getFeedItems(url) : [];
       expert("feed.skipped", {
         url,
@@ -155,7 +158,7 @@ function createFeedPipeline({
           const htmlOptions = perUrl.htmlParseOptions || {};
           const parsed = scrapling.parseHtmlToFeed(dl.data, htmlOptions);
           if (Array.isArray(parsed) && parsed.length) {
-            console.log(`[Scrapling HTML] Success (${parsed.length}) → ${sanitizeUrl(url)}`);
+            logger.info("Scrapling HTML parsed", { url, count: parsed.length });
             expert("feed.parsed", { url, parser: "scrapling-html", itemCount: parsed.length, durationMs: Date.now() - startedAt });
             saveSnapshot(parsed, dl.headers);
             return parsed;
@@ -163,7 +166,7 @@ function createFeedPipeline({
         }
       } catch (err) {
         if (isCancelled(err) || signal?.aborted) throw err;
-        console.warn(`[Scrapling HTML] Error for ${sanitizeUrl(url)}: ${err.message}`);
+        logger.warn("Scrapling HTML parser failed", { url, failure: errorRecord(err, { context: "parser" }) });
         expert("feed.parser.failed", { url, parser: "scrapling-html", error: err });
       }
     }
@@ -176,7 +179,7 @@ function createFeedPipeline({
       try {
         const parsed = await builtInParser(url, parserHttpClient);
         if (parsed && parsed.length) {
-          console.log(`[Parser:${parserName}] Success (${parsed.length}) → ${sanitizeUrl(url)}`);
+          logger.info("Feed parsed", { url, parser: parserName, count: parsed.length });
           expert("feed.parsed", { url, parser: parserName, itemCount: parsed.length, durationMs: Date.now() - startedAt });
           saveSnapshot(parsed, dl.headers);
           return parsed;
@@ -184,7 +187,7 @@ function createFeedPipeline({
         expert("feed.parser.no_match", { url, parser: parserName });
       } catch (err) {
         if (isCancelled(err) || signal?.aborted) throw err;
-        console.warn(`[Parser:${parserName}] Error: ${err.message}`);
+        logger.warn("Feed parser failed", { parser: parserName, failure: errorRecord(err, { context: "parser" }) });
         expert("feed.parser.failed", { url, parser: parserName, error: err });
       }
     }
@@ -207,7 +210,7 @@ function createFeedPipeline({
           };
         });
         if (items.length) {
-          console.log(`[Downloader/regex] Success (${items.length}) → ${sanitizeUrl(url)}`);
+          logger.info("Regex RSS parsed", { url, count: items.length });
           expert("feed.parsed", { url, parser: "rss-regex", itemCount: items.length, durationMs: Date.now() - startedAt });
           saveSnapshot(items, dl.headers);
           return items;
@@ -215,7 +218,7 @@ function createFeedPipeline({
       }
     } catch (err) {
         if (isCancelled(err) || signal?.aborted) throw err;
-      console.warn(`[Axios-regex] Error for ${sanitizeUrl(url)}: ${err.message}`);
+      logger.warn("Regex RSS parser failed", { url, failure: errorRecord(err, { context: "parser" }) });
       expert("feed.parser.failed", { url, parser: "rss-regex", error: err });
     }
 
@@ -233,7 +236,7 @@ function createFeedPipeline({
             guid: entry.guid || entry.link,
             categories: entry.categories || [],
           }));
-          console.log(`[RSSParser] Success (${items.length}) → ${sanitizeUrl(url)}`);
+          logger.info("RSS parser completed", { url, count: items.length });
           expert("feed.parsed", { url, parser: "rss-parser", itemCount: items.length, durationMs: Date.now() - startedAt });
           saveSnapshot(items, dl.headers);
           return items;
@@ -241,11 +244,11 @@ function createFeedPipeline({
       }
     } catch (err) {
         if (isCancelled(err) || signal?.aborted) throw err;
-      console.warn(`[RSSParser] Error for ${sanitizeUrl(url)}: ${err.message}`);
+      logger.warn("RSS parser failed", { url, failure: errorRecord(err, { context: "parser" }) });
       expert("feed.parser.failed", { url, parser: "rss-parser", error: err });
     }
 
-    console.error(`⚠️ No data from ${sanitizeUrl(url)}`);
+    logger.error("No data from feed", { url });
     expert("feed.empty", { url, durationMs: Date.now() - startedAt });
     return [];
   }

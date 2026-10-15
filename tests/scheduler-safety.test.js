@@ -82,3 +82,46 @@ for (const format of ['seconds', 'date']) {
     assert.equal(calls.blocked, 2);
   });
 }
+
+
+test('X3-20: hot-reloaded channel reorder preserves the intended next channel', async t => {
+  const channels = ['alpha', 'bravo', 'charlie'].map(cacheKey => ({ cacheKey, TimeChecker: 1 }));
+  const visits = [];
+  const clock = await clockQueue(t, channels, async (_index, channel) => {
+    visits.push(channel.cacheKey);
+  });
+  assert.deepEqual(visits, ['alpha']);
+  // After alpha, the queued next identity is bravo (index 1).
+  // Move bravo to index 2 before the next tick: index-only cursors
+  // accidentally revisit alpha and delay bravo.
+  channels.splice(0, channels.length, channels[2], channels[0], channels[1]);
+  assert.equal(clock.queue.getState().nextChannelKey, 'bravo');
+  await clock.step();
+  assert.deepEqual(visits, ['alpha', 'bravo']);
+  assert.equal(clock.queue.getState().nextChannelKey, 'charlie');
+  await clock.step();
+  assert.deepEqual(visits, ['alpha', 'bravo', 'charlie']);
+  // Existing per-key TimeChecker must not be reset by reordering.
+  assert.equal(clock.queue.getState().scheduleByCacheKey.alpha.nextRunAt, 1060000);
+});
+
+test('X3-20: removed next channel falls back to the next positional channel', async t => {
+  const channels = ['alpha', 'bravo', 'charlie'].map(cacheKey => ({ cacheKey, TimeChecker: 1 }));
+  const visits = [];
+  const clock = await clockQueue(t, channels, async (_index, channel) => visits.push(channel.cacheKey));
+  assert.deepEqual(visits, ['alpha']);
+  channels.splice(1, 1); // Delete scheduled bravo while retaining charlie.
+  await clock.step();
+  assert.deepEqual(visits, ['alpha', 'charlie']);
+  assert.equal(clock.queue.getState().nextChannelKey, 'alpha');
+});
+
+test('X3-20: queue polling cannot be configured as an accidental hot timer', () => {
+  for (const delayBetweenChannels of [0, -1, NaN, Infinity, 1, 99, 1.5, '100', null]) {
+    assert.throws(() => startChannelQueue({
+      getChannels: () => [{ cacheKey: 'fixture', TimeChecker: 1 }],
+      checkFeedsForChannel: async () => {},
+      delayBetweenChannels,
+    }), /delayBetweenChannels must be an integer/);
+  }
+});

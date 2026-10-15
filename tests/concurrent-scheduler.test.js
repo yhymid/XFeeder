@@ -181,3 +181,39 @@ test("X3-20: Settings.MaxConcurrentChannels is strictly validated", t => {
   fs.writeFileSync(file, JSON.stringify({ Settings: { MaxConcurrentChannels: 2 }, channels: {} }));
   assert.equal(loadConfig(file).Settings.MaxConcurrentChannels, 2);
 });
+
+test("X3-20: unsafe state cancels sibling channels before admitting later ones", async t => {
+  const channels = ["slow", "fails", "later"].map(cacheKey => ({ cacheKey }));
+  const held = deferred();
+  const fatal = [];
+  const calls = [];
+  const blockedError = Object.assign(new Error("synthetic failed disk"), { code: "CACHE_UNSAFE" });
+  const q = await clock(t, channels, async (_index, channel) => {
+    calls.push(channel.cacheKey);
+    if (channel.cacheKey === "slow") return held.promise;
+    if (channel.cacheKey === "fails") throw blockedError;
+    assert.fail("No later channel may start after fail-closed storage");
+  }, { onFatal: error => { fatal.push(error); held.resolve(); } });
+  t.after(() => held.resolve());
+  await q.tick();
+  await settled();
+  assert.deepEqual(calls, ["slow", "fails"]);
+  assert.deepEqual(fatal, [blockedError]);
+  assert.equal(q.timers.length, 0);
+  await q.queue.idle();
+  assert.deepEqual(q.queue.getState().activeKeys, []);
+});
+
+test("X3-20: serial default also invokes fatal cancellation hook on corrupt state", async t => {
+  const channels = [{ cacheKey: "one", TimeChecker: 1 }, { cacheKey: "two", TimeChecker: 1 }];
+  const fatal = [];
+  const calls = [];
+  const q = await clock(t, channels, async (_index, channel) => {
+    calls.push(channel.cacheKey);
+    throw Object.assign(new Error("storage unavailable"), { code: "CACHE_UNSAFE" });
+  }, { maxConcurrentChannels: 1, onFatal: error => fatal.push(error) });
+  assert.deepEqual(calls, ["one"]);
+  assert.equal(fatal.length, 1);
+  assert.equal(fatal[0].code, "CACHE_UNSAFE");
+  assert.equal(q.timers.length, 0);
+});

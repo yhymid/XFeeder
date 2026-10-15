@@ -23,10 +23,12 @@ Metadata passes through `core/diagnostics.sanitize`, and message/scope
 through `sanitizeText`. Structured output is compact, bounded by the existing
 diagnostic sanitizer, and never prints the raw Axios response/body by default.
 
-The app bootstrap, scheduler, Discord source and Discord delivery now use this
-boundary for their critical failures; Scrapling's browser stderr and invalid
-protocol output also use it. Existing HTTP/client and channel-runner paths
-already sanitize URL/error text and are not rewritten merely for style.
+The app bootstrap, scheduler, feed parsing/downloading, Discord source and
+Discord delivery now use this boundary for their critical failures; Scrapling's
+browser stderr and invalid protocol output also use it. The HTTP/client and
+channel-runner paths already sanitize URL/error text and are not rewritten
+merely for style. Feed parser failures are isolated: a rejected parser still
+allows the next parser to handle the downloaded response.
 
 **Limit:** Not every historical `console.*` caller or third-party output has
 migrated. `core/terminal-log` still captures writes from other sources and

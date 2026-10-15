@@ -282,8 +282,11 @@ function createFeedPipeline({
     try {
       const result = await fetchFeedCore(url, options, health);
       if (!reported) {
-        if (Array.isArray(result) && result.length) await health.succeeded();
-        else await health.failed("NO_FEED_ENTRIES");
+        // A successfully downloaded but empty feed is not necessarily
+        // broken: valid RSS/Atom/JSON feeds can contain zero entries.
+        // Explicit network, anti-bot and unsupported-source errors above
+        // still increment the circuit's persistent failure streak.
+        await health.succeeded();
       }
       return result;
     } catch (error) {

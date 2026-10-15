@@ -120,6 +120,15 @@ function createStateStore({
   return Object.freeze({
     delivery,
     feeds,
+    isUsable() {
+      try {
+        delivery.getState();
+        feedCache.getState();
+        return true;
+      } catch {
+        return false;
+      }
+    },
     runtime: Object.freeze({
       get(key) { return runtime.get(key); },
       set(key, value) { runtime.set(key, structuredClone(value)); },

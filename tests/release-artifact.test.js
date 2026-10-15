@@ -97,7 +97,7 @@ test('source and runtime packaging reject generated files, nested repositories a
   'src/extensions/Scrapling/ms-playwright/chromium/chrome','src/extensions/Scrapling/.cache/browser/chrome',
   'src/extensions/Scrapling/browser-profiles/Default/Cookies','src/extensions/Scrapling/user-data-dir/Default/Preferences',
   'src/extensions/Scrapling/upstream/source.py','node_modules/local/index.js',
-  'cache.json','http-meta.json','data.network-runtime.json','data.network-runtime.json.123.tmp',
+  'cache.json','cache.json.corrupt-fixture','nested/state.json.corrupt-fixture','http-meta.json','data.network-runtime.json','data.network-runtime.json.123.tmp',
   'debug/terminal.txt','src/extensions/Scrapling/worker.log','src/extensions/Scrapling/output.tmp',
  ]) {
   write(name,'GENERATED_FIXTURE');git('add','-f','--',name);

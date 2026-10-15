@@ -9,6 +9,7 @@ node_modules/
 
 # Application state (default paths) and atomic write leftovers
 /cache.json
+*.corrupt-*
 /http-meta.json
 /src/workshop/workshop-cache.json
 *.network-runtime.json

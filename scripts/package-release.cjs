@@ -23,6 +23,7 @@ const forbidden = files.filter((file, index) => {
     (base.startsWith(".env") && base !== ".env.example") ||
     ["config.json", "cache.json", "http-meta.json"].includes(file) ||
     /(?:\.py[cod]|\.log|\.tmp|\.temp|\.cpuprofile|\.heapprofile|\.network-runtime\.json)$/.test(file) ||
+    /\.corrupt-/.test(base) ||
     /^debug\/.*\.txt$/.test(file) || file.startsWith("src/extensions/Scrapling/upstream/");
 });
 if (forbidden.length) throw Error(`Generated/private files tracked in release: ${forbidden.join(", ")}`);

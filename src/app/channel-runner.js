@@ -2,6 +2,7 @@
 
 const { SEND_DELAY_MS, pushCache } = require("../core/normalize");
 const { normalizeEntries } = require("../core/normalized-entry");
+const { createDestinationAdapters } = require("../core/destination-adapters");
 const { getChannelLabel, hasTelegramDeliveryTarget } = require("../core/channel-config");
 const { context } = require("../network/context");
 const { isCancelled, throwIfAborted, sleep: abortableSleep } = require("../network/abort");
@@ -101,8 +102,7 @@ async function deliverToTarget({
   target,
   targetConfig,
   entry,
-  sendMessage,
-  sendTelegramMessage,
+  destinationAdapters,
   dryRun,
 } = {}) {
   throwIfAborted(context().signal);
@@ -122,38 +122,22 @@ async function deliverToTarget({
     return true;
   }
 
-  if (target.kind === "webhook") {
-    try {
-      await sendMessage(targetConfig.webhookUrl, targetConfig.threadId, entry);
-      expert("delivery.complete", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt });
-      return true;
-    } catch (err) {
-      if (isCancelled(err) || context().signal?.aborted) throw err;
-      context().onFailure?.(err);
-      console.error(
-        `[Channel ${index + 1}] ${channelLabel} send failed (${sanitizeUrl(contextLabel)} -> webhook): ${sanitizeText(entryLabel)}: ${sanitizeText(err.message)}`
-      );
-      expert("delivery.failed", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt, error: err });
-      return false;
-    }
-  }
+  const adapter = destinationAdapters[target.kind];
+  if (!adapter) return false;
 
-  if (target.kind === "telegram") {
-    try {
-      await sendTelegramMessage(targetConfig.telegramConfig, entry);
-      expert("delivery.complete", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt });
-      return true;
-    } catch (err) {
-      if (isCancelled(err) || context().signal?.aborted) throw err;
-      context().onFailure?.(err);
-      console.error(
-        `[Channel ${index + 1}] ${channelLabel} send failed (${sanitizeUrl(contextLabel)} -> telegram): ${sanitizeText(entryLabel)}: ${sanitizeText(err.message)}`
-      );
-      expert("delivery.failed", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt, error: err });
-      return false;
-    }
+  try {
+    await adapter.send(targetConfig, entry);
+    expert("delivery.complete", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt });
+    return true;
+  } catch (err) {
+    if (isCancelled(err) || context().signal?.aborted) throw err;
+    context().onFailure?.(err);
+    console.error(
+      `[Channel ${index + 1}] ${channelLabel} send failed (${sanitizeUrl(contextLabel)} -> ${target.kind}): ${sanitizeText(entryLabel)}: ${sanitizeText(err.message)}`
+    );
+    expert("delivery.failed", { channel: channelLabel, target: target.kind, durationMs: Date.now() - startedAt, error: err });
+    return false;
   }
-
 
   return false;
 }
@@ -195,6 +179,8 @@ function createChannelRunner({
   sendTelegramMessage,
   dryRun = false,
 } = {}) {
+  const destinationAdapters = createDestinationAdapters({ sendMessage, sendTelegramMessage });
+
   async function checkFeedsForChannel(index, channelConfig) {
     throwIfAborted(context().signal);
     const startedAt = Date.now();
@@ -260,8 +246,7 @@ function createChannelRunner({
                   target,
                   targetConfig,
                   entry: entry.raw,
-                  sendMessage,
-                  sendTelegramMessage,
+                  destinationAdapters,
                   dryRun,
                 });
 
@@ -356,8 +341,7 @@ function createChannelRunner({
                     target,
                     targetConfig,
                     entry: entry.raw,
-                    sendMessage,
-                    sendTelegramMessage,
+                    destinationAdapters,
                     dryRun,
                   });
 

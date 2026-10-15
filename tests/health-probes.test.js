@@ -53,7 +53,7 @@ test("X3-23: readiness only passes for fresh, applied, healthy worker telemetry"
   assert.equal(workerReady(configPath), true);
 
   for (const variation of [
-    { ready: false }, { stopping: true }, { stale: true }, { applied: false },
+    { workerReady: false }, { stopping: true }, { stale: true }, { applied: false },
   ]) {
     publishFixture(configPath, variation);
     const result = await fixture.request("/api/ready");

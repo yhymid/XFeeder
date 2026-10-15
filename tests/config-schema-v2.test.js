@@ -91,7 +91,7 @@ test("X3-29: unknown versions and malformed config root fail safely", () => {
   assert.ok(validateConfigSchema(unknown).errors.some(e => e.code === "invalid_name"));
 });
 
-test("X3-29: worker refuses valid v2 drafts until X3-30 migrator exists", t => {
+test("X3-30: worker accepts supported v2 configs but rejects malformed URLs", t => {
   const directory = tempDir(t), configPath = path.join(directory, "config.json");
   const config = example();
   fs.writeFileSync(configPath, JSON.stringify(config));

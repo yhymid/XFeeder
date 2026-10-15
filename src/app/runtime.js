@@ -6,6 +6,7 @@ const { isCancelled } = require("../network/abort");
 const { getRetryAfterMs } = require("../client");
 const { createLogger } = require("../core/logger");
 const logger = createLogger("Scheduler");
+const { errorRecord } = require("../core/errors");
 
 function normalizeChannels(getChannels) {
   if (typeof getChannels === "function") {
@@ -87,7 +88,7 @@ function startChannelQueue({
       try {
         await beforeCycle();
       } catch (err) {
-        logger.error("Configuration refresh failed", { error: err });
+        logger.error("Configuration refresh failed", { failure: errorRecord(err, { context: "configuration" }) });
       }
     }
 
@@ -152,7 +153,7 @@ function startChannelQueue({
         schedule.nextRunAt = completedAt + Math.max(minDelay, backoff, retryAfter);
         if (isCancelled(err)) { expert("queue.channel.cancelled", { channel: label }); }
         else {
-        logger.error("Channel failed", { label, error: err });
+        logger.error("Channel failed", { label, failure: errorRecord(err, { context: "source" }) });
         expert("queue.channel.failed", { index: currentIndex + 1, channel: label, durationMs: Date.now() - startedAt, error: err });
         }
       }

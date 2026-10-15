@@ -1,6 +1,5 @@
 // src/message.js - Discord webhook sender (Components V2 format)
-const axios = require("axios");
-const { networkAdapter } = require("./network/http-adapter");
+const { postManaged } = require("./network/http-client");
 const { getNetwork } = require("./network/service");
 const { context } = require("./network/context");
 const { isCancelled } = require("./network/abort");
@@ -177,8 +176,8 @@ async function postToWebhook(url, payload) {
 
   for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt += 1) {
     try {
-      return await axios.post(url, sanitizedPayload, {
-        adapter: networkAdapter, signal: context().signal, xfeederDefaultTimeout: 0,
+      return await postManaged(url, sanitizedPayload, {
+        signal: context().signal, xfeederDefaultTimeout: 0,
         headers: { "Content-Type": "application/json" },
       });
     } catch (err) {

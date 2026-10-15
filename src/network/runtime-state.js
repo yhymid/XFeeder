@@ -78,7 +78,7 @@ function publicMetrics(metrics) {
 
 // One compact snapshot per two seconds, for the separately running dashboard.
 // Only the allowlisted service snapshot is persisted, never config/URLs/secrets.
-function startNetworkRuntime({ configPath, network, refreshConfig }) {
+function startNetworkRuntime({ configPath, network, refreshConfig, isWorkerReady = () => false }) {
   const target = runtimePath(configPath),
     temp = `${target}.${process.pid}.tmp`;
   const workerId = crypto.randomUUID();
@@ -98,6 +98,7 @@ function startNetworkRuntime({ configPath, network, refreshConfig }) {
           .createHash("sha256")
           .update(network.signature)
           .digest("hex"),
+        workerReady: isWorkerReady() === true,
         metrics: network.metricsSnapshot(),
       };
       await fs.promises.writeFile(temp, JSON.stringify(snapshot), {
@@ -167,6 +168,9 @@ function readNetworkRuntime(configPath, config) {
     applied: value.configSignature === signature(config),
     updatedAt: value.updatedAt,
     metrics: value.metrics,
+    // Older workers may not publish workerReady. Fail closed for readiness
+    // without changing their existing network metrics/dashboard compatibility.
+    workerReady: value.workerReady === true,
   };
 }
 module.exports = {

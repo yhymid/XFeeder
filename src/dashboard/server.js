@@ -644,8 +644,11 @@ function startDashboard({
       if (req.method === "GET" && url.pathname === "/api/metrics") {
         if (!requireDashboardAccess(req, res, authManager)) return;
         const runtime = readActivityRuntime(paths.configPath);
-        if (!runtime) {
-          sendJson(res, 503, { available: false, error: "Worker metrics unavailable" });
+        // Structured activity may be retained for post-mortem review after
+        // worker exit, but counters/rates must never masquerade as live data.
+        const age = runtime ? Date.now() - Date.parse(runtime.updatedAt) : Infinity;
+        if (!runtime || !Number.isFinite(age) || age < -1000 || age > 6500) {
+          sendJson(res, 503, { available: false, error: "Worker metrics unavailable or stale" });
           return;
         }
         sendJson(res, 200, {

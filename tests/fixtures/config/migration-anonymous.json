@@ -1,0 +1,17 @@
+{
+  "channels": [
+    {
+      "Feeds": [
+        "https://feeds.example.invalid/a"
+      ],
+      "Webhook": "https://hooks.example.invalid/one"
+    },
+    {
+      "Feeds": [
+        "https://feeds.example.invalid/b"
+      ],
+      "Webhook": "https://hooks.example.invalid/two",
+      "TimeChecker": 60
+    }
+  ]
+}

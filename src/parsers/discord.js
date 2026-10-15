@@ -4,6 +4,7 @@ const { context } = require("../network/context");
 const { isCancelled } = require("../network/abort");
 const { createLogger } = require("../core/logger");
 const logger = createLogger("Discord source");
+const { errorRecord } = require("../core/errors");
 
 /**
  * Parses messages from Discord channel.
@@ -35,7 +36,7 @@ async function parseDiscord(discordConfig, httpClient = axios) {
     } catch (err) {
       if (isCancelled(err) || context().signal?.aborted) throw err;
       context().onFailure?.(err);
-      logger.error("Channel fetch failed", { channelId, error: err });
+      logger.error("Channel fetch failed", { channelId, failure: errorRecord(err, { context: "source" }) });
     }
   }
 

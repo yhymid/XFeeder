@@ -94,21 +94,29 @@ async function main() {
     autostart,
   });
 
+  const requestExit = (exitCode) => {
+    // Always handle the shutdown promise: a cleanup failure must not cause
+    // another unhandled rejection while the fatal-error handler is running.
+    void app.shutdown({ exit: true, exitCode }).catch((error) => {
+      console.error("[Shutdown Error]", JSON.stringify(sanitize(error)));
+      process.exit(1);
+    });
+  };
   const stop = () => {
     console.log("\n[Shutdown] Saving state and exiting...");
-    void app.shutdown({ exit: true, exitCode: 0 });
+    requestExit(0);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 
   process.on("uncaughtException", (error) => {
-    console.error("[Critical Error]", error);
-    app.shutdown({ exit: true, exitCode: 1 });
+    console.error("[Critical Error]", JSON.stringify(sanitize(error)));
+    requestExit(1);
   });
 
   process.on("unhandledRejection", (reason) => {
-    console.error("[Unhandled Rejection]", reason);
-    app.shutdown({ exit: true, exitCode: 1 });
+    console.error("[Unhandled Rejection]", JSON.stringify(sanitize(reason)));
+    requestExit(1);
   });
 
   const version = require("./package.json").version;
@@ -120,22 +128,32 @@ async function main() {
   ].filter(Boolean);
   console.log(`XFeeder v${version} started${modes.length ? ` (${modes.join(", ")})` : ""}.`);
 
-  if (options.checkConfig) {
-    console.log(JSON.stringify({
-      channels: app.allChannels.length,
-      warnings: validateChannels(app.allChannels),
-      dryRun: app.dryRun,
-      configPath: options.configPath,
-      cachePath: options.cachePath,
-    }, null, 2));
-    await app.shutdown({ exit: true, persistCache: false });
-    return;
-  }
+  try {
+    if (options.checkConfig) {
+      console.log(JSON.stringify({
+        channels: app.allChannels.length,
+        warnings: validateChannels(app.allChannels),
+        dryRun: app.dryRun,
+        configPath: options.configPath,
+        cachePath: options.cachePath,
+      }, null, 2));
+      await app.shutdown({ exit: true, persistCache: false });
+      return;
+    }
 
-  if (options.once) {
-    const result = await app.runOnce();
-    console.log(`[Once] Completed ${result.checkedChannels}/${result.totalChannels} channels.`);
-    await app.shutdown({ exit: true });
+    if (options.once) {
+      const result = await app.runOnce();
+      console.log(`[Once] Completed ${result.checkedChannels}/${result.totalChannels} channels.`);
+      await app.shutdown({ exit: true });
+    }
+  } catch (error) {
+    // A failed --once or --check-config must still stop children, cancel
+    // network work and flush successful delivery state before reporting failure.
+    try { await app.shutdown({ exit: false, exitCode: 1 }); }
+    catch (shutdownError) {
+      console.error("[Shutdown Error]", JSON.stringify(sanitize(shutdownError)));
+    }
+    throw error;
   }
 }
 

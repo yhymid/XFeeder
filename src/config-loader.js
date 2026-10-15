@@ -115,6 +115,10 @@ function loadConfig(configPath = "./config.json") {
   const raw = fs.readFileSync(resolvedConfigPath, "utf8");
   const config = resolveEnv(JSON.parse(raw), envMap);
   requireNetworkConfig(config.network);
+  const concurrency = config?.Settings?.MaxConcurrentChannels;
+  if (concurrency !== undefined && concurrency !== null &&
+      (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 8))
+    throw new RangeError("Settings.MaxConcurrentChannels must be an integer from 1 to 8");
   for (const warning of unsupportedConfigSections(config)) console.warn(`[Config] ${sanitizeText(warning)}`);
   return config;
 }

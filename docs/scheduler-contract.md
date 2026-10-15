@@ -32,7 +32,7 @@ in-memory diagnostic snapshot, not a stored cursor.
   and previously verified retry/backoff/Retry-After semantics are retained
   from C3-04 (`docs/scheduler-safety.md`).
 - `delayBetweenChannels` is a **programmatic** app option and must be a
-  finite safe integer between 100 and 2,147,000,000 milliseconds. Rejecting
+  finite safe integer between 1 and 2,147,000,000 milliseconds. Rejecting
   zero/invalid values prevents an accidental busy `setTimeout(0)` loop.
   The default remains 30,000 ms. No new config.json field is added.
 - A temporary exception from the `getChannels` provider during hot reload

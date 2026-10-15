@@ -1,0 +1,25 @@
+**
+!package.json
+!package-lock.json
+!main.js
+!dashboard.js
+!src/
+!src/**
+# Never bake secrets, feed state, browser binaries or local environments into images.
+**/.venv/**
+**/venv/**
+**/node_modules/**
+**/__pycache__/**
+**/.cache/**
+**/browsers/**
+**/ms-playwright/**
+**/browser-profiles/**
+**/upstream/**
+**/config.json
+**/.env*
+**/cache.json
+**/*.feeds.json
+**/*.activity-runtime.json
+**/*.network-runtime.json
+**/*.key
+**/*.pem

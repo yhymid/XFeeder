@@ -208,16 +208,39 @@ function createApp({
     queueRuntime?.stop();
     shutdownPromise = (async () => {
       expert("app.shutdown", { exit, exitCode, persistCache, dryRun });
-      await network.shutdown(graceMs);
+      const failures = [];
+      const cleanup = async (operation) => {
+        try { await operation(); }
+        catch (error) { failures.push(error); }
+      };
+
+      // A failed network/browser cleanup must not skip task cancellation,
+      // telemetry shutdown or the final delivery-state flush.
+      await cleanup(() => network.shutdown(graceMs));
       tasks.abort();
-      await closeBrowserSessions();
+      await cleanup(() => closeBrowserSessions());
       // Every built-in operation observes cancellation. Bound third-party plugin
       // cleanup too; a plugin that ignores its signal cannot hold shutdown forever.
       let cleanupTimer;
-      try { await Promise.race([tasks.idle(), new Promise((resolve) => { cleanupTimer = setTimeout(resolve, 2000); })]); }
-      finally { clearTimeout(cleanupTimer); }
-      await telemetryStopped;
-      if (persistCache) cacheStore.save();
+      try {
+        await cleanup(() => Promise.race([
+          tasks.idle(),
+          new Promise((resolve) => { cleanupTimer = setTimeout(resolve, 2000); }),
+        ]));
+      } finally { clearTimeout(cleanupTimer); }
+      await cleanup(() => telemetryStopped);
+      if (persistCache) await cleanup(() => cacheStore.save());
+
+      if (failures.length) {
+        const failure = failures.length === 1
+          ? failures[0]
+          : new AggregateError(failures, "Multiple XFeeder shutdown steps failed");
+        if (exit) {
+          console.error("[Shutdown] Cleanup failed; exiting with an error.");
+          process.exit(1);
+        }
+        throw failure;
+      }
       if (exit) process.exit(exitCode);
     })();
     return shutdownPromise;

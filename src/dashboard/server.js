@@ -606,7 +606,8 @@ function startDashboard({
       if (publicApi) {
         if (!requireDashboardAccess(req, res, authManager)) return;
         if (req.method !== "GET" &&
-            !(req.method === "PUT" && url.pathname === "/api/advanced/config")) {
+            !(req.method === "PUT" &&
+              ["/api/advanced/config", "/api/settings"].includes(url.pathname))) {
           sendJson(res, 405, { error: "Method not allowed." });
           return;
         }
@@ -659,6 +660,65 @@ function startDashboard({
           const written = revision(readText(paths.configPath));
           sendJson(res, 200, { ok: true, revision: written },
             { ETag: '"' + written + '"' });
+          return;
+        }
+        if (req.method === "PUT" && url.pathname === "/api/settings") {
+          if (!ensureSameOrigin(req, res, expectedOrigin)) return;
+          if (!req.headers["if-match"]) {
+            sendJson(res, 428, { error: "Configuration revision required." }); return;
+          }
+          if (req.headers["if-match"] !== '"' + currentRevision + '"') {
+            sendJson(res, 412, { error: "Configuration changed elsewhere." }); return;
+          }
+          const body = JSON.parse(await parseRequestBody(req) || "{}");
+          const patch = body?.general;
+          if (!patch || typeof patch !== "object" || Array.isArray(patch) ||
+              Object.keys(body).some(key => key !== "general") ||
+              Object.keys(patch).length === 0 ||
+              Object.keys(patch).some(key => ![
+                "logs", "expertDiagnostics", "maxConcurrentChannels",
+              ].includes(key)) ||
+              (patch.logs !== undefined && typeof patch.logs !== "boolean") ||
+              (patch.expertDiagnostics !== undefined &&
+                typeof patch.expertDiagnostics !== "boolean") ||
+              (patch.maxConcurrentChannels !== undefined &&
+                (!Number.isSafeInteger(patch.maxConcurrentChannels) ||
+                 patch.maxConcurrentChannels < 1 || patch.maxConcurrentChannels > 8))) {
+            sendJson(res, 400, { error: "Invalid settings patch." }); return;
+          }
+          const v2 = config.schemaVersion === 2;
+          const settings = v2 ? (config.settings ||= {}) : (config.Settings ||= {});
+          for (const [key, value] of Object.entries(patch)) {
+            const field = v2 ? ({
+              logs: "logs", expertDiagnostics: "debugExpert",
+              maxConcurrentChannels: "maxConcurrentChannels",
+            })[key] : ({
+              logs: "Logs", expertDiagnostics: "DebugExpert",
+              maxConcurrentChannels: "MaxConcurrentChannels",
+            })[key];
+            settings[field] = value;
+          }
+          const validation = validateConfig(config, paths.envPath);
+          if (validation.errors.length || validation.runtimeSupported === false) {
+            sendJson(res, 400, {
+              error: "Configuration validation failed.", errorCount: validation.errors.length,
+            });
+            return;
+          }
+          if (validation.warnings.length &&
+              req.headers["x-xfeeder-accept-warnings"] !== "true") {
+            sendJson(res, 422, {
+              error: "Review configuration warnings before saving.",
+              warningCount: validation.warnings.length,
+            });
+            return;
+          }
+          writeTextAtomic(paths.configPath, JSON.stringify(config, null, 2) + "\n", 0o600);
+          const updated = revision(readText(paths.configPath));
+          sendJson(res, 200, {
+            ...projectSettings(config, readNetworkSettings(paths.configPath).payload.settings),
+            revision: updated,
+          }, { ETag: '"' + updated + '"' });
           return;
         }
         if (url.pathname === "/api/overview") {

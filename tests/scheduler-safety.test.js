@@ -13,7 +13,7 @@ async function clockQueue(t, channels, run) {
   t.mock.method(global, 'clearTimeout', timer => {
     const index = pending.indexOf(timer); if (index >= 0) pending.splice(index, 1);
   });
-  const queue = startChannelQueue({ getChannels: () => channels, delayBetweenChannels: 10000, checkFeedsForChannel: run });
+  const queue = startChannelQueue({ getChannels: typeof channels === 'function' ? channels : () => channels, delayBetweenChannels: 10000, checkFeedsForChannel: run });
   t.after(() => queue.stop());
   await new Promise(setImmediate);
   return { queue, now: () => now, async step(ms = 10000) {
@@ -124,4 +124,40 @@ test('X3-20: queue polling cannot be configured as an accidental hot timer', () 
       delayBetweenChannels,
     }), /delayBetweenChannels must be an integer/);
   }
+});
+
+
+test('X3-20: transient channel-list failure does not strand the queue or double schedule', async t => {
+  let unavailable = false;
+  const channels = [{ cacheKey: 'alpha', TimeChecker: 1 }, { cacheKey: 'bravo', TimeChecker: 1 }];
+  const visits = [];
+  const errors = [];
+  t.mock.method(console, 'error', value => errors.push(value));
+  const clock = await clockQueue(t, () => {
+    if (unavailable) throw new Error('Bearer synthetic-scheduler-secret');
+    return channels;
+  }, async (_index, channel) => visits.push(channel.cacheKey));
+  assert.deepEqual(visits, ['alpha']);
+  unavailable = true;
+  await clock.step();
+  assert.deepEqual(visits, ['alpha'], 'retry refresh, not duplicate existing work');
+  assert.equal(errors.length, 1);
+  assert.ok(!errors[0].includes('synthetic-scheduler-secret'));
+  unavailable = false;
+  await clock.step();
+  assert.deepEqual(visits, ['alpha', 'bravo']);
+  assert.equal(clock.queue.getState().nextChannelKey, 'alpha');
+});
+
+test('X3-20: stop prevents later polling after a completed turn', async t => {
+  const channels = [{ cacheKey: 'one', TimeChecker: 1 }];
+  const visits = [];
+  const clock = await clockQueue(t, channels, async () => visits.push('one'));
+  assert.deepEqual(visits, ['one']);
+  clock.queue.stop();
+  // No queued callbacks remain, even if stop is repeated.
+  clock.queue.stop();
+  const state = clock.queue.getState();
+  assert.equal(state.nextChannelKey, 'one');
+  assert.equal(visits.length, 1);
 });

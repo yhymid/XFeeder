@@ -1,0 +1,25 @@
+services:
+  worker:
+    build: .
+    image: xfeeder:local
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+    volumes:
+      - ./data:/data
+    command: ["--config", "/data/config.json", "--cache", "/data/cache.json"]
+  dashboard:
+    profiles: ["dashboard"]
+    image: xfeeder:local
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+    entrypoint: ["node", "/app/dashboard.js"]
+    environment:
+      XFEEDER_DASHBOARD_HOST: "0.0.0.0"
+      XFEEDER_DASHBOARD_PORT: "3000"
+      XFEEDER_DASHBOARD_PASSWORD: "${XFEEDER_DASHBOARD_PASSWORD:?Set XFEEDER_DASHBOARD_PASSWORD in an untracked .env file}"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data:/data

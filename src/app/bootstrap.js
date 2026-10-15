@@ -20,6 +20,7 @@ const { expert, setExpertDebug } = require("../core/diagnostics");
 const { setTerminalLogEnabled } = require("../core/terminal-log");
 const { createLogger } = require("../core/logger");
 const logger = createLogger("App");
+const { errorRecord } = require("../core/errors");
 const { createChannelRunner } = require("./channel-runner");
 const { runChannelsOnce, startChannelQueue } = require("./runtime");
 const { closeBrowserSessions } = require("../extensions/Scrapling");
@@ -155,7 +156,7 @@ function createApp({
       });
       return true;
     } catch (error) {
-      logger.error("Configuration reload failed", { configPath, error });
+      logger.error("Configuration reload failed", { configPath, failure: errorRecord(error, { context: "configuration" }) });
       expert("config.load.failed", { path: configPath, error });
       if (!state.configDigest) throw error;
       return false;

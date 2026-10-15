@@ -96,8 +96,10 @@ success is written before the next provider POST.
 Existing app shutdown signals and cancels active ChannelTasks through
 `tasks.stop()`, `network.shutdown()`, `tasks.abort()` and `tasks.idle()`.
 The parallel scheduler also exposes `idle()` for diagnostics/tests.
-A `CACHE_UNSAFE` write failure stops further queue admission to avoid
-delivering from uncertain persisted state.
+A `CACHE_UNSAFE` write failure stops further queue admission and
+signals the owning app to stop/abort all running ChannelTasks, including
+sibling channels already in progress. This protection also applies to the
+default serial scheduler. An already accepted external POST cannot be undone.
 
 Limits: configuration hot reload retains the active concurrency capacity
 until restart. The queue makes one selection per interval and may postpone

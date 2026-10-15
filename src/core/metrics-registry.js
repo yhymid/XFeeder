@@ -108,7 +108,10 @@ function createMetricsRegistry(bus, {
         break;
       case "channel.completed":
       case "channel.failed":
-        observe("channel_run_duration_ms", event.durationMs);
+        // The runner and scheduler both observe the same execution.
+        // Count the runner measurement only; ignore the queue mirror.
+        if (event.origin !== "queue")
+          observe("channel_run_duration_ms", event.durationMs);
         break;
       case "scrapling.used":
         counters.scrapling_fallback_total++;

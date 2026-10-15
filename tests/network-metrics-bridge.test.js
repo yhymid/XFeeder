@@ -96,3 +96,36 @@ test("NET-10: network callback errors are nonfatal and snapshots never generate 
   assert.equal(bus.size, 0);
   registry.close();
 });
+
+test("NET-10: metrics endpoint rejects stale worker data while preserving history", { timeout: 10000 }, async t => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const { startTestDashboard } = require("./helpers/dashboard.cjs");
+  const { activityPath } = require("../src/core/activity-runtime");
+  const fixture = await startTestDashboard(t);
+  const file = activityPath(path.join(fixture.dir, "config.json"));
+  const loggedIn = await fixture.login();
+  assert.equal(loggedIn.status, 200);
+  const header = loggedIn.headers["set-cookie"];
+  const cookie = (Array.isArray(header) ? header[0] : header).split(";")[0];
+  const headers = { Cookie: cookie };
+  const old = {
+    schemaVersion: 1, updatedAt: new Date(Date.now() - 10000).toISOString(),
+    events: [{ id: 1, type: "worker.started", time: new Date(Date.now() - 10000).toISOString() }],
+    metrics: { network: { available: true, downloadedBytes: 999 } },
+  };
+  fs.writeFileSync(file, JSON.stringify(old));
+  const stale = await fixture.request("/api/metrics", { headers });
+  assert.equal(stale.status, 503);
+  assert.equal(stale.data.available, false);
+  assert.ok(!stale.text.includes("999"));
+  const activity = await fixture.request("/api/activity", { headers });
+  assert.equal(activity.status, 200);
+  assert.equal(activity.data.source, "structured");
+  assert.equal(activity.data.items[0].event, "worker.started");
+  old.updatedAt = new Date().toISOString();
+  fs.writeFileSync(file, JSON.stringify(old));
+  const fresh = await fixture.request("/api/metrics", { headers });
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.data.metrics.network.downloadedBytes, 999);
+});

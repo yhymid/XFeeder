@@ -1,4 +1,4 @@
-// main.js - XFeeder 2.2.0 Main Application
+// main.js - XFeeder CLI application
 "use strict";
 
 const { installTerminalLog, setTerminalLogEnabled } = require("./src/core/terminal-log");

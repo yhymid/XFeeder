@@ -8,6 +8,7 @@ const { createLogger } = require("../core/logger");
 const logger = createLogger("Scheduler");
 const { errorRecord } = require("../core/errors");
 const { queueKey, nextChannelIndex, validateQueueDelay } = require("./scheduler-policy");
+const { startConcurrentChannelQueue, validateConcurrency } = require("./concurrent-scheduler");
 
 function normalizeChannels(getChannels) {
   if (typeof getChannels === "function") {
@@ -67,8 +68,14 @@ function startChannelQueue({
   checkFeedsForChannel,
   delayBetweenChannels = 30000,
   beforeCycle,
+  maxConcurrentChannels = 1,
 } = {}) {
+  validateConcurrency(maxConcurrentChannels);
   delayBetweenChannels = validateQueueDelay(delayBetweenChannels);
+  if (maxConcurrentChannels > 1) return startConcurrentChannelQueue({
+    getChannels, getTaskStates, checkFeedsForChannel,
+    delayBetweenChannels, beforeCycle, maxConcurrentChannels,
+  });
   const initialChannels = normalizeChannels(getChannels);
   if (initialChannels.length === 0) {
     logger.error("No valid channels configured; queue not started");

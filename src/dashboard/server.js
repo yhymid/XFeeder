@@ -20,6 +20,7 @@ const { normalizeNetworkConfig } = require("../network/config");
 const { readNetworkSettings, revision } = require("./network");
 const { workerReady } = require("./health");
 const { secretStatus, replaceSecretLine, SECRET_KEY, RESERVED } = require("./secrets");
+const { projectChannels, projectOverview, projectSettings } = require("./api-projections");
 
 const { version: appVersion } = require("../../package.json");
 
@@ -595,10 +596,119 @@ function startDashboard({
         return;
       }
 
+      // X3-32: default API responses never include raw config, .env,
+      // feed URLs, webhooks or cached entry IDs. /api/state remains a
+      // deprecated compatibility endpoint for the existing legacy editor.
+      const publicApi = [
+        "/api/overview", "/api/channels", "/api/settings", "/api/system/info",
+        "/api/advanced/config",
+      ].includes(url.pathname) || url.pathname.startsWith("/api/channels/");
+      if (publicApi) {
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        if (req.method !== "GET" &&
+            !(req.method === "PUT" && url.pathname === "/api/advanced/config")) {
+          sendJson(res, 405, { error: "Method not allowed." });
+          return;
+        }
+        const source = readText(paths.configPath, "");
+        const config = JSON.parse(source);
+        const currentRevision = revision(source);
+        const etagHeaders = { ETag: '"' + currentRevision + '"' };
+        if (url.pathname === "/api/advanced/config") {
+          if (req.method === "GET") {
+            sendJson(res, 200, {
+              config,
+              revision: currentRevision,
+              warning: "Advanced config may contain inline secrets. Keep this response private.",
+            }, etagHeaders);
+            return;
+          }
+          if (!ensureSameOrigin(req, res, expectedOrigin)) return;
+          if (!req.headers["if-match"]) {
+            sendJson(res, 428, { error: "Configuration revision required." });
+            return;
+          }
+          if (req.headers["if-match"] !== '"' + currentRevision + '"') {
+            sendJson(res, 412, { error: "Configuration changed elsewhere. Refresh before saving." });
+            return;
+          }
+          const next = JSON.parse(await parseRequestBody(req) || "{}");
+          if (!next || typeof next !== "object" || Array.isArray(next)) {
+            sendJson(res, 400, { error: "Config root must be an object." }); return;
+          }
+          const validation = validateConfig(next, paths.envPath);
+          if (validation.errors.length || validation.runtimeSupported === false) {
+            sendJson(res, 400, {
+              error: "Configuration validation failed.",
+              issues: validation.issues || [],
+              // Validation text can contain user-supplied secret data,
+              // so do not echo arbitrary error strings through this API.
+              errorCount: validation.errors.length,
+            });
+            return;
+          }
+          if (validation.warnings.length &&
+              req.headers["x-xfeeder-accept-warnings"] !== "true") {
+            sendJson(res, 422, {
+              error: "Review configuration warnings before saving.",
+              warningCount: validation.warnings.length,
+            });
+            return;
+          }
+          writeTextAtomic(paths.configPath, JSON.stringify(next, null, 2) + "\n", 0o600);
+          const written = revision(readText(paths.configPath));
+          sendJson(res, 200, { ok: true, revision: written },
+            { ETag: '"' + written + '"' });
+          return;
+        }
+        if (url.pathname === "/api/overview") {
+          sendJson(res, 200, {
+            ...projectOverview(config, workerReady(paths.configPath)),
+            revision: currentRevision,
+          }, etagHeaders);
+          return;
+        }
+        if (url.pathname === "/api/channels") {
+          sendJson(res, 200, {
+            channels: projectChannels(config), revision: currentRevision,
+          }, etagHeaders);
+          return;
+        }
+        if (url.pathname.startsWith("/api/channels/")) {
+          const id = url.pathname.slice("/api/channels/".length);
+          if (!/^[a-f0-9]{24}$/.test(id)) {
+            sendJson(res, 400, { error: "Invalid channel ID." }); return;
+          }
+          const item = projectChannels(config).find(channel => channel.id === id);
+          if (!item) { sendJson(res, 404, { error: "Channel not found." }); return; }
+          sendJson(res, 200, { channel: item, revision: currentRevision }, etagHeaders);
+          return;
+        }
+        if (url.pathname === "/api/settings") {
+          const network = readNetworkSettings(paths.configPath);
+          sendJson(res, 200, {
+            ...projectSettings(config, network.payload.settings),
+            revision: currentRevision,
+          }, etagHeaders);
+          return;
+        }
+        if (url.pathname === "/api/system/info") {
+          sendJson(res, 200, {
+            version: appVersion,
+            schemaVersion: config.schemaVersion === 2 ? 2 : 1,
+            workerReady: workerReady(paths.configPath),
+            revision: currentRevision,
+          }, etagHeaders);
+          return;
+        }
+      }
       if (req.method === "GET" && url.pathname === "/api/state") {
         const authState = requireDashboardAccess(req, res, authManager);
         if (!authState) return;
-        sendJson(res, 200, createStatePayload(serverInfo, authState, paths));
+        sendJson(res, 200, createStatePayload(serverInfo, authState, paths), {
+          Deprecation: "true",
+          Link: '</api/advanced/config>; rel="successor-version"',
+        });
         return;
       }
 

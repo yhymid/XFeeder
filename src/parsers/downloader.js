@@ -268,6 +268,10 @@ async function download(url, opts = {}) {
     // Never silently bypass public-only mode via a forced browser session.
     return { ok: false, reason: "SCRAPLING_DISALLOWED_BY_PUBLIC_ONLY" };
   }
+  if (forceScrapling && opts.allowScrapling === false) {
+    expert("scrapling.cooldown", { url, reason: "BROWSER_COOLDOWN" });
+    return { ok: false, reason: "SCRAPLING_COOLDOWN" };
+  }
   if (forceScrapling) {
     const result = await fetchWithScrapling(scrapling, url, opts);
     if (result.ok) {
@@ -304,7 +308,7 @@ async function download(url, opts = {}) {
     });
     if (res?.status === 304) return { ok: true, status: 304, headers: res.headers || {}, data: "", notModified: true };
 
-    const decision = publicOnly
+    const decision = publicOnly || opts.allowScrapling === false
       ? { use: false }
       : evaluateScraplingNeed(scrapling, res, url, opts);
     if (decision.use) {
@@ -374,7 +378,7 @@ async function download(url, opts = {}) {
       return limited;
     }
 
-    const decision = publicOnly
+    const decision = publicOnly || opts.allowScrapling === false
       ? { use: false }
       : evaluateScraplingNeed(scrapling, err, url, opts);
     if (decision.use) {

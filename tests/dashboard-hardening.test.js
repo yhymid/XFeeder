@@ -62,3 +62,43 @@ test('C3-03: login attempt limit is bounded, includes malformed bodies, ignores 
   now += 60001;
   assert.equal((await f.login()).status, 200);
 });
+
+
+test('X3-11: external reverse proxy cannot enable passwordless mode on a loopback backend', async t => {
+  const { startDashboard } = require('../src/dashboard/server');
+  const fixture = await startTestDashboard(t, { password: '' });
+  const previous = process.env.XFEEDER_DASHBOARD_PASSWORD;
+  try {
+    delete process.env.XFEEDER_DASHBOARD_PASSWORD;
+    for (const publicOrigin of [
+      'https://feeds.example.invalid',
+      'http://feeds.example.invalid:3000',
+      'https://192.0.2.20:8443',
+    ]) {
+      assert.throws(
+        () => startDashboard({ host: '127.0.0.1', port: 0, dataDir: fixture.dir, publicOrigin }),
+        /public origin is non-loopback.*XFEEDER_DASHBOARD_PASSWORD/,
+        publicOrigin,
+      );
+    }
+  } finally {
+    if (previous === undefined) delete process.env.XFEEDER_DASHBOARD_PASSWORD;
+    else process.env.XFEEDER_DASHBOARD_PASSWORD = previous;
+  }
+});
+
+test('X3-11: loopback public origin keeps passwordless local-only mode', async t => {
+  const dashboard = await startTestDashboard(t, {
+    password: '',
+    publicOrigin: 'https://localhost:3443',
+  });
+  const health = await dashboard.request('/api/health', {
+    headers: { Host: 'localhost:3443', Origin: dashboard.origin },
+  });
+  assert.equal(health.status, 200);
+  const state = await dashboard.request('/api/state', {
+    headers: { Host: 'localhost:3443', Origin: dashboard.origin },
+  });
+  assert.equal(state.status, 200);
+  assert.equal(state.data.auth.mode, 'local-open');
+});

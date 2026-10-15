@@ -29,10 +29,10 @@ function isPublicAddress(address) {
     // tunnel/translation ranges that can conceal private IPv4 destinations.
     const first = parseInt(address.split(":")[0], 16);
     if (!(first >= 0x2000 && first < 0x4000)) return false;
-    const lower = address.toLowerCase();
-    if (/^2001:(?:0{0,3}0)(?::|$)/.test(lower) ||
-        /^2001:db8(?::|$)/.test(lower) ||
-        /^2002(?::|$)/.test(lower)) return false;
+    const second = parseInt(address.split(":")[1] || "0", 16);
+    if (first === 0x2002 ||
+        (first === 0x2001 && (second === 0 || second === 0x0db8)))
+      return false;
     return true;
   }
   return false;

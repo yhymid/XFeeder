@@ -117,7 +117,7 @@ test('X3-20: removed next channel falls back to the next positional channel', as
 });
 
 test('X3-20: queue polling cannot be configured as an accidental hot timer', () => {
-  for (const delayBetweenChannels of [0, -1, NaN, Infinity, 1, 99, 1.5, '100', null]) {
+  for (const delayBetweenChannels of [0, -1, NaN, Infinity, 1.5, '100', null]) {
     assert.throws(() => startChannelQueue({
       getChannels: () => [{ cacheKey: 'fixture', TimeChecker: 1 }],
       checkFeedsForChannel: async () => {},

@@ -56,6 +56,8 @@ function makeEvent(type, details = {}, id, now = Date.now()) {
     errorCode: typeof details.error?.code === "string" && /^[A-Z0-9_-]{1,48}$/.test(details.error.code)
       ? details.error.code : null,
     dryRun: details.dryRun === true,
+    // Fixed producer classification; no free-form names or labels.
+    origin: details.__eventOrigin === "queue" ? "queue" : details.__eventOrigin === "channel" ? "channel" : null,
   };
   return Object.freeze(event);
 }
@@ -83,7 +85,9 @@ function createEventBus({ capacity = MAX_EVENTS, now = Date.now } = {}) {
       const type = name === "feed.download.complete" && details?.ok === false
         ? "feed.failed" : EVENTS[name];
       if (!type) return null;
-      return emit(type, details);
+      const origin = name.startsWith("queue.channel.") ? "queue"
+        : name.startsWith("channel.") ? "channel" : null;
+      return emit(type, origin ? { ...details, __eventOrigin: origin } : details);
     },
     subscribe(listener) {
       if (typeof listener !== "function") throw new TypeError("Expected event listener");

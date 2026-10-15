@@ -4,6 +4,7 @@ export const state = {
   revision: null,
   original: "{}",
   env: "",
+  envStatus: {},
   originalEnv: "",
   rawDraft: null,
   editorDirty: false,
@@ -62,7 +63,8 @@ export function acceptConfig(payload) {
 }
 export function acceptState(payload) {
   acceptConfig(payload);
-  state.env = payload.envFile || "";
+  state.envStatus = payload.envStatus || {};
+  state.env = "";
   state.originalEnv = state.env;
   state.meta = payload.meta;
   state.auth = payload.auth;

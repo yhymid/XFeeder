@@ -453,13 +453,15 @@ async function saveConfig() {
 }
 async function saveEnv() {
   if (state.busy || !envDirty()) return;
+  if (!(await confirm("Replace environment file?", "This replaces the entire .env file. Include every value you want to retain; existing secrets are never downloaded."))) return;
   state.busy = true;
   syncChrome();
   const snapshot = state.env;
   try {
     const result = await request("PUT", "/api/env", { content: snapshot });
-    state.originalEnv = result.envFile;
-    if (state.env === snapshot) state.env = result.envFile;
+    state.envStatus = result.envStatus || {};
+    state.originalEnv = "";
+    if (state.env === snapshot) state.env = "";
     state.warnings = result.warnings;
     toast(
       configDirty()

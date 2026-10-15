@@ -340,7 +340,9 @@ test("API protects password auth, origin, Secure cookies, saves and validation w
       Origin: "https://feeds.example",
       "Content-Type": "application/json",
     };
-    assert.equal((await fetch(`${base}/api/state`, { headers })).status, 200);
+    const stateResponse = await fetch(`${base}/api/state`, { headers });
+    assert.equal(stateResponse.status, 200);
+    headers["If-Match"] = `"${(await stateResponse.json()).revision}"`;
     response = await fetch(`${base}/api/config`, {
       method: "PUT",
       headers: {

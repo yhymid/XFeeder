@@ -411,12 +411,8 @@ function environment() {
     el("pre", {
       class: "code env-preview",
       text:
-        state.env
-          .split(/\r?\n/)
-          .filter((line) =>
-            /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=/.test(line),
-          )
-          .map((line) => `${line.slice(0, line.indexOf("="))}=••••••••`)
+        Object.entries(state.envStatus || {})
+          .map(([name, status]) => `${name}: ${status}`)
           .join("\n") || "No environment variables configured.",
     });
   const wrapper = stack();
@@ -424,11 +420,11 @@ function environment() {
     wrapper.replaceChildren(
       el("p", {
         class: "muted",
-        text: "Values are masked. Environment changes have a separate save action.",
+        text: "Only configured/missing status is available. Existing secret values are never downloaded.",
       }),
       preview(),
       el("div", { class: "actions" }, [
-        button("Edit raw .env", () => {
+        button("Replace .env", () => {
           const area = el("textarea", {
             class: "code",
             rows: "20",
@@ -450,11 +446,11 @@ function environment() {
           };
           document.addEventListener("config-changed", sync);
           const node = dialog(
-            "Edit raw .env",
+            "Replace .env",
             [
               el("p", {
                 class: "callout warning",
-                text: "Raw mode displays secrets. Save .env writes only the environment file; configuration changes remain in your draft.",
+                text: "Enter the complete replacement .env file. Existing values are not displayed or merged. Configuration changes remain in your draft.",
               }),
               area,
             ],

@@ -32,6 +32,8 @@ async function authenticated(t, options = {}) {
   const login = await fixture.login();
   assert.equal(login.status, 200);
   const headers = { Cookie: login.headers["set-cookie"][0].split(";")[0], Origin: fixture.origin };
+  const state = await fixture.request("/api/state", { headers });
+  headers["If-Match"] = `"${state.data.revision}"`;
   return { ...fixture, headers };
 }
 
@@ -77,7 +79,7 @@ test("config mutation preserves raw env references, options and unrelated files"
   assert.equal(reloaded.data.revision, saved.data.revision);
 });
 
-test("full config writes reject a stale revision but retain the optional If-Match behavior", bounded, async (t) => {
+test("full config writes require If-Match and reject a stale revision", bounded, async (t) => {
   const f = await authenticated(t);
   const state = await f.request("/api/state", { headers: f.headers });
   const headers = { ...f.headers, "If-Match": `"${state.data.revision}"` };
@@ -88,10 +90,10 @@ test("full config writes reject a stale revision but retain the optional If-Matc
   assert.equal(stale.status, 412);
   assert.match(stale.data.error, /Configuration changed/);
   noChanges(f, beforeStale);
-  // Existing full editor compatibility: revision checking is optional here.
+  delete f.headers["If-Match"];
   const unconditional = await f.request("/api/config", { method: "PUT", headers: f.headers, json: initial });
-  assert.equal(unconditional.status, 200);
-  assert.deepEqual(JSON.parse(files(f)["config.json"]), initial);
+  assert.equal(unconditional.status, 428);
+  noChanges(f, beforeStale);
 });
 
 test("malformed JSON is rejected by every JSON mutation/validation endpoint without side effects", bounded, async (t) => {
@@ -150,7 +152,10 @@ test("environment mutation adds a final newline without modifying config or deli
     const response = await f.request("/api/env", { method: "PUT", headers: f.headers, json: { content } });
     assert.equal(response.status, 200);
     assert.equal(files(f)[".env"], "X3_FIXTURE=synthetic\nEMPTY=\n");
-    assert.equal(response.data.envFile, "X3_FIXTURE=synthetic\nEMPTY=\n");
+    assert.equal(response.data.envFile, undefined);
+    assert.deepEqual(response.data.envStatus, { X3_FIXTURE: "configured", EMPTY: "missing" });
+    assert.ok(!response.text.includes("synthetic"));
+    if (process.platform !== "win32") assert.equal(fs.statSync(path.join(f.dir, ".env")).mode & 0o777, 0o600);
     assert.equal(files(f)["config.json"], before["config.json"]);
     assert.equal(files(f)["cache.json"], before["cache.json"]);
     assert.ok(!fs.existsSync(path.join(f.dir, ".env.tmp")));
@@ -189,22 +194,23 @@ test("mismatched and null origins block all state-changing routes without changi
   assert.equal((await f.request("/api/state", { headers: f.headers })).status, 200);
 });
 
-test("legacy origin policy permits missing Origin for login and authenticated writes", bounded, async (t) => {
-  const f = await startTestDashboard(t, { config: initial });
+test("missing Origin rejects login and authenticated writes", bounded, async (t) => {
+  const f = await authenticated(t);
+  const before = files(f);
   const login = await f.request("/api/login", { method: "POST", json: { password: f.password } });
-  assert.equal(login.status, 200);
-  const Cookie = login.headers["set-cookie"][0].split(";")[0];
-  const saved = await f.request("/api/env", { method: "PUT", headers: { Cookie }, json: { content: "NO_ORIGIN=fixture" } });
-  assert.equal(saved.status, 200);
-  assert.equal(files(f)[".env"], "NO_ORIGIN=fixture\n");
+  assert.equal(login.status, 403);
+  const saved = await f.request("/api/env", { method: "PUT", headers: { Cookie: f.headers.Cookie }, json: { content: "NO_ORIGIN=fixture" } });
+  assert.equal(saved.status, 403);
+  noChanges(f, before);
 });
 
-test("legacy origin policy without publicOrigin derives its allowed origin from Host", bounded, async (t) => {
+test("client Host cannot define a trusted origin", bounded, async (t) => {
   const f = await authenticated(t);
+  const before = files(f);
   const response = await f.request("/api/env", {
     method: "PUT", json: { content: "HOST_POLICY=fixture" },
     headers: { ...f.headers, Host: "fixture-proxy.example.invalid", Origin: "http://fixture-proxy.example.invalid" },
   });
-  assert.equal(response.status, 200);
-  assert.equal(files(f)[".env"], "HOST_POLICY=fixture\n");
+  assert.equal(response.status, 403);
+  noChanges(f, before);
 });

@@ -1,50 +1,97 @@
 "use strict";
 
 const fs = require("fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
 
 function createCacheStore(cacheFile = "./cache.json") {
   let cache = {};
   const META_KEY = "__xfeeder";
 
+  let blockedError = null;
+  function assertUsable() {
+    if (blockedError) throw blockedError;
+  }
+  function block(message, cause) {
+    blockedError = Object.assign(new Error(message, { cause }), { code: "CACHE_UNSAFE" });
+    console.error(`[Cache] ${message}`);
+    throw blockedError;
+  }
+
   function load() {
-    if (!fs.existsSync(cacheFile)) {
+    let original;
+    try {
+      original = fs.readFileSync(cacheFile);
+    } catch (error) {
+      if (error.code !== "ENOENT")
+        return block(`Cannot read ${cacheFile}; refusing to start or overwrite delivery state.`, error);
+      const directory = path.dirname(path.resolve(cacheFile));
+      const prefix = `${path.basename(cacheFile)}.corrupt-`;
+      if (fs.existsSync(directory) && fs.readdirSync(directory).some(name => name.startsWith(prefix)))
+        return block(`Missing ${cacheFile} with quarantined state present; restore a verified cache before restarting.`, error);
+      assertUsable();
       cache = {};
       return cache;
     }
 
+    let parsed;
     try {
-      cache = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-      const channelCount = Object.keys(cache).filter((key) => key !== META_KEY).length;
-      console.log(`[Cache] Loaded (${channelCount} channels)`);
-    } catch {
-      console.warn("[Cache] Error reading cache.json — creating new.");
-      cache = {};
+      parsed = JSON.parse(original.toString("utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("Cache root must be an object");
+    } catch (error) {
+      // Stable content identity prevents a restart loop from creating unlimited
+      // copies. The original file is never renamed, removed or replaced.
+      const quarantine = `${cacheFile}.corrupt-${crypto.createHash("sha256").update(original).digest("hex")}`;
+      try {
+        fs.writeFileSync(quarantine, original, { flag: "wx", mode: 0o600 });
+      } catch (copyError) {
+        if (copyError.code !== "EEXIST")
+          return block(`Invalid ${cacheFile}; quarantine could not be preserved. Original retained; startup blocked.`, copyError);
+        let existing;
+        try { existing = fs.readFileSync(quarantine); }
+        catch (readError) {
+          return block(`Invalid ${cacheFile}; existing quarantine cannot be verified. Startup blocked.`, readError);
+        }
+        if (!existing.equals(original))
+          return block(`Invalid ${cacheFile}; quarantine collision. Original retained; startup blocked.`, copyError);
+      }
+      return block(`Invalid ${cacheFile}; original retained and quarantined at ${quarantine}. Restore a verified cache before restarting; delivery is blocked to prevent duplicates.`, error);
     }
 
+    blockedError = null;
+    cache = parsed;
+    const channelCount = Object.keys(cache).filter(key => key !== META_KEY).length;
+    console.log(`[Cache] Loaded (${channelCount} channels)`);
     return cache;
   }
 
   function save() {
+    assertUsable();
     const tempFile = `${cacheFile}.tmp`;
     fs.writeFileSync(tempFile, JSON.stringify(cache, null, 2), "utf8");
     fs.renameSync(tempFile, cacheFile);
   }
 
   function getState() {
+    assertUsable();
     return cache;
   }
 
   function getChannelBucket(index) {
+    assertUsable();
     if (!cache[index]) cache[index] = {};
     return cache[index];
   }
 
   function replaceState(next) {
+    assertUsable();
     cache = next && typeof next === "object" ? next : {};
     return cache;
   }
 
   function getFeedValidator(feedUrl) {
+    assertUsable();
     const snapshot = cache?.[META_KEY]?.feedSnapshots?.[feedUrl];
     if (!snapshot || typeof snapshot !== "object") return null;
     return {
@@ -54,11 +101,13 @@ function createCacheStore(cacheFile = "./cache.json") {
   }
 
   function getFeedItems(feedUrl) {
+    assertUsable();
     const items = cache?.[META_KEY]?.feedSnapshots?.[feedUrl]?.items;
     return Array.isArray(items) ? [...items] : [];
   }
 
   function setFeedSnapshot(feedUrl, validator, items, { persist = true } = {}) {
+    assertUsable();
     if (typeof feedUrl !== "string" || !feedUrl.trim()) return false;
     const current = cache?.[META_KEY]?.feedSnapshots?.[feedUrl] || {};
     const next = {

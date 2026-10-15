@@ -10,6 +10,11 @@ function queueKey(channel, index) {
 function nextChannelIndex(channels, expectedKey, fallbackIndex = 0) {
   if (!channels.length) return 0;
   if (expectedKey !== null && expectedKey !== undefined) {
+    // Duplicate cache keys are a configuration warning, but must not
+    // trap the cursor on their first occurrence forever. Preserve the
+    // intended offset if it still points at the expected identity.
+    const bounded = (fallbackIndex % channels.length + channels.length) % channels.length;
+    if (queueKey(channels[bounded], bounded) === expectedKey) return bounded;
     const index = channels.findIndex((channel, position) =>
       queueKey(channel, position) === expectedKey);
     if (index !== -1) return index;

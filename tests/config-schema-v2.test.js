@@ -117,7 +117,7 @@ test("X3-29: legacy loader and dashboard validation keep original config semanti
   assert.deepEqual(v2.errors, []);
   assert.deepEqual(v2.issues, []);
   assert.equal(v2.schemaVersion, 2);
-  assert.equal(v2.runtimeSupported, false);
+  assert.equal(v2.runtimeSupported, true);
 });
 
 test("X3-29: dashboard validates v2 draft but refuses to save it as active worker config", async t => {

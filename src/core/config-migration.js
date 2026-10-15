@@ -113,7 +113,8 @@ function toLegacyRuntime(v2) {
         ...(telegram.disableWebPagePreview === undefined ? {} :
           { DisableWebPagePreview: telegram.disableWebPagePreview }),
         ...(telegram.timeoutMs ? { TimeoutMs: telegram.timeoutMs } : {}),
-      } } : { Telegram: { Enabled: false } }),
+      } } : (ints.telegram?.botToken && ints.telegram?.chatId ?
+        { Telegram: { Enabled: false } } : {})),
     };
   }
   if (errors.length) throw new ConfigMigrationError(errors);
@@ -177,6 +178,10 @@ function migrateConfig(oldConfig) {
     if (raw.Discord?.Webhook)
       errors.push(issue(at + ".Discord.Webhook", "unsupported_legacy_field",
         "Discord source webhook must be mapped manually"));
+    if (channel.Telegram && channel.Telegram.Enabled !== false &&
+        (!channel.Telegram.BotToken || !channel.Telegram.ChatID))
+      errors.push(issue(at + ".Telegram", "incomplete_destination",
+        "Incomplete Telegram destination cannot be migrated safely"));
     if (cacheKeys.has(channel.cacheKey))
       errors.push(issue(at + ".CacheKey", "duplicate_identity",
         "Duplicate delivery cache key would make migration unsafe"));
@@ -273,12 +278,29 @@ function migrateConfig(oldConfig) {
     const migrated = collectConfiguredChannels(toLegacyRuntime(v2));
     for (let i = 0; i < channels.length; i++) {
       const a = channels[i], b = migrated[i];
-      for (const field of ["cacheKey", "TimeChecker", "RequestSend", "RSS",
-        "Webhook", "Thread", "Discord", "Telegram"]) {
+      const normalizeDiscord = value => value ? {
+        ids: value.ChannelIDs || (value.ChannelID ? [value.ChannelID] : []),
+        token: value.Token || "",
+        guildId: value.GuildID || "",
+        cookie: value.cookie || "",
+        superProperties: value["x-super-properties"] || "",
+      } : null;
+      const normalizeTelegram = value => value?.Enabled === false || !value?.BotToken || !value?.ChatID
+        ? null : {
+          botToken: value.BotToken, chatId: value.ChatID,
+          threadId: value.MessageThreadID ?? null,
+          preview: value.DisableWebPagePreview === true,
+          timeoutMs: value.TimeoutMs,
+        };
+      for (const field of ["cacheKey", "TimeChecker", "RequestSend", "RSS", "Webhook", "Thread"]) {
         if (JSON.stringify(a[field]) !== JSON.stringify(b[field]))
           errors.push(issue("channels[" + i + "]." + field, "semantic_mismatch",
             "Migrated runtime behavior differs from legacy configuration"));
       }
+      if (JSON.stringify(normalizeDiscord(a.Discord)) !== JSON.stringify(normalizeDiscord(b.Discord)) ||
+          JSON.stringify(normalizeTelegram(a.Telegram)) !== JSON.stringify(normalizeTelegram(b.Telegram)))
+        errors.push(issue("channels[" + i + "]", "semantic_mismatch",
+          "Migrated source or destination differs from legacy configuration"));
     }
   }
   if (errors.length) throw new ConfigMigrationError(errors.slice(0, 50));

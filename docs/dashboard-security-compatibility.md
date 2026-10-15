@@ -33,7 +33,7 @@ dashboard/model, Network revision/metrics/redaction and actual HTTPS reverse
 proxy coverage. The new HTTPS-origin cases exercise the HTTP backend and cookie
 headers; they do not simulate browser cookie storage or browser CSRF behavior.
 
-## Current guarantees and limitations
+## Historical X3-07 guarantees and limitations (superseded below)
 
 - With a password configured, protected API routes reject anonymous requests.
   Health/auth state and static assets remain public. Passwordless mode is allowed
@@ -94,3 +94,30 @@ X3-08 and all later numbered tasks have not been started in this change.
 
 Changed files: the three test files, `tests/helpers/dashboard.cjs` and this document.
 There are no production changes or configuration migrations in X3-07.
+
+## C3-03 hardening — 2026-10-15
+
+The characterization tests for insecure behavior were replaced deliberately.
+Host is now checked against configured public authority or bind/loopback
+authorities with the actual listening port. Public Origin, when configured, is
+the sole accepted Origin; otherwise a fixed local/bind whitelist is used.
+All mutation/login requests require Origin; supplied hostile Origins are rejected
+on reads too. Forwarded headers never establish authority. Reverse proxies must
+preserve the configured public Host or use an allowed backend authority.
+
+State and write responses return `envStatus` (configured/missing), never raw
+`.env`. The UI offers a write-only, explicitly confirmed full replacement; it
+does not download existing secrets. Config editing still returns raw config
+(including explicitly stored inline credentials required by its existing editor);
+use environment references to keep secrets out of the config response.
+Environment files are created privately (0600 on POSIX) through an exclusive
+random temporary file, then renamed. Config PUT now requires an exact If-Match
+revision (428 missing, 412 stale); the existing UI already supplies it.
+
+Password login is globally capped at ten attempts per minute per server, including
+malformed bodies and successful attempts. The fixed window uses constant memory,
+ignores forwarded client identities, and returns 429/Retry-After. Sessions are
+capped at 256. A saturated login window can delay legitimate logins for up to a
+minute; authenticated sessions and health reads remain available. This is local
+process protection, not a distributed abuse prevention service. Env writes still
+replace the full file and do not provide merge or revision semantics.

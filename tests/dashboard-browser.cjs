@@ -281,7 +281,7 @@ const event = (name, data = {}) =>
       .filter({ hasText: "Environment variables" })
       .click();
     await page
-      .getByRole("button", { name: "Edit raw .env", exact: true })
+      .getByRole("button", { name: "Replace .env", exact: true })
       .click();
     await page
       .getByLabel("Raw .env", { exact: true })
@@ -289,9 +289,11 @@ const event = (name, data = {}) =>
         "FIXTURE_TOKEN=changed-test-token\nFIXTURE_WEBHOOK=https://discord.com/api/webhooks/123/FAKESECRET\n",
       );
     await page
-      .getByRole("dialog", { name: "Edit raw .env", exact: true })
+      .getByRole("dialog", { name: "Replace .env", exact: true })
       .getByRole("button", { name: "Save .env", exact: true })
       .click();
+    await page.getByRole("alertdialog", { name: "Replace environment file?" })
+      .getByRole("button", { name: "Confirm", exact: true }).click();
     await page.waitForFunction(
       () =>
         document.querySelector(".dirty-label")?.textContent ===

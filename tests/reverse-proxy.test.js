@@ -16,7 +16,7 @@ test('HTTPS reverse proxy supports login, Network save and logout; forged origin
  const key=fs.readFileSync(path.join(__dirname,'fixtures/tls/localhost-test-key.pem'));
  let backend;
  const proxy=https.createServer({key,cert},(req,res)=>{
-  const target=http.request({hostname:'127.0.0.1',port:backend.address().port,path:req.url,method:req.method,headers:{...req.headers,host:'internal.invalid','x-forwarded-proto':'https'}},r=>{res.writeHead(r.statusCode,r.headers);r.pipe(res);});
+  const target=http.request({hostname:'127.0.0.1',port:backend.address().port,path:req.url,method:req.method,headers:{...req.headers,host:req.headers.host,'x-forwarded-proto':'https'}},r=>{res.writeHead(r.statusCode,r.headers);r.pipe(res);});
   target.on('error',()=>{res.writeHead(502);res.end();});req.pipe(target);
  });
  t.after(async()=>{

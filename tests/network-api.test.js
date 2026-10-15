@@ -54,7 +54,7 @@ async function fixture(t, password = "") {
     configPath,
     initial,
     url,
-    call: (route, options) => fetch(url + route, options),
+    call: (route, options = {}) => fetch(url + route, { ...options, headers: { Origin: url, ...options.headers } }),
   };
 }
 const settingsPath = "/api/settings/network";

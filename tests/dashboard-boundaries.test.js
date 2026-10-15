@@ -209,7 +209,7 @@ test("login, validation, configuration and network writes share the same body li
 test("configured HTTPS origin works over loopback HTTP and issues Secure session cookies", async (t) => {
   const dashboard = await startTestDashboard(t, { publicOrigin: "https://feeds.example.invalid:8443" });
   const response = await dashboard.login(undefined, {
-    Host: "internal-service.invalid:3000", "X-Forwarded-Proto": "http", "X-Forwarded-Host": "wrong.example.invalid",
+    Host: "feeds.example.invalid:8443", "X-Forwarded-Proto": "http", "X-Forwarded-Host": "wrong.example.invalid",
   });
   assert.equal(response.status, 200);
   const cookie = response.headers["set-cookie"][0];
@@ -232,7 +232,7 @@ test("Host and forwarded headers cannot replace an explicitly configured HTTPS o
       "X-Forwarded-Host": "forged.example.invalid", Forwarded: "proto=https;host=forged.example.invalid",
     });
     assert.equal(response.status, 403, origin);
-    assert.equal(response.data.error, "Origin mismatch.");
+    assert.equal(response.data.error, "Untrusted Host.");
     assert.equal(response.headers["set-cookie"], undefined);
   }
 });

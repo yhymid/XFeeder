@@ -12,6 +12,7 @@ const {
 
 const { readActivity } = require("./activity");
 const { validateConfig } = require("./validation");
+const { loadDotEnv } = require("../config-loader");
 const { sanitizeText } = require("../core/diagnostics");
 const { normalizeNetworkConfig } = require("../network/config");
 const { readNetworkSettings, revision } = require("./network");
@@ -53,10 +54,18 @@ function readJson(filePath, fallback = {}) {
   }
 }
 
-function writeTextAtomic(filePath, content) {
-  const tempPath = `${filePath}.tmp`;
-  fs.writeFileSync(tempPath, content, "utf8");
-  fs.renameSync(tempPath, filePath);
+function writeTextAtomic(filePath, content, mode) {
+  const tempPath = `${filePath}.${crypto.randomUUID()}.tmp`;
+  try {
+    // Exclusive creation prevents following an attacker-planted temp symlink.
+    // Private permissions are applied at creation, before any secret is written.
+    fs.writeFileSync(tempPath, content, {
+      encoding: "utf8", flag: "wx", ...(mode === undefined ? {} : { mode }),
+    });
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+  }
 }
 
 function sendJson(res, statusCode, payload, extraHeaders = {}) {
@@ -227,6 +236,15 @@ function createAuthManager({ host, secure = false }) {
       ? Math.floor(sessionHours * 60 * 60 * 1000)
       : 12 * 60 * 60 * 1000;
   const sessions = new Map();
+  let loginWindow = 0, loginAttempts = 0;
+  function reserveLogin() {
+    const now = Date.now();
+    if (now >= loginWindow + 60000) { loginWindow = now; loginAttempts = 0; }
+    if (!password) return 0;
+    if (loginAttempts >= 10) return Math.max(1, Math.ceil((loginWindow + 60000 - now) / 1000));
+    loginAttempts++;
+    return 0;
+  }
 
   if (!loopbackOnly && !password) {
     throw new Error(
@@ -292,6 +310,8 @@ function createAuthManager({ host, secure = false }) {
       };
     }
 
+    purgeExpiredSessions();
+    if (sessions.size >= 256) sessions.delete(sessions.keys().next().value);
     const sessionId = crypto.randomUUID();
     sessions.set(sessionId, {
       expiresAt: Date.now() + ttlMs,
@@ -315,6 +335,7 @@ function createAuthManager({ host, secure = false }) {
   }
 
   return {
+    reserveLogin,
     required: Boolean(password),
     loopbackOnly,
     getAuthState,
@@ -331,6 +352,7 @@ function createStatePayload(serverInfo = {}, authState = {}, paths = {}) {
   } = paths;
   const config = readJson(configPath, {});
   const cache = readJson(cachePath, {});
+  const envValues = loadDotEnv(envPath, { reload: true });
   const channels = collectConfiguredChannels(config);
   const { warnings, errors } = validateConfig(config, envPath);
   const channelGroupEntries = collectChannelGroupEntries(config || {});
@@ -343,7 +365,9 @@ function createStatePayload(serverInfo = {}, authState = {}, paths = {}) {
     revision: revision(readText(configPath, "")),
     warnings,
     errors,
-    envFile: readText(envPath, ""),
+    envStatus: Object.fromEntries([...new Set([
+      ...Object.keys(envValues), ...collectEnvRefs(config),
+    ])].map(name => [name, (process.env[name] ?? envValues[name]) ? "configured" : "missing"])),
     envExample: readText(ENV_EXAMPLE_PATH, ""),
     cacheSummary: summarizeCache(cache),
     stats: {
@@ -406,8 +430,7 @@ function serveStatic(reqPath, res) {
 
 function ensureSameOrigin(req, res, expectedHost) {
   const origin = String(req.headers.origin || "").trim();
-  if (!origin) return true;
-  if (origin === expectedHost) return true;
+  if (origin && expectedHost.includes(origin)) return true;
 
   sendJson(res, 403, {
     error: "Origin mismatch.",
@@ -455,7 +478,7 @@ function startDashboard({
   });
 
   const server = http.createServer(async (req, res) => {
-    const requestHost = req.headers.host || `${host}:${port}`;
+    const requestHost = String(req.headers.host || "").toLowerCase();
     const url = new URL(req.url, "http://dashboard.local");
     const serverAddress = server.address();
     const serverInfo = {
@@ -465,7 +488,12 @@ function startDashboard({
           ? serverAddress.port
           : port,
     };
-    const expectedOrigin = publicOrigin || `http://${requestHost}`;
+    // Build authority from server configuration, never an arbitrary Host header.
+    const localHosts = isLoopbackHost(host)
+      ? ["127.0.0.1", "localhost", "[::1]"] : [host.includes(":") ? `[${host}]` : host];
+    const authorities = localHosts.map(value => `${value}:${serverInfo.port}`.toLowerCase());
+    if (publicOrigin) authorities.push(new URL(publicOrigin).host.toLowerCase());
+    const expectedOrigin = publicOrigin ? [publicOrigin] : authorities.map(value => `http://${value}`);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader(
@@ -474,6 +502,10 @@ function startDashboard({
     );
 
     try {
+      if (!authorities.includes(requestHost)) {
+        sendJson(res, 403, { error: "Untrusted Host." }); return;
+      }
+      if (req.headers.origin && !ensureSameOrigin(req, res, expectedOrigin)) return;
       if (req.method === "GET" && url.pathname === "/api/health") {
         sendJson(res, 200, {
           ok: true,
@@ -494,6 +526,11 @@ function startDashboard({
 
       if (req.method === "POST" && url.pathname === "/api/login") {
         if (!ensureSameOrigin(req, res, expectedOrigin)) return;
+        const retryAfter = authManager.reserveLogin();
+        if (retryAfter) {
+          sendJson(res, 429, { error: "Too many login attempts. Try again later." }, { "Retry-After": String(retryAfter) });
+          return;
+        }
         const rawBody = await parseRequestBody(req);
         const parsed = JSON.parse(rawBody || "{}");
         const loginResult = authManager.login(
@@ -596,7 +633,8 @@ function startDashboard({
           return;
         }
 
-        if (req.headers["if-match"] && req.headers["if-match"] !== `"${revision(readText(paths.configPath, ""))}"`) {
+        if (!req.headers["if-match"]) { sendJson(res, 428, { error: "Configuration revision required. Reload settings first." }); return; }
+        if (req.headers["if-match"] !== `"${revision(readText(paths.configPath, ""))}"`) {
           sendJson(res, 412, { error: "Configuration changed elsewhere. Refresh before saving." }); return;
         }
 
@@ -643,6 +681,7 @@ function startDashboard({
         writeTextAtomic(
           paths.envPath,
           content.endsWith("\n") ? content : `${content}\n`,
+          0o600,
         );
         sendJson(res, 200, createStatePayload(serverInfo, authState, paths));
         return;

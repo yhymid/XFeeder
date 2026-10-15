@@ -14,13 +14,26 @@ function validateConfig(config, envPath) {
   if (!config || typeof config !== "object" || Array.isArray(config))
     return { errors: ["Config root must be a JSON object."], warnings: [] };
   const structural = validateConfigSchema(config);
-  if (structural.schemaVersion !== 1 || !structural.ok) return {
+  if (!structural.ok) return {
     errors: structural.errors.map(e => sanitizeText(e.path + ": " + e.message)),
     warnings: [],
     issues: structural.errors,
     schemaVersion: structural.schemaVersion,
     runtimeSupported: false,
   };
+  let runtimeConfig = config;
+  if (structural.schemaVersion === 2) {
+    try { runtimeConfig = toLegacyRuntime(config); }
+    catch (error) {
+      const issues = Array.isArray(error.errors) ? error.errors : [
+        { path: "$", code: "migration_failed", message: "Cannot convert v2 to runtime configuration" },
+      ];
+      return {
+        errors: issues.map(e => sanitizeText(e.path + ": " + e.message)),
+        warnings: [], issues, schemaVersion: 2, runtimeSupported: false,
+      };
+    }
+  }
   const env = { ...loadDotEnv(envPath, { reload: true }), ...process.env };
   const resolve = (value) => {
     if (typeof value === "string") {
@@ -34,7 +47,7 @@ function validateConfig(config, envPath) {
       );
     return value;
   };
-  const resolved = resolve(config);
+  const resolved = resolve(runtimeConfig);
   const channels = collectConfiguredChannels(resolved);
   const networkValidation = normalizeNetworkConfig(resolved.network);
   const errors = networkValidation.errors.map((error) => `${error.path}: ${error.message}`);
@@ -66,6 +79,9 @@ function validateConfig(config, envPath) {
   return {
     errors: errors.map(sanitizeText),
     warnings: [...unsupportedConfigSections(resolved), ...validateChannels(channels)].map(sanitizeText),
+    schemaVersion: structural.schemaVersion,
+    runtimeSupported: true,
+    issues: [],
   };
 }
 module.exports = { validateConfig };

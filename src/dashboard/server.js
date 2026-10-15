@@ -11,6 +11,8 @@ const {
 } = require("../core/channel-config");
 
 const { readActivity } = require("./activity");
+const { readActivityRuntime } = require("../core/activity-runtime");
+const { publicMetrics, readStructuredActivity } = require("./observability");
 const { validateConfig } = require("./validation");
 const { loadDotEnv } = require("../config-loader");
 const { sanitizeText } = require("../core/diagnostics");
@@ -628,13 +630,29 @@ function startDashboard({
 
       if (req.method === "GET" && url.pathname === "/api/activity") {
         if (!requireDashboardAccess(req, res, authManager)) return;
-        sendJson(
-          res,
-          200,
-          await readActivity(path.join(dataDir, "debug/terminal.txt"), {
-            limit: url.searchParams.get("limit"),
-          }),
-        );
+        // Prefer first-class events; retain a read-only legacy fallback for
+        // older workers which have not yet published structured activity.
+        const structured = readStructuredActivity(paths.configPath, {
+          limit: url.searchParams.get("limit"),
+        });
+        sendJson(res, 200, structured || await readActivity(
+          path.join(dataDir, "debug/terminal.txt"),
+          { limit: url.searchParams.get("limit") },
+        ));
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/metrics") {
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        const runtime = readActivityRuntime(paths.configPath);
+        if (!runtime) {
+          sendJson(res, 503, { available: false, error: "Worker metrics unavailable" });
+          return;
+        }
+        sendJson(res, 200, {
+          available: true,
+          updatedAt: runtime.updatedAt,
+          metrics: publicMetrics(runtime.metrics),
+        });
         return;
       }
 

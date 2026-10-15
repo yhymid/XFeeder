@@ -84,6 +84,7 @@ function createApp({
   network.ownedByApp = true;
   const events = createEventBus();
   const metrics = createMetricsRegistry(events, {
+    getNetworkMetrics: () => network.metricsSnapshot(),
     getGauges: () => {
       const schedules = queueRuntime?.getState()?.scheduleByCacheKey || {};
       return {

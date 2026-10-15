@@ -137,3 +137,50 @@ test("X3-32: direct projection helpers do not include raw token or webhook field
     },
   }), /./);
 });
+
+
+for (const [schema, initial] of [["legacy", legacy], ["v2", version2]]) {
+  test("X3-32: constrained settings PUT preserves unrelated credentials and rejects stale writes (" + schema + ")", async t => {
+    const d = await authed(t, initial);
+    const beforeText = fs.readFileSync(path.join(d.dir, "config.json"), "utf8");
+    const before = JSON.parse(beforeText);
+    const get = await d.request("/api/settings", { headers: d.headers });
+    assert.equal(get.status, 200);
+    const put = (general, headers = {}) => d.request("/api/settings", {
+      method: "PUT",
+      headers: { ...d.originHeaders, ...headers },
+      json: { general },
+    });
+    assert.equal((await put({ logs: false })).status, 428);
+    assert.equal((await put({ logs: false }, { "If-Match": '"old"' })).status, 412);
+    assert.equal((await put({ apiKey: secret }, { "If-Match": get.headers.etag })).status, 400);
+    assert.equal((await put({ maxConcurrentChannels: 9 }, { "If-Match": get.headers.etag })).status, 400);
+    assert.equal((await put({ logs: "false" }, { "If-Match": get.headers.etag })).status, 400);
+    assert.equal((await d.request("/api/settings", {
+      method: "PUT", headers: { ...d.headers, Origin: "https://attacker.example.invalid",
+        "If-Match": get.headers.etag },
+      json: { general: { logs: false } },
+    })).status, 403);
+    assert.equal(fs.readFileSync(path.join(d.dir, "config.json"), "utf8"), beforeText);
+
+    const updated = await put({ logs: false, expertDiagnostics: true,
+      maxConcurrentChannels: 3 }, { "If-Match": get.headers.etag });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.data.general.logs, false);
+    assert.equal(updated.data.general.expertDiagnostics, true);
+    assert.equal(updated.data.general.maxConcurrentChannels, 3);
+    assert.equal(updated.text.includes(secret), false);
+    assert.equal(updated.text.includes(envSecret), false);
+    const after = JSON.parse(fs.readFileSync(path.join(d.dir, "config.json"), "utf8"));
+    assert.deepEqual(after.channels, before.channels);
+    if (schema === "legacy") {
+      assert.deepEqual(after.Auth, before.Auth);
+      assert.deepEqual(after.Proxy, before.Proxy);
+      assert.equal(after.Settings.MaxConcurrentChannels, 3);
+    } else {
+      assert.deepEqual(after.integrations, before.integrations);
+      assert.equal(after.settings.maxConcurrentChannels, 3);
+    }
+    assert.equal((await put({ logs: true }, { "If-Match": get.headers.etag })).status, 412);
+  });
+}

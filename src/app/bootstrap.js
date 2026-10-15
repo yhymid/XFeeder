@@ -16,6 +16,7 @@ const {
   validateChannels,
 } = require("../core/channel-config");
 const { createFeedPipeline } = require("../core/feed-pipeline");
+const { createFeedCircuitBreaker } = require("../core/feed-circuit");
 const { expert, setExpertDebug, subscribeActivity } = require("../core/diagnostics");
 const { createEventBus } = require("../core/event-bus");
 const { createMetricsRegistry } = require("../core/metrics-registry");
@@ -95,6 +96,13 @@ function createApp({
   let unsubscribeActivity = () => {};
   let stopActivityRuntime = async () => {};
 
+  const feedCircuit = createFeedCircuitBreaker({
+    getFeedState: stateStore.feeds.getFeedState,
+    setFeedStateAsync: (url, value) => stateStore.feeds.setFeedStateAsync(
+      url, value, { persist: !dryRun },
+    ),
+  });
+
   const sources = createSourceAdapters({
     getDiscordHttpClient: () => getHttpClient(configPath, state.config),
   });
@@ -114,6 +122,7 @@ function createApp({
     getWithFallback,
     postWithFallback,
     builtInParsers: sources.feedParsers,
+    circuit: feedCircuit,
   });
 
   const { checkFeedsForChannel: runChannel } = createChannelRunner({
@@ -303,6 +312,9 @@ function createApp({
     cacheStore,
     events,
     metrics,
+    feedCircuit,
+    getFeedHealth: feedCircuit.status,
+    retryFeedNow: feedCircuit.retryNow,
     fetchFeed,
     checkFeedsForChannel,
     get channelStates() { return tasks.snapshot(); },

@@ -3,7 +3,8 @@ const axios = require("axios");
 const http = require("node:http");
 const https = require("node:https");
 const redirects = require("follow-redirects");
-const { finished } = require("node:stream");
+const { finished, Transform } = require("node:stream");
+const { applyPublicOnlyPolicy } = require("./outbound-policy");
 const { DownloadStream } = require("./download-stream");
 const { manageIncomingDownload } = require("./incoming-download");
 const { getNetwork } = require("./service");
@@ -98,6 +99,27 @@ function createTransport(config, network, signal, lifecycle) {
   };
 }
 
+function limitResponseStream(source, maxBytes, config) {
+  let seen = 0;
+  const limiter = new Transform({
+    transform(chunk, encoding, callback) {
+      seen += Buffer.isBuffer(chunk)
+        ? chunk.length
+        : Buffer.byteLength(chunk, typeof encoding === "string" ? encoding : undefined);
+      if (seen > maxBytes) {
+        callback(new axios.AxiosError(
+          `Response exceeded maxResponseBytes (${maxBytes})`,
+          "ERR_RESPONSE_TOO_LARGE", config,
+        ));
+      } else callback(null, chunk);
+    },
+  });
+  source.once("error", (error) => limiter.destroy(error));
+  limiter.once("close", () => source.destroy());
+  source.pipe(limiter);
+  return limiter;
+}
+
 function validateTimeoutOptions(config) {
   for (const key of ["setupTimeoutMs", "idleTimeoutMs", "deadlineMs"]) {
     const value = config[key];
@@ -123,6 +145,17 @@ async function networkAdapter(config) {
     );
   validateTimeoutOptions(config);
   const network = getNetwork();
+  const protectedConfig = network.config.outboundPolicy === "public-only"
+    ? applyPublicOnlyPolicy(config)
+    : config;
+  const responseLimit = network.config.maxResponseBytes;
+  // Axios caps buffered responses after decompression, but streamed responses
+  // need an explicit decoded-byte guard at the returned stream boundary.
+  const originalMax = protectedConfig.maxContentLength;
+  const maxContentLength = responseLimit === null
+    ? originalMax
+    : (Number.isSafeInteger(originalMax) && originalMax >= 0
+        ? Math.min(originalMax, responseLimit) : responseLimit);
   const deadline = config.deadlineMs ?? network.config.requestDeadlineMs;
   const op = network.operation(config.signal, { localAbort: deadline > 0 });
   let release, deadlineTimer, detachFinished;
@@ -170,13 +203,17 @@ async function networkAdapter(config) {
     lifecycle.uploadShaped = config.data == null ||
       await reserveUpload(network, config, op.signal);
     const response = await originalAdapter({
-      ...config,
+      ...protectedConfig,
+      maxContentLength,
       signal: lifecycle.managedCancellation ? undefined : op.signal,
       timeout: 0,
-      transport: createTransport(config, network, op.signal, lifecycle),
+      transport: createTransport(protectedConfig, network, op.signal, lifecycle),
     });
     response.config = config;
     if (response.data && typeof response.data.pipe === "function") {
+      if (responseLimit !== null) {
+        response.data = limitResponseStream(response.data, maxContentLength, config);
+      }
       detachFinished = finished(response.data, cleanup);
       response.data.on("error", () => {});
     } else cleanup();

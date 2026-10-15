@@ -19,8 +19,8 @@ Host/Origin validation:
 | Route | Success | Meaning |
 | --- | --- | --- |
 | `GET /api/health` | 200 | Existing backwards-compatible dashboard endpoint; unchanged. |
-| `GET /api/live` | 200 | Dashboard HTTP event loop is responding; independent of worker. |
-| `GET /api/ready` | 200 or 503 | Worker readiness; 503 while startup/shutdown, disconnected/stale telemetry, invalid/unapplied network config, no runnable channels or unsafe cache. |
+| `GET /api/health/live` (alias `/api/live`) | 200 | Dashboard HTTP event loop is responding; independent of worker. |
+| `GET /api/health/ready` (alias `/api/ready`) | 200 or 503 | Worker readiness; 503 while startup/shutdown, disconnected/stale telemetry, invalid/unapplied network config, no runnable channels or unsafe cache. |
 
 The new endpoints return only `ok`, `service`, `status`. They are intentionally
 unauthenticated for orchestrator probes, like `/api/health`, but remain
@@ -54,8 +54,8 @@ It does not promise that the next external request will succeed.
 With dashboard running on localhost port 3000:
 
 ```sh
-curl -fsS http://127.0.0.1:3000/api/live
-curl -fsS http://127.0.0.1:3000/api/ready
+curl -fsS http://127.0.0.1:3000/api/health/live
+curl -fsS http://127.0.0.1:3000/api/health/ready
 ```
 
 A service manager may use `/api/live` to monitor the dashboard container;

@@ -181,3 +181,20 @@ test("X3 observability: hostile getters cannot crash delivery through EventBus",
   assert.equal(bus.size, 1);
   assert.equal(bus.snapshot()[0].destination, "webhook");
 });
+
+test("X3-25: one failed fetch plus channel handling failure counts one fetch error", () => {
+  const bus = createEventBus();
+  const registry = createMetricsRegistry(bus);
+  bus.fromExpert("feed.download.complete", {
+    ok: false, url: "https://feeds.example.invalid/rss", status: 503,
+  });
+  bus.fromExpert("channel.feed.failed", {
+    channel: "channel one", url: "https://feeds.example.invalid/rss",
+    error: new Error("HTTP 503"),
+  });
+  const snapshot = registry.snapshot();
+  assert.equal(snapshot.counters.feed_fetch_total, 1);
+  assert.equal(snapshot.counters.feed_fetch_error_total, 1);
+  assert.equal(bus.snapshot().at(-1).type, "feed.processing.failed");
+  registry.close();
+});

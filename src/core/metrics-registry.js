@@ -12,12 +12,48 @@ const DURATION_NAMES = Object.freeze([
   "feed_fetch_duration_ms", "channel_run_duration_ms", "delivery_duration_ms",
 ]);
 
+const PROFILES = new Set(["potato", "low", "medium", "high", "very-high", "unlimited", "custom"]);
+
+// A frozen, finite field schema shared between the worker snapshot and the
+// dashboard sanitizer. Never export URL/host labels or browser-byte estimates.
+function networkMetricSnapshot(raw) {
+  if (!raw || typeof raw !== "object") return { available: false };
+  const nonnegative = value => Number.isFinite(value) && value >= 0
+    ? Math.min(value, Number.MAX_SAFE_INTEGER) : 0;
+  const limit = value => Number.isFinite(value) && value > 0
+    ? Math.min(value, Number.MAX_SAFE_INTEGER) : null;
+  return {
+    available: true,
+    downloadedBytes: nonnegative(raw.downloadedBytes),
+    uploadedBytes: nonnegative(raw.uploadedBytes),
+    unshapedUploadBytes: nonnegative(raw.unshapedUploadBytes),
+    downloadBytesPerSecond: nonnegative(raw.downloadBytesPerSecond),
+    uploadBytesPerSecond: nonnegative(raw.uploadBytesPerSecond),
+    rateWindowSeconds: nonnegative(raw.rateWindowSeconds),
+    activeHttpRequests: nonnegative(raw.activeHttpRequests),
+    waitingHttpRequests: nonnegative(raw.waitingHttpRequests),
+    activeScraplingTasks: nonnegative(raw.activeScraplingTasks),
+    waitingScraplingTasks: nonnegative(raw.waitingScraplingTasks),
+    downloadLimitBytesPerSecond: limit(raw.downloadLimitBytesPerSecond),
+    uploadLimitBytesPerSecond: limit(raw.uploadLimitBytesPerSecond),
+    bandwidthProfile: PROFILES.has(raw.profile || raw.bandwidthProfile)
+      ? (raw.profile || raw.bandwidthProfile) : "unlimited",
+    friendlyMode: raw.friendlyMode === true,
+    scraplingBytes: {
+      status: "unavailable", downloadedBytes: null, uploadedBytes: null,
+    },
+  };
+}
+
 function durationSeries() {
   return { count: 0, sum: 0, min: null, max: null,
     buckets: Object.fromEntries([...BUCKETS.map(String), "+Inf"].map(bound => [bound, 0])) };
 }
 
-function createMetricsRegistry(bus, { getGauges = () => ({}) } = {}) {
+function createMetricsRegistry(bus, {
+  getGauges = () => ({}),
+  getNetworkMetrics = () => null,
+} = {}) {
   const counters = Object.fromEntries(COUNTER_NAMES.map(name => [name, 0]));
   const delivery = {
     webhook: { success: 0, error: 0 },
@@ -94,6 +130,10 @@ function createMetricsRegistry(bus, { getGauges = () => ({}) } = {}) {
         webhook: { ...delivery.webhook }, telegram: { ...delivery.telegram },
       } },
       gauges: resultGauges,
+      network: (() => {
+        try { return networkMetricSnapshot(getNetworkMetrics()); }
+        catch { return { available: false }; }
+      })(),
       durations: Object.fromEntries(
         Object.entries(durations).map(([name, series]) => [name, {
           ...series, buckets: { ...series.buckets },
@@ -104,4 +144,6 @@ function createMetricsRegistry(bus, { getGauges = () => ({}) } = {}) {
   return Object.freeze({ snapshot, close: unsubscribe });
 }
 
-module.exports = { createMetricsRegistry, BUCKETS, COUNTER_NAMES, DURATION_NAMES };
+module.exports = {
+  createMetricsRegistry, networkMetricSnapshot, BUCKETS, COUNTER_NAMES, DURATION_NAMES,
+};

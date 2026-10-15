@@ -7,6 +7,7 @@ const { getRetryAfterMs } = require("../client");
 const { createLogger } = require("../core/logger");
 const logger = createLogger("Scheduler");
 const { errorRecord } = require("../core/errors");
+const { queueKey, nextChannelIndex, validateQueueDelay } = require("./scheduler-policy");
 
 function normalizeChannels(getChannels) {
   if (typeof getChannels === "function") {
@@ -67,6 +68,7 @@ function startChannelQueue({
   delayBetweenChannels = 30000,
   beforeCycle,
 } = {}) {
+  delayBetweenChannels = validateQueueDelay(delayBetweenChannels);
   const initialChannels = normalizeChannels(getChannels);
   if (initialChannels.length === 0) {
     logger.error("No valid channels configured; queue not started");
@@ -77,6 +79,7 @@ function startChannelQueue({
   const lastCheckByCacheKey = new Map();
   const scheduleByCacheKey = new Map();
   let currentIndex = 0;
+  let nextChannelKey = null;
   let timer = null;
   let stopped = false;
 
@@ -101,22 +104,23 @@ function startChannelQueue({
       return;
     }
 
-    if (currentIndex >= channels.length) {
-      currentIndex = 0;
-    }
+    // Prefer the intended next channel's identity over its former position.
+    // A hot reload may insert/reorder channels before our next rotation.
+    currentIndex = nextChannelIndex(channels, nextChannelKey, currentIndex);
 
     const channel = channels[currentIndex];
     if (!channel) {
       expert("queue.skip", { index: currentIndex + 1, reason: "missing channel entry" });
       currentIndex = (currentIndex + 1) % channels.length;
-      timer = setTimeout(processNextChannel, delayBetweenChannels);
+      nextChannelKey = queueKey(channels[currentIndex], currentIndex);
+      if (!stopped) timer = setTimeout(processNextChannel, delayBetweenChannels);
       return;
     }
 
     const now = Date.now();
     const minutes = channel.TimeChecker || 30;
     const minDelay = minutes * 60 * 1000;
-    const cacheKey = channel.cacheKey || `${currentIndex}`;
+    const cacheKey = queueKey(channel, currentIndex);
     const schedule = scheduleByCacheKey.get(cacheKey) || {
       lastAttemptAt: null, lastSuccessAt: null, nextRunAt: 0, failures: 0,
     };
@@ -167,6 +171,7 @@ function startChannelQueue({
     }
 
     currentIndex = (currentIndex + 1) % channels.length;
+    nextChannelKey = queueKey(channels[currentIndex], currentIndex);
     if (!stopped) timer = setTimeout(processNextChannel, delayBetweenChannels);
   }
 
@@ -184,6 +189,7 @@ function startChannelQueue({
       const channels = normalizeChannels(getChannels);
       return {
         currentIndex,
+        nextChannelKey,
         totalChannels: channels.length,
         lastCheckByCacheKey: Object.fromEntries(lastCheckByCacheKey.entries()),
         scheduleByCacheKey: Object.fromEntries([...scheduleByCacheKey].map(([key, state]) => [key, { ...state }])),

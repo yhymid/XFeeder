@@ -5,16 +5,20 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/xfeeder
+WorkingDirectory=/var/lib/xfeeder
 ExecStart=/usr/bin/node /opt/xfeeder/dashboard.js
-Restart=always
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGTERM
+StateDirectory=xfeeder
+UMask=0077
 User=xfeeder
 Group=xfeeder
 Environment=NODE_ENV=production
 Environment=XFEEDER_DASHBOARD_HOST=127.0.0.1
 Environment=XFEEDER_DASHBOARD_PORT=3000
-Environment=XFEEDER_DASHBOARD_PASSWORD=CHANGE_ME
+EnvironmentFile=/etc/xfeeder/dashboard.env
 
 [Install]
 WantedBy=multi-user.target

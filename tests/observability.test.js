@@ -164,3 +164,20 @@ test("X3-25: queue and runner completion represent one channel duration", () => 
   assert.equal(metrics.snapshot().durations.channel_run_duration_ms.sum, 800);
   metrics.close();
 });
+
+test("X3 observability: hostile getters cannot crash delivery through EventBus", () => {
+  const bus = createEventBus();
+  const exception = new Error("synthetic getter failure");
+  const hostile = {};
+  Object.defineProperty(hostile, "channel", { get() { throw exception; } });
+  assert.doesNotThrow(() => bus.emit("delivery.sent", hostile));
+  assert.equal(bus.size, 0, "broken event must not be persisted");
+  const accessorError = {};
+  Object.defineProperty(accessorError, "code", { get() { throw exception; } });
+  assert.doesNotThrow(() => bus.fromExpert("delivery.failed", { error: accessorError }));
+  assert.equal(bus.size, 0);
+  const next = bus.emit("delivery.sent", { channel: "safe", target: "webhook" });
+  assert.equal(next.id, 1, "discarded records must not advance event sequence");
+  assert.equal(bus.size, 1);
+  assert.equal(bus.snapshot()[0].destination, "webhook");
+});

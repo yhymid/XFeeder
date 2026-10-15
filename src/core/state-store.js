@@ -85,6 +85,9 @@ function createStateStore({
   function setFeedSnapshotInMemory(feedUrl, validator, items) {
     const old = getFeedState(feedUrl) || {};
     const next = {
+      // Keep X3-23 health/cooldown metadata when an HTTP 200 replaces a
+      // snapshot. Feed content and delivery state are still independent.
+      ...old,
       etag: String(validator?.etag || ""),
       lastModified: String(validator?.lastModified || ""),
       items: Array.isArray(items) ? items : [],

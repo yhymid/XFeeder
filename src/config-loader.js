@@ -5,6 +5,7 @@ const { sanitizeText } = require("./core/diagnostics");
 const fs = require("fs");
 const path = require("path");
 const { requireNetworkConfig } = require("./network/config");
+const { assertRuntimeConfigSchema } = require("./core/config-schema");
 
 let envCache = {
   filePath: null,
@@ -113,7 +114,9 @@ function loadConfig(configPath = "./config.json") {
     ...process.env,
   };
   const raw = fs.readFileSync(resolvedConfigPath, "utf8");
-  const config = resolveEnv(JSON.parse(raw), envMap);
+  const parsed = JSON.parse(raw);
+  assertRuntimeConfigSchema(parsed);
+  const config = resolveEnv(parsed, envMap);
   requireNetworkConfig(config.network);
   const concurrency = config?.Settings?.MaxConcurrentChannels;
   if (concurrency !== undefined && concurrency !== null &&

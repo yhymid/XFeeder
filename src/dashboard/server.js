@@ -227,9 +227,13 @@ function buildExpiredCookie(name, secure = false) {
   return buildCookie(name, "", { maxAgeSeconds: 0, secure });
 }
 
-function createAuthManager({ host, secure = false }) {
+function createAuthManager({ host, secure = false, publicOrigin = "" }) {
   const password = String(process.env.XFEEDER_DASHBOARD_PASSWORD || "").trim();
   const loopbackOnly = isLoopbackHost(host);
+  // Binding to loopback does not make a public reverse proxy private.
+  // A non-loopback public origin can expose the backend through that proxy.
+  const publicHost = publicOrigin ? new URL(publicOrigin).hostname.replace(/^\[|\]$/g, "") : "";
+  const publiclyExposed = Boolean(publicHost && !isLoopbackHost(publicHost));
   const sessionHours = Number(process.env.XFEEDER_DASHBOARD_SESSION_TTL_HOURS);
   const ttlMs =
     Number.isFinite(sessionHours) && sessionHours > 0
@@ -249,6 +253,11 @@ function createAuthManager({ host, secure = false }) {
   if (!loopbackOnly && !password) {
     throw new Error(
       "Dashboard is binding to a non-loopback host. Set XFEEDER_DASHBOARD_PASSWORD before exposing it outside localhost.",
+    );
+  }
+  if (publiclyExposed && !password) {
+    throw new Error(
+      "Dashboard public origin is non-loopback. Set XFEEDER_DASHBOARD_PASSWORD before exposing it through a reverse proxy.",
     );
   }
 
@@ -474,6 +483,7 @@ function startDashboard({
   };
   const authManager = createAuthManager({
     host,
+    publicOrigin,
     secure: publicOrigin.startsWith("https://"),
   });
 

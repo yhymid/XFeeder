@@ -1,6 +1,7 @@
 "use strict";
 
-const { SEND_DELAY_MS, getCacheKey, pushCache } = require("../core/normalize");
+const { SEND_DELAY_MS, pushCache } = require("../core/normalize");
+const { normalizeEntries } = require("../core/normalized-entry");
 const { getChannelLabel, hasTelegramDeliveryTarget } = require("../core/channel-config");
 const { context } = require("../network/context");
 const { isCancelled, throwIfAborted, sleep: abortableSleep } = require("../network/abort");
@@ -215,7 +216,7 @@ function createChannelRunner({
     if (channelConfig.Discord) {
       try {
         expert("discord.source.begin", { channel: channelLabel });
-        const discordMsgs = await parseDiscord(channelConfig.Discord);
+        const discordMsgs = normalizeEntries(await parseDiscord(channelConfig.Discord), { sourceType: "discord" });
         expert("discord.source.complete", { channel: channelLabel, itemCount: discordMsgs.length });
         const targetConfig = resolveDiscordTargets(channelConfig);
         const sourceBucket = "discord";
@@ -233,7 +234,7 @@ function createChannelRunner({
           sourceBucket,
           discordMsgs,
           targetConfig,
-          (entry) => getCacheKey(entry) || entry?.guid || ""
+          (entry) => entry.identity
         );
         expert("discord.source.pending", {
           channel: channelLabel,
@@ -247,7 +248,7 @@ function createChannelRunner({
           const successfulByBucket = {};
 
           for (const entry of toSend.reverse()) {
-            const entryKey = getCacheKey(entry) || entry?.guid || "";
+            const entryKey = entry.identity;
             const pendingTargets = getPendingTargets(channelCache, sourceBucket, entryKey, targetConfig);
 
             for (const target of pendingTargets) {
@@ -258,7 +259,7 @@ function createChannelRunner({
                   contextLabel: "Discord source",
                   target,
                   targetConfig,
-                  entry,
+                  entry: entry.raw,
                   sendMessage,
                   sendTelegramMessage,
                   dryRun,
@@ -288,7 +289,7 @@ function createChannelRunner({
             sourceBucket,
             targetConfig,
             toSend,
-            (entry) => getCacheKey(entry) || entry?.guid || ""
+            (entry) => entry.identity
           );
           console.log(
             `[Channel ${index + 1}] ${channelLabel}: Discord source completed ${completed}/${toSend.length} entries. Partial: ${partial}.`
@@ -307,7 +308,7 @@ function createChannelRunner({
         throwIfAborted(context().signal);
         try {
           expert("channel.feed.begin", { index: index + 1, channel: channelLabel, url: feedUrl });
-          const items = await fetchFeed(feedUrl);
+          const items = normalizeEntries(await fetchFeed(feedUrl));
           expert("channel.feed.fetched", { index: index + 1, channel: channelLabel, url: feedUrl, itemCount: items.length });
           if (!items.length) {
             expert("channel.feed.empty", { index: index + 1, channel: channelLabel, url: feedUrl });
@@ -327,7 +328,7 @@ function createChannelRunner({
             feedUrl,
             items,
             targetConfig,
-            (entry) => getCacheKey(entry)
+            (entry) => entry.identity
           );
           expert("channel.feed.pending", {
             index: index + 1,
@@ -343,7 +344,7 @@ function createChannelRunner({
             const successfulByBucket = {};
 
             for (const entry of toSend.reverse()) {
-              const entryKey = getCacheKey(entry);
+              const entryKey = entry.identity;
               const pendingTargets = getPendingTargets(channelCache, feedUrl, entryKey, targetConfig);
 
               for (const target of pendingTargets) {
@@ -354,7 +355,7 @@ function createChannelRunner({
                     contextLabel: feedUrl,
                     target,
                     targetConfig,
-                    entry,
+                    entry: entry.raw,
                     sendMessage,
                     sendTelegramMessage,
                     dryRun,
@@ -384,7 +385,7 @@ function createChannelRunner({
               feedUrl,
               targetConfig,
               toSend,
-              (entry) => getCacheKey(entry)
+              (entry) => entry.identity
             );
             console.log(
               `[Channel ${index + 1}] ${channelLabel}: ${sanitizeUrl(feedUrl)} completed ${completed}/${toSend.length} entries. Partial: ${partial}.`

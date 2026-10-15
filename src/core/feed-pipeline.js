@@ -75,7 +75,7 @@ function createFeedPipeline({
       hasEtag: Boolean(validator?.etag),
       hasLastModified: Boolean(validator?.lastModified),
     });
-    const saveSnapshot = (items, headers = {}) => {
+    const saveSnapshot = async (items, headers = {}) => {
       if (typeof setFeedSnapshot !== "function" || !dl?.ok || dl.status === 304) return;
       const responseHeaders = headers || {};
       const header = (name) => {
@@ -83,7 +83,7 @@ function createFeedPipeline({
         return key ? responseHeaders[key] : "";
       };
       throwIfAborted(signal);
-      setFeedSnapshot(url, {
+      await setFeedSnapshot(url, {
         etag: header("etag"),
         lastModified: header("last-modified"),
       }, items);
@@ -160,12 +160,12 @@ function createFeedPipeline({
           if (Array.isArray(parsed) && parsed.length) {
             logger.info("Scrapling HTML parsed", { url, count: parsed.length });
             expert("feed.parsed", { url, parser: "scrapling-html", itemCount: parsed.length, durationMs: Date.now() - startedAt });
-            saveSnapshot(parsed, dl.headers);
+            await saveSnapshot(parsed, dl.headers);
             return parsed;
           }
         }
       } catch (err) {
-        if (isCancelled(err) || signal?.aborted) throw err;
+        if (err?.code === "CACHE_UNSAFE" || isCancelled(err) || signal?.aborted) throw err;
         logger.warn("Scrapling HTML parser failed", { url, failure: errorRecord(err, { context: "parser" }) });
         expert("feed.parser.failed", { url, parser: "scrapling-html", error: err });
       }
@@ -181,12 +181,12 @@ function createFeedPipeline({
         if (parsed && parsed.length) {
           logger.info("Feed parsed", { url, parser: parserName, count: parsed.length });
           expert("feed.parsed", { url, parser: parserName, itemCount: parsed.length, durationMs: Date.now() - startedAt });
-          saveSnapshot(parsed, dl.headers);
+          await saveSnapshot(parsed, dl.headers);
           return parsed;
         }
         expert("feed.parser.no_match", { url, parser: parserName });
       } catch (err) {
-        if (isCancelled(err) || signal?.aborted) throw err;
+        if (err?.code === "CACHE_UNSAFE" || isCancelled(err) || signal?.aborted) throw err;
         logger.warn("Feed parser failed", { parser: parserName, failure: errorRecord(err, { context: "parser" }) });
         expert("feed.parser.failed", { url, parser: parserName, error: err });
       }
@@ -212,12 +212,12 @@ function createFeedPipeline({
         if (items.length) {
           logger.info("Regex RSS parsed", { url, count: items.length });
           expert("feed.parsed", { url, parser: "rss-regex", itemCount: items.length, durationMs: Date.now() - startedAt });
-          saveSnapshot(items, dl.headers);
+          await saveSnapshot(items, dl.headers);
           return items;
         }
       }
     } catch (err) {
-        if (isCancelled(err) || signal?.aborted) throw err;
+        if (err?.code === "CACHE_UNSAFE" || isCancelled(err) || signal?.aborted) throw err;
       logger.warn("Regex RSS parser failed", { url, failure: errorRecord(err, { context: "parser" }) });
       expert("feed.parser.failed", { url, parser: "rss-regex", error: err });
     }
@@ -238,12 +238,12 @@ function createFeedPipeline({
           }));
           logger.info("RSS parser completed", { url, count: items.length });
           expert("feed.parsed", { url, parser: "rss-parser", itemCount: items.length, durationMs: Date.now() - startedAt });
-          saveSnapshot(items, dl.headers);
+          await saveSnapshot(items, dl.headers);
           return items;
         }
       }
     } catch (err) {
-        if (isCancelled(err) || signal?.aborted) throw err;
+        if (err?.code === "CACHE_UNSAFE" || isCancelled(err) || signal?.aborted) throw err;
       logger.warn("RSS parser failed", { url, failure: errorRecord(err, { context: "parser" }) });
       expert("feed.parser.failed", { url, parser: "rss-parser", error: err });
     }

@@ -3,7 +3,8 @@
 
 const axios = require("axios");
 const { finished } = require("node:stream");
-const { networkAdapter, validateTimeoutOptions } = require("./network/http-adapter");
+const { validateTimeoutOptions } = require("./network/http-adapter");
+const { createManagedClient } = require("./network/http-client");
 const { getNetwork } = require("./network/service");
 const { isCancelled } = require("./network/abort");
 const { HttpProxyAgent } = require("http-proxy-agent");
@@ -55,7 +56,6 @@ function createHttpClient(settings) {
   const agentConfig = {
     timeout: 15000,
     xfeederDefaultTimeout: 15000,
-    adapter: networkAdapter,
     headers: {
       ...BASE_HEADERS,
     },
@@ -70,7 +70,7 @@ function createHttpClient(settings) {
     console.log("[HTTP] Proxy disabled.");
   }
 
-  return axios.create(agentConfig);
+  return createManagedClient(agentConfig);
 }
 
 function getHttpClient(configPath = "./config.json", configOverride = null) {

@@ -19,6 +19,7 @@ const { sanitizeText } = require("../core/diagnostics");
 const { normalizeNetworkConfig } = require("../network/config");
 const { readNetworkSettings, revision } = require("./network");
 const { workerReady } = require("./health");
+const { secretStatus, replaceSecretLine, SECRET_KEY, RESERVED } = require("./secrets");
 
 const { version: appVersion } = require("../../package.json");
 
@@ -719,6 +720,59 @@ function startDashboard({
           `${JSON.stringify(parsed, null, 2)}\n`,
         );
         sendJson(res, 200, createStatePayload(serverInfo, authState, paths));
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/secrets/status") {
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        const envContent = readText(paths.envPath, "");
+        sendJson(res, 200, {
+          secrets: secretStatus(readJson(paths.configPath, {}), envContent),
+          revision: revision(envContent),
+        });
+        return;
+      }
+
+      if (req.method === "PUT" && url.pathname.startsWith("/api/secrets/")) {
+        if (!ensureSameOrigin(req, res, expectedOrigin)) return;
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        const name = decodeURIComponent(url.pathname.slice("/api/secrets/".length));
+        if (!SECRET_KEY.test(name) || RESERVED.test(name)) {
+          sendJson(res, 400, { error: "Invalid or reserved secret name" });
+          return;
+        }
+        const config = readJson(paths.configPath, {});
+        const existing = readText(paths.envPath, "");
+        const status = secretStatus(config, existing);
+        if (!Object.hasOwn(status, name)) {
+          sendJson(res, 404, { error: "Secret must be referenced by config or declared in .env" });
+          return;
+        }
+        if (!req.headers["if-match"]) {
+          sendJson(res, 428, { error: "Environment revision required" });
+          return;
+        }
+        if (req.headers["if-match"] !== `"${revision(existing)}"`) {
+          sendJson(res, 412, { error: "Environment changed since last refresh" });
+          return;
+        }
+        const body = JSON.parse(await parseRequestBody(req) || "{}");
+        if (typeof body?.value !== "string") {
+          sendJson(res, 400, { error: "Replacement secret must be a string" });
+          return;
+        }
+        let updated;
+        try { updated = replaceSecretLine(existing, name, body.value); }
+        catch {
+          sendJson(res, 400, { error: "Unsafe or invalid secret value" });
+          return;
+        }
+        writeTextAtomic(paths.envPath, updated, 0o600);
+        sendJson(res, 200, {
+          ok: true,
+          secrets: secretStatus(config, updated),
+          revision: revision(updated),
+        });
         return;
       }
 

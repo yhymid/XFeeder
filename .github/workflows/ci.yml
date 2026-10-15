@@ -30,6 +30,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: npm run deps:check
       - run: npm test
       - run: node main.js --check-config --config tests/fixtures/config/channel-groups.json
       - run: npm audit --audit-level=high
@@ -52,6 +53,7 @@ jobs:
         with:
           python-version: "3.14"
       - run: npm ci
+      - run: npm run deps:check
       # The installer verifies browser launch but deliberately does not install
       # OS packages. Bootstrap its pinned driver before installing those packages.
       - name: Install pinned driver and browser system dependencies

@@ -23,7 +23,8 @@ test("X3 dependencies: caret range respects 0.x minor boundaries", () => {
   assert.equal(withinCaret("^1.12.2", "2.0.0"), false);
   assert.equal(withinCaret("^0.6.2", "0.6.8"), true);
   assert.equal(withinCaret("^0.6.2", "0.7.0"), false);
-  assert.equal(withinCaret("^0.0.4", "0.0.5"), true);
+  assert.equal(withinCaret("^0.0.4", "0.0.4"), true);
+  assert.equal(withinCaret("^0.0.4", "0.0.5"), false);
   assert.equal(withinCaret("1.16.0", "1.16.0"), true);
   assert.equal(withinCaret("1.16.0", "1.16.1"), false);
 });

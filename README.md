@@ -8,7 +8,7 @@ XFeeder provides source adapters, destination-specific delivery history, rate li
 
 ## Downloadable alpha build
 
-For Linux/Arch/CachyOS, download the **runtime .tar.gz** from the [3.0.0-alpha.0 prerelease](https://github.com/yhymid/XFeeder/releases/tag/v3.0.0-alpha.0) once it is published. Extract it outside your existing installation, then follow [Physical machine alpha testing](docs/alpha-testing.md). An Alpha release is generated only after CI tests and a separate unpacked-runtime smoke test pass.
+For Linux/Arch/CachyOS, download the **runtime .tar.gz** from the [3.0.0-alpha.0 prerelease](https://github.com/yhymid/XFeeder/releases/tag/v3.0.0-alpha.0) once it is published. Extract it outside your existing installation, then follow the [Public Alpha Testing Guide](docs/alpha-testing.md). An Alpha release is generated only after CI tests and a separate unpacked-runtime smoke test pass.
 
 ## Quick start
 

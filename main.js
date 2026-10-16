@@ -1,4 +1,4 @@
-// main.js - XFeeder 2.2.0 Main Application
+// XFeeder application entrypoint
 "use strict";
 
 const { installTerminalLog, setTerminalLogEnabled } = require("./src/core/terminal-log");

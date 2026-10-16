@@ -87,7 +87,7 @@ jobs:
           test "$(node -p 'require("./package.json").version')" = "3.0.0-alpha.0"
           npm run release:alpha-check
           node scripts/package-release.cjs HEAD release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz
-          sha256sum release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz > release-artifacts/SHA256SUMS.txt
+          (cd release-artifacts && sha256sum XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz > SHA256SUMS.txt)
       - name: Test from unpacked artifact, not checkout
         run: |
           mkdir -p "$RUNNER_TEMP/alpha-smoke"

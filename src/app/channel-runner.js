@@ -7,6 +7,8 @@ const { getChannelLabel, hasTelegramDeliveryTarget } = require("../core/channel-
 const { context } = require("../network/context");
 const { isCancelled, throwIfAborted, sleep: abortableSleep } = require("../network/abort");
 const { expert, sanitizeText, sanitizeUrl } = require("../core/diagnostics");
+const { createLogger } = require("../core/logger");
+const persistLogger = createLogger("Delivery cache");
 
 function hasWebhookTarget(webhookUrl) {
   return typeof webhookUrl === "string" && webhookUrl.trim().length > 0;
@@ -181,6 +183,16 @@ function createChannelRunner({
 } = {}) {
   const destinationAdapters = createDestinationAdapters({ sendMessage, sendTelegramMessage });
 
+  async function persistDeliveryState() {
+    const startedAt = Date.now();
+    await cacheStore.save();
+    const durationMs = Date.now() - startedAt;
+    expert("delivery.cache.persisted", { durationMs });
+    if (durationMs >= 1000) {
+      persistLogger.warn("Delivery cache write was slow", { durationMs });
+    }
+  }
+
   async function checkFeedsForChannel(index, channelConfig) {
     throwIfAborted(context().signal);
     const startedAt = Date.now();
@@ -256,7 +268,7 @@ function createChannelRunner({
                     successfulByBucket[bucketName] = [];
                   }
                   successfulByBucket[bucketName].push(entryKey);
-                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) await cacheStore.save();
+                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) await persistDeliveryState();
                 }
               } finally {
                 if (!dryRun) await abortableSleep(SEND_DELAY_MS, context().signal);
@@ -266,7 +278,7 @@ function createChannelRunner({
 
           const changed = applySuccessfulDeliveries(channelCache, successfulByBucket);
           if (changed && !dryRun) {
-            await cacheStore.save();
+            await persistDeliveryState();
           }
 
           const { completed, partial } = summarizeEntryCompletion(
@@ -351,7 +363,7 @@ function createChannelRunner({
                       successfulByBucket[bucketName] = [];
                     }
                     successfulByBucket[bucketName].push(entryKey);
-                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) await cacheStore.save();
+                  if (applySuccessfulDeliveries(channelCache, { [bucketName]: [entryKey] }) && !dryRun) await persistDeliveryState();
                   }
                 } finally {
                   if (!dryRun) await abortableSleep(SEND_DELAY_MS, context().signal);
@@ -361,7 +373,7 @@ function createChannelRunner({
 
             const changed = applySuccessfulDeliveries(channelCache, successfulByBucket);
             if (changed && !dryRun) {
-              await cacheStore.save();
+              await persistDeliveryState();
             }
 
             const { completed, partial } = summarizeEntryCompletion(

@@ -2,9 +2,13 @@
 
 **XFeeder 3.0 alpha prerelease branch** — a modular RSS, Atom, JSON Feed, YouTube and Discord-source monitor that delivers new entries to Discord webhooks and Telegram.
 
-> **Release status:** This is the `3.0-alpha` testing branch (`3.0.0-alpha.0`), not a stable production release. Do not deploy over live state without a backup. The `3.0-dev` and `main` branches are unchanged.
+> **Release status:** `3.0-alpha` is the active 3.0 development/testing branch (`3.0.0-alpha.0`). `3.0-dev` is complete, while `3.0-beta`, `3.0-rc` and stable `3.0` are future stages. This is not a production release. Back up configuration and state before testing.
 
 XFeeder provides source adapters, destination-specific delivery history, rate limiting, an optional Scrapling browser fallback and a local operations dashboard. It supports an existing legacy configuration and gradual migration to the newer schema.
+
+## Alpha builds and community testing
+
+The [public alpha testing guide](docs/alpha-testing.md) covers clean installation on Linux/Arch/CachyOS, backups, checksums and reporting regressions. The existing [3.0.0-alpha.0 prerelease](https://github.com/yhymid/XFeeder/releases/tag/v3.0.0-alpha.0) is a **historical build** from the earlier development line, not necessarily the current `3.0-alpha` HEAD. New commits on `3.0-alpha` are tested by CI, which creates a downloadable Linux runtime **workflow artifact** after Node and Scrapling tests pass; it does not silently overwrite or retag an existing public release.
 
 ## Quick start
 
@@ -28,7 +32,7 @@ npm start
 npm run dashboard
 ```
 
-The dashboard listens on `http://127.0.0.1:3000` by default. A live one-off delivery can be invoked with `npm run start:once`; **this command does post messages**, unlike dry-run.
+The dashboard listens on `http://127.0.0.1:3000` by default. Authenticated dashboard sessions can Start, Stop or Restart **dashboard-managed workers**; external terminal/systemd/Docker workers must still be controlled by their own supervisor. The dashboard guards against starting another process on an already-used cache, but this is not a multi-process file lock. A live one-off delivery can be invoked with `npm run start:once`; **this command does post messages**, unlike dry-run.
 
 ## Example channel
 

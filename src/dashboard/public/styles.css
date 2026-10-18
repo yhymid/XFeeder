@@ -1353,6 +1353,20 @@ input[type="checkbox"]:checked:before {
 .sidebar-collapsed .sidebar-status .status-dot {
   flex: 0 0 8px;
 }
+.worker-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.worker-actions .button {
+  min-width: 0;
+  padding: 8px 4px;
+  font-size: 11px;
+  justify-content: center;
+}
+.sidebar-collapsed .worker-actions {
+  display: none;
+}
 
 .sidebar-collapsed .sidebar-bottom .button {
   gap: 0;
@@ -1839,6 +1853,13 @@ input[type="checkbox"]:checked:before {
   .sidebar-collapsed .sidebar-status {
     font-size: 12px;
   }
+  .sidebar-collapsed .sidebar-status {
+    display: grid;
+    justify-content: stretch;
+  }
+  .sidebar-collapsed .sidebar-status > span:not(.status-dot),
+  .sidebar-collapsed .sidebar-status > small { display: initial; }
+  .sidebar-collapsed .worker-actions { display: grid; }
   .sidebar-collapsed .sidebar-location {
     font-size: 11px;
   }

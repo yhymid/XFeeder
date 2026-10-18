@@ -41,7 +41,7 @@ test('runtime archive ships only runnable files and a generated empty config',t=
  git('init','--quiet');
  const write=(name,content)=>{fs.mkdirSync(path.dirname(path.join(dir,name)),{recursive:true});fs.writeFileSync(path.join(dir,name),content);};
  write('package.json',JSON.stringify({name:'xfeeder',version:'2.2.0',main:'main.js',scripts:{start:'node main.js',test:'node --test tests/*.test.js','release:archive':'node scripts/package-release.cjs','scrapling:install':'node scripts/install-scrapling.cjs'}}));
- for(const name of ['main.js','dashboard.js','package-lock.json','LICENSE','.env.example','config.json.example','scripts/install-scrapling.cjs','src/app/bootstrap.js','src/dashboard/public/index.html','src/extensions/Scrapling/browser_worker.py','src/extensions/Scrapling/requirements.lock.txt']) write(name,'RUNTIME '+name);
+ for(const name of ['main.js','dashboard.js','package-lock.json','LICENSE','.env.example','config.json.example','scripts/install-scrapling.cjs','src/app/bootstrap.js','src/dashboard/public/index.html','src/extensions/Scrapling/browser_worker.py','src/extensions/Scrapling/requirements.lock.txt','src/extensions/Scrapling/requirements.txt','src/extensions/Scrapling/runtime-paths.js']) write(name,'RUNTIME '+name);
  for(const name of ['README.md','CHANGELOG.md','RELEASE_NOTES_2.2.0.md','tests/test.js','tests/fixtures/tls/localhost-test-key.pem','docs/guide.md','src/extensions/Scrapling/readme.md','scripts/benchmark-network.cjs']) write(name,'DEVELOPMENT_ONLY');
  write('.gitignore','config.json\n.env\nnode_modules/\n.venv/\n');
  write('config.json','PRIVATE_LOCAL_CONFIG');write('.env','PRIVATE_LOCAL_SECRET');
@@ -77,7 +77,7 @@ test('source and runtime packaging reject generated files, nested repositories a
  // of local ignore rules (including force-added files in an older reviewed tree).
  write('.gitignore','');
  write('package.json',JSON.stringify({name:'xfeeder',version:'2.2.0',main:'main.js'}));
- for(const name of ['main.js','dashboard.js','package-lock.json','LICENSE','.env.example','config.json.example','scripts/install-scrapling.cjs','src/extensions/Scrapling/browser_worker.py','src/extensions/Scrapling/requirements.txt','src/extensions/Scrapling/requirements.lock.txt','tests/fixtures/tls/localhost-test-key.pem']) write(name,'SOURCE_FIXTURE');
+ for(const name of ['main.js','dashboard.js','package-lock.json','LICENSE','.env.example','config.json.example','scripts/install-scrapling.cjs','src/extensions/Scrapling/browser_worker.py','src/extensions/Scrapling/requirements.txt','src/extensions/Scrapling/requirements.lock.txt','src/extensions/Scrapling/runtime-paths.js','tests/fixtures/tls/localhost-test-key.pem']) write(name,'SOURCE_FIXTURE');
  git('add','.');
  const script=path.join(__dirname,'../scripts/package-release.cjs');
  const run=source=>execFileSync(process.execPath,[script,git('write-tree'),path.join(dir,source?'source.tgz':'runtime.tgz'),...(source?['--source']:[])],{cwd:dir,stdio:['pipe','pipe','pipe']});

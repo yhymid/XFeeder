@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { spawn } = require("node:child_process");
-const { readNetworkRuntime } = require("../network/runtime-state");
+const { readNetworkRuntime, runtimePath } = require("../network/runtime-state");
 
 function createWorkerController({ dataDir, entrypoint = path.resolve(__dirname, "../../main.js"),
   spawnWorker = spawn, isWorkerRunning } = {}) {
@@ -18,7 +18,22 @@ function createWorkerController({ dataDir, entrypoint = path.resolve(__dirname, 
     try {
       const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
       const runtime = readNetworkRuntime(configPath, config.network);
-      return runtime.available === true;
+      if (runtime.available === true) return true;
+      // A hung external worker may stop publishing telemetry while retaining
+      // the cache. Reject competing starts if its recorded PID still exists.
+      try {
+        const fs = require("node:fs");
+        const record = JSON.parse(fs.readFileSync(runtimePath(configPath), "utf8"));
+        if (Number.isSafeInteger(record.pid) && record.pid > 1) {
+          try {
+            process.kill(record.pid, 0);
+            return true;
+          } catch (error) {
+            if (error.code === "EPERM") return true;
+          }
+        }
+      } catch { /* No readable worker runtime record. */ }
+      return false;
     } catch { return false; }
   };
   const status = () => ({

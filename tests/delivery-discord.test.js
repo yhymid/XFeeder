@@ -67,6 +67,28 @@ test("Discord success keeps the query, sets Components V2 and omits a null threa
   });
 });
 
+test("Discord default webhook requests wait for confirmed message persistence", bounded, async t => {
+  const requestReceived = deferred();
+  const providerAck = deferred();
+  const server = await serve(t, async (req, res) => {
+    await readBody(req);
+    requestReceived.resolve(req.url);
+    await providerAck.promise;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ id: "created-message-42" }));
+  });
+  let finished = false;
+  const delivery = sendMessage(server.url, null, {
+    title: "Delivery confirmation", link: "https://example.invalid/item",
+  }).then(() => { finished = true; });
+  const requestUrl = await requestReceived.promise;
+  assert.equal(new URL(requestUrl, server.url).searchParams.get("wait"), "true");
+  assert.equal(finished, false, "do not mark sent when the provider has not confirmed it");
+  providerAck.resolve();
+  await delivery;
+  assert.equal(finished, true);
+});
+
 test("Discord YouTube delivery uses the video thumbnail and selected thread", bounded, async (t) => {
   const server = await webhook(t);
   const link = "https://www.youtube.com/watch?v=abcdefghijk";

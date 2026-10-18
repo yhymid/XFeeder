@@ -18,6 +18,7 @@ const { loadDotEnv } = require("../config-loader");
 const { sanitizeText } = require("../core/diagnostics");
 const { normalizeNetworkConfig } = require("../network/config");
 const { readNetworkSettings, revision } = require("./network");
+const { createWorkerController } = require("./worker-control");
 const { workerReady } = require("./health");
 const { secretStatus, replaceSecretLine, SECRET_KEY, RESERVED } = require("./secrets");
 const { projectChannels, projectOverview, projectSettings } = require("./api-projections");
@@ -486,6 +487,7 @@ function startDashboard({
     envPath: path.join(dataDir, ".env"),
     cachePath: path.join(dataDir, "cache.json"),
   };
+  const workerControl = createWorkerController({ dataDir });
   const authManager = createAuthManager({
     host,
     publicOrigin,
@@ -521,6 +523,27 @@ function startDashboard({
         sendJson(res, 403, { error: "Untrusted Host." }); return;
       }
       if (req.headers.origin && !ensureSameOrigin(req, res, expectedOrigin)) return;
+      if (url.pathname === "/api/worker/control") {
+        if (!requireDashboardAccess(req, res, authManager)) return;
+        if (req.method === "GET") {
+          sendJson(res, 200, workerControl.status());
+          return;
+        }
+        if (req.method !== "POST") {
+          sendJson(res, 405, { error: "Method not allowed." }); return;
+        }
+        if (!ensureSameOrigin(req, res, expectedOrigin)) return;
+        const payload = JSON.parse(await parseRequestBody(req) || "{}");
+        if (!["start", "stop", "restart"].includes(payload.action)) {
+          sendJson(res, 400, { error: "Invalid worker action." }); return;
+        }
+        try {
+          sendJson(res, 200, await workerControl[payload.action]());
+        } catch (error) {
+          sendJson(res, error.status || 500, { error: error.message || "Worker control failed" });
+        }
+        return;
+      }
       // Dashboard liveness is independent of its worker and external services.
       if (req.method === "GET" && ["/api/live", "/api/health/live"].includes(url.pathname)) {
         sendJson(res, 200, { ok: true, service: "xfeeder-dashboard", status: "live" });

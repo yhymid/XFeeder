@@ -64,3 +64,44 @@ jobs:
           src/extensions/Scrapling/.venv/bin/python -m playwright install-deps chromium
       - run: npm run scrapling:install
       - run: npm run test:scrapling-browser
+
+  alpha-runtime:
+    name: Verify downloadable 3.0 alpha runtime
+    needs: [node, scrapling]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/3.0-alpha'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Build versioned runtime archive
+        run: |
+          test "$(node -p 'require("./package.json").version')" = "3.0.0-alpha.0"
+          npm run release:alpha-check
+          node scripts/package-release.cjs HEAD release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz
+          (cd release-artifacts && sha256sum XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz > SHA256SUMS.txt)
+      - name: Test from unpacked artifact, not checkout
+        run: |
+          mkdir -p "$RUNNER_TEMP/alpha-smoke"
+          tar -xzf release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz -C "$RUNNER_TEMP/alpha-smoke"
+          cd "$RUNNER_TEMP/alpha-smoke/XFeeder-3.0.0-alpha.0"
+          npm ci
+          node -e 'if (require("./package.json").version !== "3.0.0-alpha.0") process.exit(1)'
+          npm run check-config
+          npm run start:dry-run
+          node -e 'require("./src/dashboard/server"); require("./src/app/bootstrap")'
+      - name: Upload verified Linux alpha archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: XFeeder-3.0.0-alpha.0-linux-runtime
+          path: |
+            release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz
+            release-artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30

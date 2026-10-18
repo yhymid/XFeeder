@@ -32,6 +32,9 @@ async function sendMessage(webhookUrl, threadId, entry) {
     }
 
     urlObj.searchParams.set("with_components", "true");
+    // Discord's default wait=false can acknowledge queue acceptance before a
+    // message is confirmed saved. wait=true returns the created message.
+    urlObj.searchParams.set("wait", "true");
     if (threadId && threadId !== "null") {
       urlObj.searchParams.set("thread_id", threadId);
     }
@@ -175,10 +178,18 @@ async function postToWebhook(url, payload) {
 
   for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt += 1) {
     try {
-      return await postManaged(url, sanitizedPayload, {
+      const started = Date.now();
+      const result = await postManaged(url, sanitizedPayload, {
         signal: context().signal, xfeederDefaultTimeout: 0,
         headers: { "Content-Type": "application/json" },
       });
+      logger.info("Discord webhook acknowledged", {
+        httpStatus: result.status,
+        responseMs: Date.now() - started,
+        confirmed: Boolean(result.data?.id),
+        attempt: attempt + 1,
+      });
+      return result;
     } catch (err) {
       if (isCancelled(err) || context().signal?.aborted) throw err;
       const is429 = err?.response?.status === 429;

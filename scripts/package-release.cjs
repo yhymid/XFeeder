@@ -42,6 +42,19 @@ const runtimeRoots = new Set(["main.js", "dashboard.js", "package.json", "packag
 const selected = sourceOnly ? files : files.filter(file => runtimeRoots.has(file) ||
   (file.startsWith("src/") && (/\.(?:js|cjs|mjs|py|html|css|svg)$/.test(file) ||
     /^src\/extensions\/Scrapling\/requirements(?:\.lock)?\.txt$/.test(file))));
+// Verify the standalone runtime ships the installer dependencies rather
+// than producing a broken archive that fails on first Scrapling setup.
+if (!sourceOnly) {
+  for (const required of [
+    "src/extensions/Scrapling/requirements.lock.txt",
+    "src/extensions/Scrapling/requirements.txt",
+    "src/extensions/Scrapling/runtime-paths.js",
+    "src/extensions/Scrapling/browser_worker.py",
+  ]) {
+    if (!selected.includes(required))
+      throw Error(`Missing packaged Scrapling runtime dependency: ${required}`);
+  }
+}
 const generated = [];
 if (!sourceOnly) {
   for (const required of runtimeRoots) if (!files.includes(required)) throw Error(`Missing runtime file: ${required}`);

@@ -24,6 +24,7 @@ const navigation = [
   ["settings", "Settings"],
   ["advanced", "Advanced"],
 ];
+let workerState = { running: false, externalWorker: false, busy: false };
 let validationTimer,
   validationVersion = 0,
   saveButton,
@@ -128,6 +129,11 @@ function shell() {
                 : "Unknown",
         }),
       ]),
+      el("div", { class: "worker-actions", title: "Controls dashboard-managed workers only" }, [
+        button("Start", () => workerAction("start"), { kind: "quiet", "data-worker-action": "start" }),
+        button("Stop", () => workerAction("stop"), { kind: "quiet", "data-worker-action": "stop" }),
+        button("Restart", () => workerAction("restart"), { kind: "quiet", "data-worker-action": "restart" }),
+      ]),
       el("div", {
         class: "sidebar-location",
         text: ["127.0.0.1", "localhost", "::1"].includes(state.meta.host)
@@ -141,6 +147,7 @@ function shell() {
         () => {
           state.collapsed = !state.collapsed;
           app.classList.toggle("sidebar-collapsed", state.collapsed);
+  void refreshWorkerControl();
         },
         { kind: "quiet collapse-button", glyph: "collapse" },
       ),
@@ -306,6 +313,35 @@ function renderView() {
     console.error("Dashboard rendering failed:", error.name);
   }
 }
+async function refreshWorkerControl() {
+  try { workerState = await request("GET", "/api/worker/control"); }
+  catch { workerState = { running: false, externalWorker: false, busy: true }; }
+  for (const action of ["start", "stop", "restart"]) {
+    const control = sidebar?.querySelector(`[data-worker-action="${action}"]`);
+    if (!control) continue;
+    control.disabled = workerState.busy ||
+      (action === "start" ? workerState.running || workerState.externalWorker : !workerState.running);
+    control.title = workerState.externalWorker
+      ? "Worker is externally managed; use its original service manager"
+      : action === "start" ? "Start worker" : action === "stop" ? "Gracefully stop worker" : "Restart worker";
+  }
+}
+async function workerAction(action) {
+  if (workerState.busy) return;
+  if (action !== "start" && !(await confirm(
+    action === "stop" ? "Stop XFeeder worker?" : "Restart XFeeder worker?",
+    "Active operations will be cancelled and the delivery cache flushed.",
+    { label: action === "stop" ? "Stop worker" : "Restart worker", danger: action === "stop" },
+  ))) return;
+  workerState.busy = true;
+  for (const control of sidebar?.querySelectorAll("[data-worker-action]") || []) control.disabled = true;
+  try {
+    await request("POST", "/api/worker/control", { action });
+    toast("Worker " + (action === "start" ? "starting" : action === "stop" ? "stopped" : "restarting"));
+  } catch (error) { toast(error.message || "Worker control failed", "error"); }
+  finally { await refreshWorkerControl(); }
+}
+
 async function reload(ask = false) {
   if (
     ask &&
@@ -380,6 +416,8 @@ async function loadActivity(rerender = false, force = false) {
   }
   const status = sidebar?.querySelector(".sidebar-status");
   if (status) {
+    status.title = `System status: ${state.activity?.summary?.health || "unknown"}`;
+    status.setAttribute("aria-label", status.title);
     status.querySelector(".status-dot").className =
       `status-dot ${state.activity?.summary?.health || "unknown"}`;
     status.querySelector("small").textContent =

@@ -63,6 +63,19 @@ test('runtime archive ships only runnable files and a generated empty config',t=
  assert.equal(pkg.main,'main.js');assert.equal(pkg.scripts.start,'node main.js');assert.ok(pkg.scripts['scrapling:install']);assert.equal(pkg.scripts.test,undefined);assert.equal(pkg.scripts['release:archive'],undefined);
  assert.doesNotMatch(tar.toString(),/DEVELOPMENT_ONLY|PRIVATE_LOCAL_|LOCAL_DEPENDENCY|LOCAL_PYTHON/);
  assert.ok(!members.has('.gitignore'));
+ // Missing lock/runtime assets must fail at archive creation, not only when
+ // an end user attempts to set up the optional Scrapling browser later.
+ for (const required of [
+  'src/extensions/Scrapling/requirements.lock.txt',
+  'src/extensions/Scrapling/requirements.txt',
+  'src/extensions/Scrapling/runtime-paths.js',
+  'src/extensions/Scrapling/browser_worker.py',
+ ]) {
+  git('rm','--cached','--',required);
+  assert.throws(() => execFileSync(process.execPath,[script,git('write-tree'),output],
+    {cwd:dir,stdio:'pipe'}), /Missing packaged Scrapling runtime dependency/);
+  git('add','--',required);
+ }
  write('config.json','FORCED_PRIVATE_CONFIG');git('add','-f','config.json');
  assert.throws(()=>execFileSync(process.execPath,[script,git('write-tree'),output],{cwd:dir,stdio:'pipe'}),/Generated\/private files tracked/);
 });

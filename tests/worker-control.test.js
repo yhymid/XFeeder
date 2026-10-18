@@ -59,7 +59,7 @@ test("Dashboard controller: external worker stop/restart are rejected", async ()
 test("Dashboard control API: requires login and same-origin POST", async t => {
   const fixture = await startTestDashboard(t, { password: "test-worker-password" });
   assert.equal((await fixture.request("/api/worker/control")).status, 401);
-  assert.equal((await fixture.request("/api/worker/control", { method: "POST", body: { action: "start" } })).status, 403);
+  assert.equal((await fixture.request("/api/worker/control", { method: "POST", json: { action: "start" } })).status, 401);
   const login = await fixture.login();
   const cookieHeader = login.headers["set-cookie"];
   const headers = { Cookie: (Array.isArray(cookieHeader) ? cookieHeader[0] : cookieHeader).split(";")[0] };
@@ -67,11 +67,11 @@ test("Dashboard control API: requires login and same-origin POST", async t => {
   assert.equal(status.status, 200);
   assert.equal(status.data.running, false);
   const invalid = await fixture.request("/api/worker/control", {
-    method: "POST", headers, body: { action: "unknown" },
+    method: "POST", headers: { ...headers, Origin: fixture.origin }, json: { action: "unknown" },
   });
   assert.equal(invalid.status, 400);
   const externalStop = await fixture.request("/api/worker/control", {
-    method: "POST", headers, body: { action: "stop" },
+    method: "POST", headers: { ...headers, Origin: fixture.origin }, json: { action: "stop" },
   });
   assert.equal(externalStop.status, 409);
 });

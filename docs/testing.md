@@ -1,5 +1,7 @@
 # Test harness — X3-02
 
+> Historical X3-02 implementation record: references below to `3.0-dev` and `2.2.0` describe the original development step. Active testing and new changes now target `3.0-alpha` (`3.0.0-alpha.0`). See [`README.md`](../README.md) for the current quick start and alpha testing workflow.
+
 X3-01 was skipped at the maintainer's request. Development is on `3.0-dev`,
 starting from the prepared 2.2.0 source commit
 `3c5654e751bbbae414d0185e288e716d5a9541a7`, not the older local `v2.2.0` tag.

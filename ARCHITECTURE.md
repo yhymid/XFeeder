@@ -1,6 +1,6 @@
 # XFeeder architecture (3.0 development)
 
-XFeeder is a Node.js CommonJS modular monolith. Worker and dashboard are separate processes; the current package manifest still reports 2.2.0 while the 3.0 architecture is developed on `3.0-dev`. This is not a stable 3.0 release.
+XFeeder is a Node.js CommonJS modular monolith. Worker and dashboard are separate processes. The active development branch is `3.0-alpha` and its package version is `3.0.0-alpha.0`. `3.0-dev` is complete, `main` retains the stable 2.2 series, and beta/RC/stable 3.0 have not yet been released.
 
 ## Runtime flow
 

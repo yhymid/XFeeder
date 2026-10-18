@@ -1,5 +1,7 @@
 # Current XFeeder architecture
 
+> Historical baseline: this document records an earlier X3-01 audit of `3.0-dev` at `c521cd8`; references below to version `2.2.0` describe that older snapshot, **not the active `3.0-alpha` branch**. For the current design and `3.0.0-alpha.0` development state, see [`ARCHITECTURE.md`](../ARCHITECTURE.md) and [`README.md`](../README.md).
+
 Documentation-only X3-01 audit, restored by C3-06 on 2026-10-15 after the
 corrective pass. This describes `3.0-dev` at `c521cd8`, not a proposed 3.0 architecture.
 The package still reports 2.2.0. The local release tag is `2.2` (`6ef45c9`);

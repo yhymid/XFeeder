@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-This repository's `3.0-dev` branch is under development and **not** a declared production support or security-update commitment. The current npm manifest reports `2.2.0`. Verify the latest release notes and security status before deploying.
+`3.0-alpha` is the actively developed prerelease branch (`3.0.0-alpha.0`) and is **not** a production support or security-update commitment. `3.0-dev` is complete, while `main` remains the 2.2 stable line. The 3.0 beta, RC and stable releases are not yet available. Verify official release notes and support status before deploying.
 
 ## Reporting vulnerabilities
 

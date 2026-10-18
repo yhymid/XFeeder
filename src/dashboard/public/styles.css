@@ -1336,6 +1336,24 @@ input[type="checkbox"]:checked:before {
 .sidebar-collapsed .sidebar-bottom {
   padding: 16px 0 0;
 }
+/* Collapsed rail has only room for a status indicator, not its labels.
+   Hiding descendants also prevents the 11px <small> from overflowing. */
+.sidebar-collapsed .sidebar-status {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  min-height: 32px;
+}
+.sidebar-collapsed .sidebar-status > span:not(.status-dot),
+.sidebar-collapsed .sidebar-status > small {
+  display: none;
+}
+.sidebar-collapsed .sidebar-status .status-dot {
+  flex: 0 0 8px;
+}
+
 .sidebar-collapsed .sidebar-bottom .button {
   gap: 0;
   justify-content: center;

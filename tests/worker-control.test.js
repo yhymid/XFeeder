@@ -75,3 +75,20 @@ test("Dashboard control API: requires login and same-origin POST", async t => {
   });
   assert.equal(externalStop.status, 409);
 });
+
+test("Dashboard controller: stale telemetry cannot permit duplicate worker while PID exists", t => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const { tempDir } = require("./helpers/temp-dir.cjs");
+  const { runtimePath } = require("../src/network/runtime-state");
+  const dir = tempDir(t);
+  const configPath = path.join(dir, "config.json");
+  fs.writeFileSync(configPath, JSON.stringify({ network: {} }));
+  fs.writeFileSync(runtimePath(configPath), JSON.stringify({
+    pid: process.pid, schemaVersion: 1, updatedAt: "2001-01-01T00:00:00Z",
+    workerReady: false,
+  }));
+  const controller = createWorkerController({ dataDir: dir });
+  assert.equal(controller.status().externalWorker, true);
+  assert.throws(() => controller.start(), /already running/);
+});

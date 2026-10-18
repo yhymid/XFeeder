@@ -218,6 +218,7 @@ function shell() {
     el("div", { class: "workspace" }, [topbar, viewRoot]),
   );
   app.classList.toggle("sidebar-collapsed", state.collapsed);
+  void refreshWorkerControl();
   sidebar.addEventListener("keydown", (e) => {
     if (!app.classList.contains("nav-open")) return;
     if (e.key === "Escape") {

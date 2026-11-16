@@ -32,7 +32,7 @@ optional local web dashboard.
 
 ## Build
 
-Requires Rust **1.85+** (edition 2024).
+Requires Rust **1.88+** (edition 2024).
 
 ```sh
 cargo build --release

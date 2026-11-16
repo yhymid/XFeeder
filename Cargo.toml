@@ -2,7 +2,7 @@
 name = "xfeeder"
 version = "3.0.0-alpha.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Modular RSS/Atom/JSON feed reader for Discord webhooks and Telegram."
 license = "MIT"
 repository = "https://github.com/yhymid/XFeeder"

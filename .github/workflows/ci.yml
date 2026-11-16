@@ -12,96 +12,46 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
 jobs:
-  node:
-    name: Node ${{ matrix.node }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["22", "24", "26"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm run deps:check
-      - run: npm test
-      - run: npm run release:alpha-check
-      - run: node main.js --check-config --config tests/fixtures/config/channel-groups.json
-      - run: npm audit --audit-level=high
-
-  scrapling:
-    name: Scrapling browser smoke
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "24"
-          cache: npm
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - run: npm ci
-      - run: npm run deps:check
-      # The installer verifies browser launch but deliberately does not install
-      # OS packages. Bootstrap its pinned driver before installing those packages.
-      - name: Install pinned driver and browser system dependencies
-        run: |
-          python -m venv src/extensions/Scrapling/.venv
-          src/extensions/Scrapling/.venv/bin/python -m pip install --disable-pip-version-check --no-deps -r src/extensions/Scrapling/requirements.lock.txt
-          src/extensions/Scrapling/.venv/bin/python -m playwright install-deps chromium
-      - run: npm run scrapling:install
-      - run: npm run test:scrapling-browser
-
-  alpha-runtime:
-    name: Verify downloadable 3.0 alpha runtime
-    needs: [node, scrapling]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/3.0-alpha'
+  rust:
+    name: fmt, clippy, test
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - name: Build versioned runtime archive
+      - name: Install stable toolchain
         run: |
-          test "$(node -p 'require("./package.json").version')" = "3.0.0-alpha.0"
-          npm run release:alpha-check
-          node scripts/package-release.cjs HEAD release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz
-          (cd release-artifacts && sha256sum XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz > SHA256SUMS.txt)
-      - name: Test from unpacked artifact, not checkout
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --locked --release
+      - name: Validate fixture configs
         run: |
-          mkdir -p "$RUNNER_TEMP/alpha-smoke"
-          tar -xzf release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz -C "$RUNNER_TEMP/alpha-smoke"
-          cd "$RUNNER_TEMP/alpha-smoke/XFeeder-3.0.0-alpha.0"
-          npm ci
-          node -e 'if (require("./package.json").version !== "3.0.0-alpha.0") process.exit(1)'
-          npm run check-config
-          npm run start:dry-run
-          node -e 'require("./src/dashboard/server"); require("./src/app/bootstrap")'
-      - name: Upload verified Linux alpha archive
-        uses: actions/upload-artifact@v4
+          ./target/release/xfeeder --check-config --config tests/fixtures/config/channel-groups.json
+          ./target/release/xfeeder --check-config --config tests/fixtures/config/migration-legacy.json
+          ./target/release/xfeeder --version
+
+  msrv:
+    name: MSRV (rust-version from Cargo.toml)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: XFeeder-3.0.0-alpha.0-linux-runtime
-          path: |
-            release-artifacts/XFeeder-3.0.0-alpha.0-linux-runtime.tar.gz
-            release-artifacts/SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 30
+          persist-credentials: false
+      - name: Install MSRV toolchain
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          test -n "$msrv"
+          rustup toolchain install "$msrv" --profile minimal
+          echo "MSRV=$msrv" >> "$GITHUB_ENV"
+      - run: cargo +"$MSRV" check --locked --all-targets

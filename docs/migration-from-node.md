@@ -37,5 +37,6 @@ Rollback: restore the old `ExecStart` (and the cache backup if needed).
 - Old numeric top-level keys in `cache.json` (`"0"`, `"1"`, …) from very old
   versions are left untouched and ignored.
 - Discord answers `400 Unknown Channel (10003)` when a configured `Thread` no
-  longer exists. The worker logs the response body and backs the channel off;
-  fix or remove the `Thread` id.
+  longer exists. The worker logs it once, stops sending to that destination for
+  the rest of the channel run (instead of failing every entry, as 2.x did) and
+  retries on the next interval; fix or remove the `Thread` id.

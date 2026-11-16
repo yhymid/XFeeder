@@ -18,6 +18,10 @@
 - Dates with a wrong weekday name (`Mon, 02 Jan 2024`) are accepted like in
   JavaScript.
 - `XFEEDER_*` flags and dashboard settings are also read from `.env`.
+- A destination that is gone or forbidden (Discord 401/403/404, or 400 with
+  Unknown Channel/Webhook, Missing Access, locked thread; Telegram 401/403,
+  chat/thread not found) is skipped for the rest of the channel run instead of
+  failing once per pending entry.
 - Removed: Workshop plugins, Dockerfile/compose, npm scripts. Documents of the
   JavaScript implementation moved to `docs/legacy/` (GPT-generated, reference
   only).

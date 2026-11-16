@@ -21,6 +21,24 @@ const MAX_429_RETRIES: u32 = 3;
 pub enum SendError {
     Cancelled,
     Failed(String),
+    /// The destination itself is gone or forbidden (deleted thread/webhook,
+    /// revoked token, unknown chat); retrying other entries now is pointless.
+    Unreachable(String),
+}
+
+/// Discord answers that do not depend on the message being sent.
+fn discord_target_gone(status: u16, body: &str) -> bool {
+    let code = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|b| b.get("code").and_then(Value::as_u64));
+    matches!(status, 401 | 403 | 404)
+        || (status == 400 && matches!(code, Some(10003 | 10015 | 50001 | 50083)))
+}
+
+fn telegram_target_gone(status: u16, description: &str) -> bool {
+    let text = description.to_lowercase();
+    matches!(status, 401 | 403)
+        || (status == 400 && (text.contains("chat not found") || text.contains("thread not found")))
 }
 
 impl From<HttpError> for SendError {
@@ -334,6 +352,14 @@ pub async fn send_webhook(
                     "Webhook delivery failed: {error}{}",
                     crate::diag::sanitize_text(&detail)
                 );
+                if let Some(r) = error.response()
+                    && discord_target_gone(r.status, &r.body)
+                {
+                    return Err(SendError::Unreachable(format!(
+                        "{error}{}",
+                        crate::diag::sanitize_text(&detail)
+                    )));
+                }
                 return Err(error.into());
             }
         }
@@ -472,12 +498,17 @@ pub async fn send_telegram(
         Err(HttpError::Cancelled) => Err(SendError::Cancelled),
         Err(HttpError::Status(response)) => {
             let body: Value = serde_json::from_str(&response.body).unwrap_or(Value::Null);
-            Err(SendError::Failed(
-                match get(&body, "description").as_str() {
-                    Some(description) => format!("Telegram API error: {description}"),
-                    None => format!("Telegram API request failed with HTTP {}.", response.status),
-                },
-            ))
+            let description = get(&body, "description").as_str().unwrap_or("");
+            let message = if description.is_empty() {
+                format!("Telegram API request failed with HTTP {}.", response.status)
+            } else {
+                format!("Telegram API error: {description}")
+            };
+            if telegram_target_gone(response.status, description) {
+                Err(SendError::Unreachable(message))
+            } else {
+                Err(SendError::Failed(message))
+            }
         }
         Err(error) => Err(SendError::Failed(format!(
             "Telegram API request failed ({}).",
@@ -668,6 +699,33 @@ fn discord_entry(msg: &Value, config: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn permanent_target_errors() {
+        assert!(discord_target_gone(
+            400,
+            r#"{"message": "Unknown Channel", "code": 10003}"#
+        ));
+        assert!(discord_target_gone(
+            404,
+            r#"{"message": "Unknown Webhook", "code": 10015}"#
+        ));
+        assert!(!discord_target_gone(
+            400,
+            r#"{"message": "Invalid Form Body", "code": 50035}"#
+        ));
+        assert!(!discord_target_gone(500, ""));
+        assert!(telegram_target_gone(400, "Bad Request: chat not found"));
+        assert!(telegram_target_gone(
+            403,
+            "Forbidden: bot was blocked by the user"
+        ));
+        assert!(!telegram_target_gone(
+            400,
+            "Bad Request: can't parse entities"
+        ));
+    }
+
     use super::*;
 
     #[test]

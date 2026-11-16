@@ -47,6 +47,9 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 - Channel cache key = `<group>:<12 hex SHA-1>` of the channel definition. 2.x
   hashed a slightly different field set; the worker computes both and uses the
   2.x key when only that one exists in the cache.
+- When a destination is permanently unreachable (deleted thread/webhook,
+  revoked token, unknown chat) the rest of that channel run skips it; the next
+  interval tries again with a single request.
 - Only ids of **confirmed** sends are written, and the file is saved after
   each one, so a crash never loses delivery history or causes duplicates.
 

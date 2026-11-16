@@ -41,9 +41,38 @@ struct Targets {
     webhook: String,
     thread: Option<String>,
     telegram: Option<config::Telegram>,
+    /// Destinations found unreachable during this channel run.
+    unreachable: Mutex<Vec<Target>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Sent {
+    Yes,
+    Failed,
+    Unreachable,
 }
 
 impl Targets {
+    fn new(webhook: String, thread: Option<String>, telegram: Option<config::Telegram>) -> Self {
+        Self {
+            webhook,
+            thread,
+            telegram,
+            unreachable: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn is_unreachable(&self, target: Target) -> bool {
+        self.unreachable.lock().expect("lock").contains(&target)
+    }
+
+    fn mark_unreachable(&self, target: Target) {
+        let mut list = self.unreachable.lock().expect("lock");
+        if !list.contains(&target) {
+            list.push(target);
+        }
+    }
+
     fn list(&self) -> Vec<Target> {
         let mut out = Vec::new();
         if !self.webhook.trim().is_empty() {
@@ -273,7 +302,7 @@ impl App {
         target: Target,
         targets: &Targets,
         entry: &Value,
-    ) -> Result<bool, Stop> {
+    ) -> Result<Sent, Stop> {
         if self.cancel.is_cancelled() {
             return Err(Stop::Cancelled);
         }
@@ -299,7 +328,7 @@ impl App {
                 "delivery.simulated",
                 json!({ "channel": label, "target": target.kind(), "dryRun": true }),
             );
-            return Ok(true);
+            return Ok(Sent::Yes);
         }
         let result = match target {
             Target::Webhook => {
@@ -322,9 +351,22 @@ impl App {
                     "delivery.complete",
                     json!({ "channel": label, "target": target.kind(), "durationMs": started.elapsed().as_millis() as u64 }),
                 );
-                Ok(true)
+                Ok(Sent::Yes)
             }
             Err(SendError::Cancelled) => Err(Stop::Cancelled),
+            Err(SendError::Unreachable(message)) => {
+                crate::error!(
+                    "Channel",
+                    "{label}: {} destination unreachable ({}); skipping its remaining entries this run. Check the Webhook/Thread/ChatID in config.json.",
+                    target.kind(),
+                    sanitize_text(&message)
+                );
+                expert(
+                    "delivery.failed",
+                    json!({ "channel": label, "target": target.kind(), "durationMs": started.elapsed().as_millis() as u64, "error": { "code": "TARGET_UNREACHABLE", "message": message } }),
+                );
+                Ok(Sent::Unreachable)
+            }
             Err(SendError::Failed(message)) => {
                 crate::error!(
                     "Channel",
@@ -338,7 +380,7 @@ impl App {
                     "delivery.failed",
                     json!({ "channel": label, "target": target.kind(), "durationMs": started.elapsed().as_millis() as u64, "error": { "message": message } }),
                 );
-                Ok(false)
+                Ok(Sent::Failed)
             }
         }
     }
@@ -377,6 +419,10 @@ impl App {
         let mut failed = false;
         for (identity, entry) in selected.iter().rev() {
             for target in Self::pending(cache, source, identity, &kinds) {
+                if targets.is_unreachable(target) {
+                    failed = true;
+                    continue;
+                }
                 let delivered = self.deliver(&label, source, target, targets, entry).await;
                 if !self.dry_run {
                     // Pace provider requests even after a failure.
@@ -386,7 +432,7 @@ impl App {
                     }
                 }
                 match delivered? {
-                    true if !identity.is_empty() => {
+                    Sent::Yes if !identity.is_empty() => {
                         let name = format!("{source}::{}", target.kind());
                         let existing = cache
                             .get(&name)
@@ -418,8 +464,12 @@ impl App {
                             }
                         }
                     }
-                    true => {}
-                    false => failed = true,
+                    Sent::Yes => {}
+                    Sent::Failed => failed = true,
+                    Sent::Unreachable => {
+                        targets.mark_unreachable(target);
+                        failed = true;
+                    }
                 }
             }
         }
@@ -469,11 +519,11 @@ impl App {
         let mut failure: Option<String> = None;
 
         if let Some(discord) = &channel.discord {
-            let targets = Targets {
-                webhook: channel.discord_webhook(),
-                thread: channel.discord_thread(),
-                telegram: channel.telegram.clone(),
-            };
+            let targets = Targets::new(
+                channel.discord_webhook(),
+                channel.discord_thread(),
+                channel.telegram.clone(),
+            );
             if targets.list().is_empty() {
                 crate::warn!(
                     "Channel",
@@ -503,11 +553,13 @@ impl App {
             base: &self.base,
             cancel: &self.cancel,
         };
-        let targets = Targets {
-            webhook: channel.webhook.clone(),
-            thread: channel.thread.clone(),
-            telegram: channel.telegram.clone(),
-        };
+        // One instance per channel run: an unreachable destination is
+        // skipped for every remaining feed of this channel.
+        let targets = Targets::new(
+            channel.webhook.clone(),
+            channel.thread.clone(),
+            channel.telegram.clone(),
+        );
         for url in &channel.feeds {
             if self.cancel.is_cancelled() {
                 return Err(Stop::Cancelled);

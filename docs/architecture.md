@@ -47,6 +47,13 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 - Channel cache key = `<group>:<12 hex SHA-1>` of the channel definition. 2.x
   hashed a slightly different field set; the worker computes both and uses the
   2.x key when only that one exists in the cache.
+- First sight: when a destination has no history for a feed (no
+  `<feed>::<target>` bucket, or an empty one, and no legacy bucket), the
+  current entries are written to the bucket as already seen, except the newest
+  `FirstRunSend` (by date). Editing a channel changes its cache key, so this
+  also prevents replays after a config edit.
+- `Filters` are applied to fetched entries before pending detection; filtered
+  entries are not recorded, so relaxing a filter can let them through later.
 - When a destination is permanently unreachable (deleted thread/webhook,
   revoked token, unknown chat) the rest of that channel run skips it; the next
   interval tries again with a single request.
@@ -72,5 +79,8 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
   some sites (e.g. gry-wideo.pl) reject the feed-specific Accept header.
 - Healthy XML/JSON responses are not scanned for anti-bot body signatures,
   which avoids false positives on articles that mention "captcha" etc.
+- Response bodies are decoded with `encoding_rs` (BOM, valid UTF-8, header
+  charset, document declaration); 2.x mapped ISO-8859-2/windows-1250 bytes
+  one-to-one, garbling Polish characters.
 - The Scrapling `get` mode is handled by the persistent Python worker instead
   of spawning the Scrapling CLI.

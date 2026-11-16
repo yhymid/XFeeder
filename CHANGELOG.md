@@ -22,6 +22,18 @@
   Unknown Channel/Webhook, Missing Access, locked thread; Telegram 401/403,
   chat/thread not found) is skipped for the rest of the channel run instead of
   failing once per pending entry.
+- First check of a feed no longer replays it: when a destination has no
+  delivery history for a feed (new feed, new channel, or a channel whose cache
+  key changed after editing `Webhook`/`Thread`/feeds), its current entries are
+  recorded as seen and only the newest `FirstRunSend` (default 0) are sent.
+- Channel `Filters`: `Include`/`Exclude` substrings or `/regex/`, `Fields`,
+  `CaseSensitive`, `MaxAgeHours` (also in `ChannelDefaults`).
+- Feed bodies in ISO-8859-2/windows-1250 (and any WHATWG encoding) are
+  decoded correctly, using the `Content-Type` charset or the document's own
+  `<?xml encoding>`/`<meta charset>`; valid UTF-8 always stays UTF-8.
+- Scrapling worker works with Scrapling 0.4.15 and 0.5.x (0.5 removed the
+  dynamic browser backend; CDP uses `RemoteSession`), and now passes
+  `solve_cloudflare` and other stealth options to browser sessions.
 - Removed: Workshop plugins, Dockerfile/compose, npm scripts. Documents of the
   JavaScript implementation moved to `docs/legacy/` (GPT-generated, reference
   only).

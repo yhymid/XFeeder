@@ -34,6 +34,10 @@ Rollback: restore the old `ExecStart` (and the cache backup if needed).
 
 ## Notes
 
+- Fixing a channel's `Thread`/`Webhook` changes its cache key. 3.0 then
+  records the feeds' current entries as seen (see `FirstRunSend` in the
+  README) instead of re-posting everything, as 2.x did.
+
 - Old numeric top-level keys in `cache.json` (`"0"`, `"1"`, …) from very old
   versions are left untouched and ignored.
 - Discord answers `400 Unknown Channel (10003)` when a configured `Thread` no

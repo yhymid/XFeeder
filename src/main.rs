@@ -7,6 +7,7 @@ mod dashboard;
 mod deliver;
 mod diag;
 mod feed;
+mod filter;
 mod http;
 mod js;
 mod parsers;

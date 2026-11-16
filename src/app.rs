@@ -385,6 +385,92 @@ impl App {
         }
     }
 
+    /// First sight of a feed for a destination (no delivery history and no
+    /// legacy bucket): record its current entries as seen, except the newest
+    /// `FirstRunSend`, so a new feed, a new destination or an edited channel
+    /// (whose cache key changes) does not replay the whole feed.
+    async fn baseline(
+        &self,
+        channel: &Channel,
+        cache: &mut Map<String, Value>,
+        source: &str,
+        identified: &[(String, Value)],
+        kinds: &[Target],
+        bucket_key: &str,
+    ) -> Result<(), Stop> {
+        let has_history = |value: Option<&Value>| {
+            value
+                .and_then(Value::as_array)
+                .is_some_and(|list| !list.is_empty())
+        };
+        if has_history(cache.get(source)) {
+            return Ok(()); // legacy single bucket, migrated by `pending`
+        }
+        let fresh: Vec<Target> = kinds
+            .iter()
+            .copied()
+            .filter(|t| !has_history(cache.get(&format!("{source}::{}", t.kind()))))
+            .collect();
+        // Feeds are usually newest-first, but do not rely on it: keep the
+        // newest `FirstRunSend` by date (feed order breaks ties).
+        let mut order: Vec<usize> = (0..identified.len()).collect();
+        order.sort_by_key(|&i| {
+            std::cmp::Reverse(
+                crate::js::get(&identified[i].1, "isoDate")
+                    .as_str()
+                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+                    .map_or(i64::MIN, |d| d.timestamp_millis()),
+            )
+        });
+        let send: Vec<usize> = order.into_iter().take(channel.first_run_send).collect();
+        let seen: Vec<Value> = identified
+            .iter()
+            .enumerate()
+            .filter(|(i, (id, _))| !id.is_empty() && !send.contains(i))
+            .map(|(_, (id, _))| json!(id))
+            .collect();
+        if fresh.is_empty() || seen.is_empty() {
+            return Ok(());
+        }
+        for target in &fresh {
+            cache.insert(
+                format!("{source}::{}", target.kind()),
+                Value::Array(push_cache(&[], &seen, CACHE_LIMIT)),
+            );
+        }
+        let kinds: Vec<&str> = fresh.iter().map(|t| t.kind()).collect();
+        crate::info!(
+            "Channel",
+            "{}{}: first check of {} for {}: {} existing entries marked as seen, newest {} will be sent (FirstRunSend)",
+            if self.dry_run { "[Dry Run] " } else { "" },
+            channel.label(),
+            sanitize_url(source),
+            kinds.join("+"),
+            seen.len(),
+            send.len()
+        );
+        self.persist(bucket_key, cache).await
+    }
+
+    async fn persist(&self, bucket_key: &str, cache: &Map<String, Value>) -> Result<(), Stop> {
+        if self.dry_run {
+            return Ok(());
+        }
+        self.state.delivery.with(|root| {
+            root.insert(bucket_key.to_string(), Value::Object(cache.clone()));
+        })?;
+        let started = Instant::now();
+        self.state.delivery.save().await?;
+        let elapsed = started.elapsed().as_millis() as u64;
+        if elapsed >= 1000 {
+            crate::warn!(
+                "Delivery cache",
+                "Delivery cache write was slow ({elapsed}ms)"
+            );
+        }
+        Ok(())
+    }
+
     /// Deliver up to `RequestSend` pending entries of one source, oldest
     /// first; every confirmed delivery is persisted before the next one.
     async fn process(
@@ -399,10 +485,29 @@ impl App {
         let kinds = targets.list();
         let label = channel.label();
         let bucket_key = self.bucket_key(channel);
+        let fetched = entries.len();
+        let entries: Vec<Value> = match &channel.filter {
+            Some(filter) => {
+                let now = chrono::Utc::now().timestamp_millis();
+                entries
+                    .into_iter()
+                    .filter(|e| filter.accepts(e, now))
+                    .collect()
+            }
+            None => entries,
+        };
+        if entries.len() != fetched {
+            expert(
+                "channel.feed.filtered",
+                json!({ "channel": label, "url": source, "fetched": fetched, "kept": entries.len() }),
+            );
+        }
         let identified: Vec<(String, Value)> = entries
             .into_iter()
             .map(|e| (entry_identity(&e, discord), e))
             .collect();
+        self.baseline(channel, cache, source, &identified, &kinds, &bucket_key)
+            .await?;
         let pending: Vec<&(String, Value)> = identified
             .iter()
             .filter(|(id, _)| !Self::pending(cache, source, id, &kinds).is_empty())
@@ -448,20 +553,7 @@ impl App {
                                     CACHE_LIMIT,
                                 )),
                             );
-                            if !self.dry_run {
-                                self.state.delivery.with(|root| {
-                                    root.insert(bucket_key.clone(), Value::Object(cache.clone()));
-                                })?;
-                                let started = Instant::now();
-                                self.state.delivery.save().await?;
-                                let elapsed = started.elapsed().as_millis() as u64;
-                                if elapsed >= 1000 {
-                                    crate::warn!(
-                                        "Delivery cache",
-                                        "Delivery cache write was slow ({elapsed}ms)"
-                                    );
-                                }
-                            }
+                            self.persist(&bucket_key, cache).await?;
                         }
                     }
                     Sent::Yes => {}

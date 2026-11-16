@@ -588,20 +588,43 @@ async fn read_body(
     }
 }
 
+/// Charset declared inside the document: `<?xml … encoding="…"?>` or an
+/// HTML `<meta charset>` / `http-equiv` tag within the first 2 KiB.
+fn declared_charset(bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
+    static DECL: std::sync::OnceLock<regex::bytes::Regex> = std::sync::OnceLock::new();
+    let re = DECL.get_or_init(|| {
+        regex::bytes::Regex::new(
+            r#"(?i)(?:<\?xml[^>]*?\sencoding\s*=\s*["']|<meta[^>]*?charset\s*=\s*["']?)([A-Za-z0-9_.:-]{2,40})"#,
+        )
+        .expect("charset regex")
+    });
+    let head = &bytes[..bytes.len().min(2048)];
+    let label = re.captures(head)?.get(1)?.as_bytes();
+    encoding_rs::Encoding::for_label(label)
+}
+
+/// Decode a response body: a BOM wins; valid UTF-8 stays UTF-8 (servers
+/// and documents often mislabel UTF-8 as ISO-8859-x); otherwise the
+/// `Content-Type` charset, then the document's own declaration, then lossy
+/// UTF-8.
 fn decode_body(bytes: &[u8], charset: Option<&str>) -> String {
-    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
-    match charset {
-        Some("iso-8859-1" | "latin1" | "latin-1" | "windows-1252" | "cp1252") => {
-            bytes.iter().map(|&b| b as char).collect()
-        }
-        Some("iso-8859-2" | "windows-1250" | "cp1250") => {
-            // Rare Polish legacy encodings: fall back to lossy UTF-8 when the
-            // payload is valid UTF-8, otherwise map bytes 1:1.
-            String::from_utf8(bytes.to_vec())
-                .unwrap_or_else(|_| bytes.iter().map(|&b| b as char).collect())
-        }
-        _ => String::from_utf8_lossy(bytes).into_owned(),
+    use encoding_rs::{Encoding, UTF_8};
+    if let Some((encoding, bom)) = Encoding::for_bom(bytes) {
+        return encoding
+            .decode_without_bom_handling(&bytes[bom..])
+            .0
+            .into_owned();
     }
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.to_string();
+    }
+    let usable = |e: &&'static Encoding| *e != UTF_8 && e.is_ascii_compatible();
+    let encoding = charset
+        .and_then(|c| Encoding::for_label(c.trim().as_bytes()))
+        .filter(usable)
+        .or_else(|| declared_charset(bytes).filter(usable))
+        .unwrap_or(UTF_8);
+    encoding.decode_without_bom_handling(bytes).0.into_owned()
 }
 
 pub fn retry_after_ms(headers: &Map<String, Value>) -> Option<u64> {
@@ -762,5 +785,25 @@ mod tests {
         let mut headers = Map::new();
         headers.insert("retry-after".into(), Value::String("2".into()));
         assert_eq!(retry_after_ms(&headers), Some(2000));
+    }
+
+    #[test]
+    fn body_charsets() {
+        // "Zażółć" in ISO-8859-2.
+        let latin2 = b"<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><t>Za\xbf\xf3\xb3\xe6</t>";
+        assert!(decode_body(latin2, None).contains("Zażółć"));
+        assert!(decode_body(latin2, Some("iso-8859-2")).contains("Zażółć"));
+        // Server claims UTF-8, bytes are not UTF-8: the declaration wins.
+        assert!(decode_body(latin2, Some("utf-8")).contains("Zażółć"));
+        // "śląski" in windows-1250 with an HTML meta declaration.
+        let cp1250 = b"<html><head><meta charset=\"windows-1250\"></head>\x9cl\xb9ski</html>";
+        assert!(decode_body(cp1250, None).contains("śląski"));
+        // Valid UTF-8 mislabelled as ISO-8859-2 stays UTF-8.
+        let utf8 = "<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><t>Zażółć</t>";
+        assert!(decode_body(utf8.as_bytes(), Some("iso-8859-2")).contains("Zażółć"));
+        // BOM, Latin-1 header, invalid bytes without any declaration.
+        assert_eq!(decode_body(b"\xEF\xBB\xBFabc", Some("iso-8859-2")), "abc");
+        assert_eq!(decode_body(b"caf\xe9", Some("latin1")), "café");
+        assert_eq!(decode_body(b"caf\xe9", None), "caf\u{FFFD}");
     }
 }

@@ -97,6 +97,28 @@ are resolved from the process environment or from `.env` next to the config.
 - A `Telegram` object inside a channel (`Enabled`, `BotToken`, `ChatID`,
   optional `MessageThreadID`) adds a second destination; a top-level `Telegram`
   section supplies defaults.
+- `FirstRunSend` (channel, `ChannelDefaults` or `Settings`; default 0): when
+  a feed is checked for the first time for a destination, its existing
+  entries are only recorded as seen and just the newest `FirstRunSend` are
+  posted. This also applies after editing a channel's `Webhook`, `Thread` or
+  feed list, because that changes the channel's cache key.
+- `Filters` (channel or `ChannelDefaults`) limits what gets posted:
+
+  ```json
+  "Filters": {
+    "Include": ["patch notes", "/\\bv\\d+\\.\\d+/"],
+    "Exclude": ["sponsored"],
+    "Fields": ["title", "contentSnippet", "categories"],
+    "CaseSensitive": false,
+    "MaxAgeHours": 72
+  }
+  ```
+
+  Patterns are substrings, or regular expressions when written as `/…/`. An
+  entry is posted when it matches any `Include` pattern (or `Include` is
+  empty), no `Exclude` pattern, and is not older than `MaxAgeHours` (undated
+  entries are kept). `Fields` may be `title`, `contentSnippet`, `content`,
+  `categories`, `author`, `link`, `guid`.
 - `Settings.MaxConcurrentChannels` (1–8, default 1) lets different channels run
   in parallel; one channel never overlaps itself.
 - `network` (optional) sets the bandwidth profile, concurrency and timeouts; it
@@ -145,6 +167,7 @@ longer needed. Details: [`docs/migration-from-node.md`](docs/migration-from-node
 - [Deployment](docs/deployment.md)
 - [Migration from Node.js](docs/migration-from-node.md)
 - [Scrapling fallback](scrapling/README.md)
+- [Roadmap](docs/roadmap.md) — ideas taken from comparable projects
 - [`docs/legacy/`](docs/legacy/README.md) — documents of the former JavaScript
   implementation (generated with GPT, kept for reference only).
 

@@ -424,6 +424,7 @@ pub fn v2_to_legacy(v2: &Value) -> Result<Value, Vec<Issue>> {
                 "MaxConcurrentChannels",
                 js::get(settings, "maxConcurrentChannels"),
             ),
+            ("FirstRunSend", js::get(settings, "firstRunSend")),
         ],
         settings.as_object().is_some_and(|m| !m.is_empty()),
     );
@@ -529,6 +530,11 @@ pub fn v2_to_legacy(v2: &Value) -> Result<Value, Vec<Issue>> {
             ("requestSend", "RequestSend"),
         ] {
             if truthy(js::get(channel, from)) {
+                out.insert(to.into(), js::get(channel, from).clone());
+            }
+        }
+        for (from, to) in [("firstRunSend", "FirstRunSend"), ("filters", "Filters")] {
+            if !js::get(channel, from).is_null() {
                 out.insert(to.into(), js::get(channel, from).clone());
             }
         }
@@ -787,6 +793,11 @@ pub struct Channel {
     pub feeds: Vec<String>,
     pub time_checker: u64,
     pub request_send: usize,
+    /// Newest entries delivered when a feed is seen for the first time; the
+    /// rest of its current entries are only recorded as seen.
+    pub first_run_send: usize,
+    /// Entry filter (`Filters`), if configured.
+    pub filter: Option<crate::filter::Filter>,
     /// Normalized Discord source configuration (raw JSON shape kept).
     pub discord: Option<Value>,
     pub telegram: Option<Telegram>,
@@ -991,6 +1002,17 @@ fn build_from_shorthand(input: &Value, defaults: &Value) -> Option<Obj> {
     }
 }
 
+fn non_negative(value: &Value) -> Option<usize> {
+    let n = js::to_number(value);
+    (!value.is_null() && n.is_finite() && n >= 0.0).then(|| n.floor() as usize)
+}
+
+fn first_run_send(raw: &Value, root: &Value) -> usize {
+    non_negative(js::get(raw, "FirstRunSend"))
+        .or_else(|| non_negative(js::get(js::get(root, "Settings"), "FirstRunSend")))
+        .unwrap_or(0)
+}
+
 fn explicit_id(raw: &Value) -> Option<String> {
     ["CacheKey", "Key", "ID"]
         .iter()
@@ -1096,6 +1118,8 @@ pub fn collect_channels(root: &Value) -> Vec<Channel> {
                 feeds: feed_list(&raw),
                 time_checker: positive_floor(js::get(&raw, "TimeChecker"), 30),
                 request_send: positive_floor(js::get(&raw, "RequestSend"), 5) as usize,
+                first_run_send: first_run_send(&raw, root),
+                filter: crate::filter::Filter::parse(js::get(&raw, "Filters")).0,
                 discord: normalize_discord(js::get(&raw, "Discord"), &auth),
                 telegram: merge_telegram(js::get(root, "Telegram"), js::get(&raw, "Telegram")),
                 source_key,
@@ -1158,6 +1182,9 @@ pub fn validate_channels(channels: &[Channel]) -> Vec<String> {
                 "[Config] {label}: Telegram is enabled but BotToken or ChatID is missing."
             ));
         }
+        for problem in crate::filter::Filter::parse(js::get(&channel.raw, "Filters")).1 {
+            warnings.push(format!("[Config] {label}: {problem}"));
+        }
         match seen.get(channel.cache_key.as_str()) {
             Some(other) => warnings.push(format!("[Config] {label}: cache key collision with {other}. Set explicit ID/CacheKey for one of them.")),
             None => {
@@ -1188,7 +1215,8 @@ pub fn unsupported_sections(root: &Value, channels: &[Channel]) -> Vec<String> {
     }
     let mut inspect = |raw: &Value, label: &str| {
         for (key, value) in raw.as_object().into_iter().flatten() {
-            if !CHANNEL_HINTS[..13].contains(&key.as_str()) && value.is_object() {
+            if !CHANNEL_HINTS[..13].contains(&key.as_str()) && key != "Filters" && value.is_object()
+            {
                 report(format!("{label}.{key}"));
             }
         }
@@ -1257,6 +1285,21 @@ pub fn validate(raw: &Value, env: &Env) -> (Vec<String>, Vec<String>, Vec<Issue>
                         .unwrap_or_else(|| channel.source_key.clone())
                 ));
             }
+        }
+    }
+    let whole = |value: &Value| {
+        let n = js::to_number(value);
+        value.is_null() || (n.is_finite() && n.fract() == 0.0 && n >= 0.0)
+    };
+    if !whole(js::get(js::get(&resolved, "Settings"), "FirstRunSend")) {
+        errors.push("Settings.FirstRunSend must be a whole number (0 or more).".into());
+    }
+    for channel in &channels {
+        if !whole(js::get(&channel.raw, "FirstRunSend")) {
+            errors.push(format!(
+                "{}: FirstRunSend must be a whole number (0 or more).",
+                channel.label()
+            ));
         }
     }
     let mut warnings = unsupported_sections(&resolved, &channels);

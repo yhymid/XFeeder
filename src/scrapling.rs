@@ -40,7 +40,7 @@ pub fn detect(base: &Path) -> Option<&'static Runtime> {
         .get_or_init(|| {
             let dir = runtime_dir(base);
             let candidates = [dir.join(".venv/bin/python"), PathBuf::from("python3"), PathBuf::from("python")];
-            let probe = "import sys\nfrom importlib.metadata import version\nfrom scrapling.fetchers import Fetcher, DynamicSession, StealthySession\nassert sys.version_info >= (3, 10)\nprint(version('scrapling'))";
+            let probe = "import sys\nfrom importlib.metadata import version\nfrom scrapling.fetchers import Fetcher, StealthySession\nassert sys.version_info >= (3, 10)\nprint(version('scrapling'))";
             for python in candidates {
                 if python.is_absolute() && !python.exists() {
                     continue;

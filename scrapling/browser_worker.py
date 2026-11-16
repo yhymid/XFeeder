@@ -194,15 +194,57 @@ def browser_options(options, url):
         "max_pages": options.get("maxPages", options.get("max_pages")),
         "proxy_rotator": proxy_rotator,
     }
+    if SCRAPLING_05:
+        # Scrapling 0.5 removed these options (CDP moved to RemoteSession,
+        # XHR capture to session.network) and rejects them even when None.
+        result.pop("capture_xhr", None)
+        if isinstance(selector_config, dict):
+            selector_config.pop("keep_cdata", None)
     return {key: value for key, value in result.items() if value is not None}
 
 
+def _scrapling_05():
+    try:
+        from scrapling.fetchers import DynamicSession  # noqa: F401  (removed in 0.5)
+    except ImportError:
+        return True
+    return False
+
+
+SCRAPLING_05 = _scrapling_05()
+
+
+def session_class_for(mode, config):
+    """Pick the session class; Scrapling 0.5 has only the stealthy (Patchright)
+    browser backend, and CDP connections need RemoteSession."""
+    from scrapling import fetchers
+
+    if not SCRAPLING_05:
+        return fetchers.StealthySession if mode == "stealthy-fetch" else fetchers.DynamicSession
+    if config.get("cdp_url"):
+        for key in ("real_chrome", "executable_path", "headless", "extra_flags", "user_data_dir"):
+            config.pop(key, None)
+        return fetchers.RemoteSession
+    config.pop("cdp_url", None)
+    return fetchers.StealthySession
+
+
 def get_session(mode, url, options):
-    from scrapling.fetchers import DynamicSession, StealthySession
 
     parsed = urlsplit(url)
     origin = f"{parsed.scheme}://{parsed.netloc}".lower()
     config = browser_options(options, url)
+    if mode == "stealthy-fetch" or SCRAPLING_05:
+        # Stealth-only options; the dynamic backend of Scrapling 0.4 rejects them.
+        for camel, snake in (
+            ("solveCloudflare", "solve_cloudflare"),
+            ("hideCanvas", "hide_canvas"),
+            ("allowWebgl", "allow_webgl"),
+            ("blockWebrtc", "block_webrtc"),
+        ):
+            value = options.get(camel, options.get(snake))
+            if value is not None:
+                config[snake] = bool(value)
     session_options = {
         key: value
         for key, value in options.items()
@@ -242,7 +284,7 @@ def get_session(mode, url, options):
         with contextlib.suppress(Exception):
             old_session.close()
 
-    session_class = StealthySession if mode == "stealthy-fetch" else DynamicSession
+    session_class = session_class_for(mode, config)
     session = session_class(**config)
     session.start()
     sessions[key] = session

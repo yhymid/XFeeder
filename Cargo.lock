@@ -2362,6 +2362,7 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
+ "encoding_rs",
  "futures-util",
  "hex",
  "include_dir",

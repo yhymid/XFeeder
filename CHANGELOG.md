@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.0.0-alpha.1] - unreleased (branch `rust-rewrite`)
+
+**XFeeder rewritten in Rust.**
+
+- The worker and the dashboard are one Rust binary (`xfeeder`,
+  `xfeeder dashboard`); Node.js, npm and `node_modules` are no longer required.
+- Same `config.json` (2.x and schema v2), `.env`, `cache.json`, feed state and
+  dashboard UI/API; existing installations switch over in place.
+- Delivery history written by 2.x is reused automatically (2.x and 3.0 compute
+  the channel cache key differently; the existing key wins), so nothing is
+  re-posted after migration.
+- The dashboard UI and the Scrapling worker script are embedded in the binary.
+- HTTP: one retry with `Accept: */*` on 406/415; healthy XML/JSON responses are
+  no longer scanned for anti-bot body signatures.
+- The Scrapling `get` mode runs in the persistent Python worker.
+- Dates with a wrong weekday name (`Mon, 02 Jan 2024`) are accepted like in
+  JavaScript.
+- `XFEEDER_*` flags and dashboard settings are also read from `.env`.
+- Removed: Workshop plugins, Dockerfile/compose, npm scripts. Documents of the
+  JavaScript implementation moved to `docs/legacy/` (GPT-generated, reference
+  only).
+
 ## [2.2.0] - 2026-10-09
 
 **XFeeder 2.2.0 — Final Big Tweaks Before 3.0**

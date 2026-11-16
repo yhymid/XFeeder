@@ -6,16 +6,17 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/var/lib/xfeeder
-ExecStart=/usr/bin/node /opt/xfeeder/main.js --config /var/lib/xfeeder/config.json --cache /var/lib/xfeeder/cache.json
+ExecStart=/usr/local/bin/xfeeder --config /var/lib/xfeeder/config.json --cache /var/lib/xfeeder/cache.json
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=45
+# SIGTERM: finish running channels within network.shutdownGraceMs, save state.
 KillSignal=SIGTERM
+TimeoutStopSec=45
 StateDirectory=xfeeder
 UMask=0077
 User=xfeeder
 Group=xfeeder
-Environment=NODE_ENV=production
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target

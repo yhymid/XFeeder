@@ -1,4 +1,5 @@
-# Node dependencies
+# Rust build output (and stray Node dependencies from older checkouts)
+/target/
 node_modules/
 
 # Secrets and user configuration; keep distributable examples
@@ -13,6 +14,8 @@ node_modules/
 *.corrupt-*
 /http-meta.json
 /src/workshop/workshop-cache.json
+/cache.feeds.json
+/scrapling/browser_worker.py.tmp
 *.network-runtime.json
 *.activity-runtime.json
 *.network-runtime.json.*.tmp
@@ -36,6 +39,7 @@ npm-debug.log*
 # Python environments and optional upstream checkout (not our adapter)
 .venv/
 /src/extensions/Scrapling/.venv/
+/scrapling/.venv/
 venv/
 __pycache__/
 *.py[cod]

@@ -1,23 +1,24 @@
 # Security policy
 
-## Supported versions
+## Reporting
 
-`3.0-alpha` is the actively developed prerelease branch (`3.0.0-alpha.0`) and is **not** a production support or security-update commitment. `3.0-dev` is complete, while `main` remains the 2.2 stable line. The 3.0 beta, RC and stable releases are not yet available. Verify official release notes and support status before deploying.
+Use GitHub's private vulnerability reporting for this repository, or contact
+the maintainer privately. Never include real tokens, webhook URLs or `.env`
+contents in a report.
 
-## Reporting vulnerabilities
+## Boundaries
 
-Please use GitHub's **Report a vulnerability** / private vulnerability reporting option for the repository when available. Otherwise contact the maintainer through a private channel. Do not publish credentials, user data, exploit details or security reports in public issues. Never paste a real bot token, Discord webhook or `.env` file into a report.
-
-Include the affected commit, component, impact, a minimal sanitized reproduction, and relevant environment details. No response SLA or bug-bounty terms are promised here.
-
-## Security boundaries
-
-- Store `config.json`, `.env`, caches and runtime snapshots outside public directories with restrictive permissions; never commit them.
-- For a remotely reachable dashboard use a strong `XFEEDER_DASHBOARD_PASSWORD`, HTTPS reverse proxy and exact `XFEEDER_DASHBOARD_PUBLIC_ORIGIN`; keep backend access restricted. Do not trust unsolicited forwarded headers.
-- Opt into `network.outboundPolicy="public-only"` when handling untrusted feed URLs. This disables LAN/private targets, proxy connections and Scrapling browser fallback. It does not replace a firewall or protect third-party network clients.
-- Set `network.maxResponseBytes` to limit managed Axios response sizes. This limit is not a universal cap on browser/Python traffic.
-- Cache integrity failures are fatal to delivery; restore from a verified backup rather than deleting existing state. Run only one worker per delivery cache.
-- External feed content is untrusted. Logs/events deliberately omit most sensitive fields, but historical debug logs and user-provided plugins require separate inspection and protection.
-- Dependency and Python/Chromium updates must regenerate checked-in lock data and pass all supported CI jobs.
-
-For the audited behavior and limitations see `docs/outbound-security-contract.md`, `docs/dashboard-security-compatibility.md`, `docs/async-state-contract.md`, `docs/dependency-maintenance.md`.
+- `config.json`, `.env`, caches and telemetry snapshots are written with mode
+  `0600`; keep the data directory private and out of web roots.
+- The dashboard binds to `127.0.0.1` by default. Exposing it (non-loopback host
+  or `XFEEDER_DASHBOARD_PUBLIC_ORIGIN`) requires `XFEEDER_DASHBOARD_PASSWORD`;
+  put it behind HTTPS. Host and Origin headers are verified and state-changing
+  requests need a matching origin.
+- `network.outboundPolicy: "public-only"` blocks private/LAN targets (DNS is
+  checked at connect time) and disables proxy and Scrapling for untrusted feed
+  lists. It does not replace a firewall.
+- Logs and activity events redact webhook tokens, bot tokens and sensitive
+  query parameters; channel and feed identifiers in telemetry are hashed.
+- A corrupt or unwritable cache stops delivery instead of risking duplicates.
+  Restore from a backup; the corrupt file is kept as `*.corrupt-<sha256>`.
+- Feed content is untrusted. Run one worker per cache.

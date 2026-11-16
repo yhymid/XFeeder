@@ -1,104 +1,153 @@
 # XFeeder
 
-**XFeeder 3.0 alpha prerelease branch** — a modular RSS, Atom, JSON Feed, YouTube and Discord-source monitor that delivers new entries to Discord webhooks and Telegram.
+RSS / Atom / JSON Feed / YouTube / Discord-channel monitor that delivers new
+entries to **Discord webhooks** (Components V2) and **Telegram**, with an
+optional local web dashboard.
 
-> **Release status:** `3.0-alpha` is the active 3.0 development/testing branch (`3.0.0-alpha.0`). `3.0-dev` is complete, while `3.0-beta`, `3.0-rc` and stable `3.0` are future stages. This is not a production release. Back up configuration and state before testing.
+> **3.0 is a Rust rewrite.** Earlier releases (2.x and the 3.0 JavaScript
+> alpha) ran on Node.js. This branch is a single Rust binary that keeps the
+> same `config.json`, `.env`, `cache.json` and dashboard UI, so an existing
+> installation can be switched over in place (see
+> [Migrating from Node.js](#migrating-from-nodejs)).
 
-XFeeder provides source adapters, destination-specific delivery history, rate limiting, an optional Scrapling browser fallback and a local operations dashboard. It supports an existing legacy configuration and gradual migration to the newer schema.
+## Features
 
-## Alpha builds and community testing
+- Feed formats: RSS 2.0, Atom, YouTube Atom, JSON Feed / JSON APIs, HTML
+  fallback; conditional requests (`ETag` / `Last-Modified`).
+- Destinations: Discord webhooks (optionally into a forum post/thread via
+  `Thread`) and Telegram bots. Delivery history is tracked **per destination**,
+  so a failed Telegram send never causes a duplicate Discord post.
+- Discord channel as a *source* (read with a user token, relayed to a webhook
+  or Telegram).
+- Per-channel interval (`TimeChecker`, minutes) and burst limit (`RequestSend`).
+- Per-channel failure backoff, per-feed circuit breaker, `Retry-After` support,
+  Discord 429 handling; POSTs are never blindly retried.
+- Crash-safe state: atomic writes (`fsync` + rename); corrupt files are
+  quarantined instead of overwritten; the worker refuses to deliver when state
+  cannot be saved.
+- Optional [Scrapling](scrapling/README.md) browser fallback for sites that
+  block plain HTTP clients.
+- Dashboard (`xfeeder dashboard`): config/secrets editor, channels, network
+  limits, live activity and metrics, start/stop of a dashboard-managed worker.
 
-The [public alpha testing guide](docs/alpha-testing.md) covers clean installation on Linux/Arch/CachyOS, backups, checksums and reporting regressions. The existing [3.0.0-alpha.0 prerelease](https://github.com/yhymid/XFeeder/releases/tag/v3.0.0-alpha.0) is a **historical build** from the earlier development line, not necessarily the current `3.0-alpha` HEAD. New commits on `3.0-alpha` are tested by CI, which creates a downloadable Linux runtime **workflow artifact** after Node and Scrapling tests pass; it does not silently overwrite or retag an existing public release.
+## Build
+
+Requires Rust **1.85+** (edition 2024).
+
+```sh
+cargo build --release
+# binary: target/release/xfeeder
+```
+
+The dashboard UI (`dashboard/public`) and the Scrapling worker script are
+embedded into the binary; nothing else has to be copied next to it.
 
 ## Quick start
 
-Install Node.js (CI tests run on 22, 24 and 26) and run from a clean checkout:
-
 ```sh
-npm ci
 cp config.json.example config.json
-cp .env.example .env
-npm run deps:check
-npm run check-config
-npm run start:dry-run
+cp .env.example .env          # webhook URLs / tokens go here
+./xfeeder --check-config      # validate and print a summary
+./xfeeder --dry-run --once    # fetch everything, post nothing, save nothing
+./xfeeder                     # run the scheduler
 ```
 
-Edit the copied files before running live: use your real feed URL, a valid destination and locally stored credentials. `npm run start:dry-run` checks feeds without posting or saving delivery cache changes.
+Run it from the directory that holds `config.json`, or pass `--config` /
+`--cache`.
 
-Start the worker in one terminal and the dashboard in another:
+### Command line
 
-```sh
-npm start
-npm run dashboard
+```
+xfeeder [run] [--dry-run] [--once] [--check-config] [--debug-expert]
+              [--config PATH] [--cache PATH]
+xfeeder dashboard [--data-dir DIR]
+xfeeder --version | --help
 ```
 
-The dashboard listens on `http://127.0.0.1:3000` by default. Authenticated dashboard sessions can Start, Stop or Restart **dashboard-managed workers**; external terminal/systemd/Docker workers must still be controlled by their own supervisor. The dashboard guards against starting another process on an already-used cache, but this is not a multi-process file lock. A live one-off delivery can be invoked with `npm run start:once`; **this command does post messages**, unlike dry-run.
+| Option | Meaning |
+|---|---|
+| `--dry-run` | Fetch and log what would be sent; no posts, no cache writes. |
+| `--once` | One pass over every channel, then exit (**posts for real** unless combined with `--dry-run`). |
+| `--check-config` | Load and validate the config, print a summary, exit. |
+| `--debug-expert` | Detailed diagnostics (secrets are redacted). |
 
-## Example channel
+`XFEEDER_DRY_RUN=1`, `XFEEDER_RUN_ONCE=1` and `XFEEDER_DEBUG_EXPERT=1` work too,
+from the environment or from `.env`.
 
-A minimal Discord-webhook channel in `config.json`:
+## Configuration
+
+`config.json` keeps the 2.x format. Values such as `"${DISCORD_WEBHOOK_MAIN}"`
+are resolved from the process environment or from `.env` next to the config.
 
 ```json
 {
-  "Settings": { "MaxConcurrentChannels": 1 },
+  "Settings": { "Logs": true, "MaxConcurrentChannels": 1 },
   "channels": {
-    "updates": {
-      "Webhook": "${DISCORD_WEBHOOK_MAIN}",
-      "Feeds": ["https://example.com/rss"],
-      "TimeChecker": 30,
-      "RequestSend": 5
-    }
+    "Webhook": "${DISCORD_WEBHOOK_MAIN}",
+    "Thread": "123456789012345678",
+    "RSS": ["https://example.com/feed.xml"],
+    "TimeChecker": 30,
+    "RequestSend": 5
   }
 }
 ```
 
-In the local, untracked `.env` set `DISCORD_WEBHOOK_MAIN` to your actual webhook. Replace `example.com` with a real feed URL. `TimeChecker` is minutes; `RequestSend` limits the per-channel batch. Telegram can be configured globally or as a channel override; see [Configuration](docs/configuration.md).
+- Channel groups are top-level keys starting with `channels` (`channels`,
+  `channels2`, …); each holds one channel object or an array of them.
+- A `Telegram` object inside a channel (`Enabled`, `BotToken`, `ChatID`,
+  optional `MessageThreadID`) adds a second destination; a top-level `Telegram`
+  section supplies defaults.
+- `Settings.MaxConcurrentChannels` (1–8, default 1) lets different channels run
+  in parallel; one channel never overlaps itself.
+- `network` (optional) sets the bandwidth profile, concurrency and timeouts; it
+  can be edited from the dashboard.
+- `schemaVersion: 2` configs are accepted as well.
+- Unsupported sections (e.g. the old `Workshop` plugins) only produce a warning.
 
-Channels run sequentially by default. `Settings.MaxConcurrentChannels` accepts 1–8 to enable bounded overlap **for different channels**; start with 2 only if needed. Only one XFeeder worker may use a particular cache directory.
+`config.json` and `.env` are re-read automatically; changes apply on the next
+scheduler tick without a restart.
 
-## Dashboard and health
-
-The dashboard provides Overview, Channels, Activity, Settings and Advanced. Changes require explicit saving. The authenticated Activity API uses bounded structured worker events and the metrics API reports fixed-dimension counters, gauges and durations.
-
-- `GET /api/live`: dashboard HTTP liveness.
-- `GET /api/ready`: worker readiness; returns 503 when not ready.
-- `GET /api/health`: legacy dashboard health endpoint, not proof of worker readiness.
-
-For remote use, keep the dashboard backend private, set a strong `XFEEDER_DASHBOARD_PASSWORD`, and place it behind HTTPS with an exact `XFEEDER_DASHBOARD_PUBLIC_ORIGIN`. See [Security](SECURITY.md).
-
-## Sources, networking and optional Scrapling
-
-Regular RSS, Atom and JSON feeds work without a browser. Scrapling can be installed separately:
-
-```sh
-npm run scrapling:install
-npm run scrapling:check
-```
-
-This creates a local pinned Python/Chromium environment; it is not included in the default Docker image. See the [Scrapling guide](src/extensions/Scrapling/readme.md).
-
-Network Service manages download/upload pacing, request deadlines, proxy configuration, cancellation and feed retry/backoff. `network.outboundPolicy` defaults to `unrestricted` to preserve local sources. When handling untrusted URLs, an optional `public-only` mode restricts private destinations, redirects and Scrapling fallback. `network.maxResponseBytes` can cap managed HTTP responses. See the [outbound security contract](docs/outbound-security-contract.md).
-
-## State, backup and migration
-
-Successful delivery IDs live in `cache.json`; feed snapshots and HTTP validators live in `cache.feeds.json`. Delivery state is written atomically and awaited before attempting the next destination. Cache corruption is fail-closed; do not delete old cache files to silence an error.
-
-Back up both files and configuration before upgrading. Never overwrite your deployed configuration with the starter example. Use `npm run config:migrate` with the [migration guide](docs/config-migration.md) and review the output.
-
-## Deployment
-
-The repository includes an example [Docker Compose and systemd deployment](docs/deployment-packaging.md), an ignored local data directory and release packaging scripts. The default container intentionally excludes the Python browser runtime; enable it only with a separately verified environment. External access to the dashboard should go through TLS/SSH tunneling, not an unrestricted port.
-
-## Testing and troubleshooting
+## Dashboard
 
 ```sh
-npm test
-npm run check-config
-npm run deps:check
-npm run start:dry-run
-npm run test:scrapling-browser
+XFEEDER_DASHBOARD_PASSWORD='…' ./xfeeder dashboard --data-dir /path/to/xfeeder
 ```
 
-The last command requires an installed browser runtime. CI tests Node 22/24/26, configuration/migration, auth, network behavior, delivery/cache safety and Scrapling smoke. Passing CI does not by itself constitute a tested production release.
+Listens on `127.0.0.1:3000` by default (`XFEEDER_DASHBOARD_HOST`,
+`XFEEDER_DASHBOARD_PORT`; both may also be set in `.env`). Binding to a
+non-loopback address, or setting `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` (the exact
+`https://host` origin when behind a reverse proxy), requires a password. Host
+and Origin headers are checked on every request.
 
-For setup issues see [Troubleshooting](docs/troubleshooting.md), for implementation details [Architecture](ARCHITECTURE.md), and for changes [Contributing](CONTRIBUTING.md). Sensitive vulnerability reports belong in the private process described in [Security](SECURITY.md).
+The dashboard reads the worker's telemetry files
+(`config.json.network-runtime.json`, `config.json.activity-runtime.json`,
+refreshed every 2 s). It can only stop workers it started itself; a
+systemd-managed worker is controlled with systemd.
+
+## Running under systemd
+
+Example units are in [`deploy/systemd`](deploy/systemd);
+[`docs/deployment.md`](docs/deployment.md) describes building from source on a
+server.
+
+## Migrating from Node.js
+
+Stop the Node worker, keep `config.json`, `.env` and `cache.json` where they
+are, and start `xfeeder` in the same directory. Delivery history recorded by
+2.x is reused: 2.x and 3.0 derive the per-channel cache key slightly
+differently, and the binary uses whichever key already exists in `cache.json`,
+so nothing is re-posted. `node_modules`, `package.json` and `main.js` are no
+longer needed. Details: [`docs/migration-from-node.md`](docs/migration-from-node.md).
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Deployment](docs/deployment.md)
+- [Migration from Node.js](docs/migration-from-node.md)
+- [Scrapling fallback](scrapling/README.md)
+- [`docs/legacy/`](docs/legacy/README.md) — documents of the former JavaScript
+  implementation (generated with GPT, kept for reference only).
+
+## License
+
+See [LICENSE](LICENSE).

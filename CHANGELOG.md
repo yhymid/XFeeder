@@ -34,6 +34,9 @@
 - Scrapling worker works with Scrapling 0.4.15 and 0.5.x (0.5 removed the
   dynamic browser backend; CDP uses `RemoteSession`), and now passes
   `solve_cloudflare` and other stealth options to browser sessions.
+- A valid but empty RSS/Atom feed (e.g. a YouTube channel without videos) is
+  no longer turned into a fake entry by the HTML fallback parser; 2.x posted
+  the feed URL itself once per such feed.
 - Removed: Workshop plugins, Dockerfile/compose, npm scripts. Documents of the
   JavaScript implementation moved to `docs/legacy/` (GPT-generated, reference
   only).

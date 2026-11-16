@@ -829,7 +829,15 @@ impl Pipeline<'_> {
                 None,
             ));
         }
-        crate::warn!("Feed pipeline", "No data from feed {}", sanitize_url(url));
+        if parsers::is_feed_document(&body) {
+            crate::info!(
+                "Feed pipeline",
+                "Feed has no entries: {}",
+                sanitize_url(url)
+            );
+        } else {
+            crate::warn!("Feed pipeline", "No data from feed {}", sanitize_url(url));
+        }
         expert(
             "feed.empty",
             json!({ "url": url, "durationMs": started.elapsed().as_millis() as u64 }),

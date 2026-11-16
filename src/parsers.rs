@@ -844,8 +844,24 @@ fn select_text(doc: &Html, selector: &str, first: bool) -> String {
     }
 }
 
+/// A well-formed RSS/Atom/RDF document. When it has no entries it is an
+/// empty feed (e.g. a YouTube channel without videos), not a web page.
+pub fn is_feed_document(body: &Body) -> bool {
+    xml_doc(body)
+        .and_then(|doc| {
+            doc.as_object().map(|root| {
+                root.keys()
+                    .any(|k| matches!(k.as_str(), "rss" | "feed" | "rdf:RDF" | "RDF"))
+            })
+        })
+        .unwrap_or(false)
+}
+
 pub fn parse_fallback(url: &str, body: &Body) -> Vec<Value> {
-    if body.json.is_some() || is_blocked_page(&body.text, 200, &serde_json::Map::new()) {
+    if body.json.is_some()
+        || is_feed_document(body)
+        || is_blocked_page(&body.text, 200, &serde_json::Map::new())
+    {
         return Vec::new();
     }
     let Ok(base) = url::Url::parse(url) else {
@@ -1010,6 +1026,23 @@ mod tests {
             &Body::new(fixture("feed-pipeline/json-feed.json")),
         );
         assert!(!items.is_empty());
+    }
+
+    #[test]
+    fn empty_feed_is_not_a_web_page() {
+        let empty = Body::new(r#"<?xml version="1.0" encoding="UTF-8"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom"><title>Olek47</title><link rel="alternate" href="https://www.youtube.com/channel/UC1"/></feed>"#.into());
+        assert!(
+            parse_fallback(
+                "https://www.youtube.com/feeds/videos.xml?channel_id=UC1",
+                &empty
+            )
+            .is_empty()
+        );
+        let rss =
+            Body::new("<rss version=\"2.0\"><channel><title>x</title></channel></rss>".into());
+        assert!(parse_fallback("https://a/feed", &rss).is_empty());
+        let page = Body::new("<html><head><title>Page</title></head><body></body></html>".into());
+        assert_eq!(parse_fallback("https://a/", &page).len(), 1);
     }
 
     #[test]

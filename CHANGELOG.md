@@ -34,6 +34,15 @@
 - Scrapling worker works with Scrapling 0.4.15 and 0.5.x (0.5 removed the
   dynamic browser backend; CDP uses `RemoteSession`), and now passes
   `solve_cloudflare` and other stealth options to browser sessions.
+- Dashboard UI rewritten as server-rendered HTML in Rust (`src/dashboard/ui.rs`):
+  plain forms, no JavaScript (CSP `default-src 'none'`). Pages: overview with
+  worker control and metrics, channels (add/edit/duplicate/delete with filters),
+  activity, diagnostics reports, settings (general, diagnostics recorder,
+  network, `.env` secrets) and the raw config editor. Every save is checked
+  against the config revision it was rendered from. The JSON API is unchanged.
+- Removed the remaining JavaScript: the browser UI, Node-era documentation
+  (`docs/legacy`, `docs/migration-from-node.md`) and unused Node test fixtures;
+  dropped the `include_dir` dependency.
 - Diagnostics recorder (`Settings.Diagnostics`): every event and log line in
   `diagnostics/events-*.txt`, with HTTP phase timing, per-entry publication →
   Discord latency, Discord 429 waits, process samples and anomalies, plus a

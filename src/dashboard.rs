@@ -1,8 +1,11 @@
 //! Web dashboard (`xfeeder dashboard`): authenticated UI/API for editing the
-//! config, `.env` secrets and network settings, viewing activity/metrics and
-//! controlling a dashboard-owned worker. The UI files are embedded.
+//! config, `.env` secrets and network settings, viewing activity, metrics and
+//! diagnostics, and controlling a dashboard-owned worker. The UI is rendered
+//! on the server (`ui.rs`) as plain HTML forms: no JavaScript.
 
 #![allow(clippy::result_large_err)]
+
+mod ui;
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -13,7 +16,6 @@ use std::time::{Duration, Instant};
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header};
 use axum::response::Response;
-use include_dir::{Dir, include_dir};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
@@ -22,7 +24,6 @@ use crate::diag::sanitize_text;
 use crate::js;
 use crate::telemetry::{self, COUNTERS, DURATIONS};
 
-static PUBLIC: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dashboard/public");
 const MAX_BODY: usize = 2 * 1024 * 1024;
 const COOKIE: &str = "xfeeder_session";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -740,17 +741,24 @@ impl Server {
     }
 
     async fn worker_action(&self, action: &str) -> Response {
+        match self.worker_run(action).await {
+            Ok(status) => reply(StatusCode::OK, &status, &[]),
+            Err((status, message)) => err(status, &message),
+        }
+    }
+
+    async fn worker_run(&self, action: &str) -> Result<Value, (StatusCode, String)> {
         let mut worker = self.worker.lock().await;
         if worker.busy {
-            return err(StatusCode::CONFLICT, "Worker operation in progress");
+            return Err((StatusCode::CONFLICT, "Worker operation in progress".into()));
         }
         let _ = self.worker_status(&mut worker).await;
         if matches!(action, "stop" | "restart") {
             let Some(mut child) = worker.child.take() else {
-                return err(
+                return Err((
                     StatusCode::CONFLICT,
-                    "Only dashboard-managed workers can be stopped here",
-                );
+                    "Only dashboard-managed workers can be stopped here".into(),
+                ));
             };
             worker.busy = true;
             if let Some(pid) = child.id() {
@@ -764,22 +772,22 @@ impl Server {
             worker.busy = false;
             if !stopped {
                 worker.child = Some(child);
-                return err(
+                return Err((
                     StatusCode::SERVICE_UNAVAILABLE,
-                    "Worker shutdown still in progress; do not start another worker",
-                );
+                    "Worker shutdown still in progress; do not start another worker".into(),
+                ));
             }
             if action == "stop" {
                 let mut status = self.worker_status(&mut worker).await;
                 status["action"] = json!("stop");
-                return reply(StatusCode::OK, &status, &[]);
+                return Ok(status);
             }
         }
         if worker.child.is_some() || self.external_worker() {
-            return err(
+            return Err((
                 StatusCode::CONFLICT,
-                "Worker is already running or managed externally",
-            );
+                "Worker is already running or managed externally".into(),
+            ));
         }
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("xfeeder"));
         let spawned = tokio::process::Command::new(exe)
@@ -799,59 +807,13 @@ impl Server {
                 worker.child = Some(child);
                 let mut status = self.worker_status(&mut worker).await;
                 status["action"] = json!(action);
-                reply(StatusCode::OK, &status, &[])
+                Ok(status)
             }
-            Err(e) => err(
+            Err(e) => Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("Worker control failed: {e}"),
-            ),
+                format!("Worker control failed: {e}"),
+            )),
         }
-    }
-
-    fn serve_static(path: &str) -> Response {
-        let path = if path == "/" {
-            "index.html"
-        } else {
-            path.trim_start_matches('/')
-        };
-        if path
-            .split('/')
-            .any(|segment| segment == ".." || segment.starts_with('.'))
-        {
-            return Response::builder()
-                .status(403)
-                .body(Body::from("Forbidden"))
-                .expect("response");
-        }
-        let Some(file) = PUBLIC.get_file(path) else {
-            return Response::builder()
-                .status(404)
-                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-                .body(Body::from("Not found"))
-                .expect("response");
-        };
-        let ext = path.rsplit('.').next().unwrap_or("");
-        let mime = match ext {
-            "html" => "text/html; charset=utf-8",
-            "css" => "text/css; charset=utf-8",
-            "js" | "mjs" => "application/javascript; charset=utf-8",
-            "json" => "application/json; charset=utf-8",
-            "svg" => "image/svg+xml",
-            "txt" => "text/plain; charset=utf-8",
-            _ => "application/octet-stream",
-        };
-        Response::builder()
-            .header(header::CONTENT_TYPE, mime)
-            .header(
-                header::CACHE_CONTROL,
-                if ext == "html" {
-                    "no-store"
-                } else {
-                    "public, max-age=300"
-                },
-            )
-            .body(Body::from(file.contents()))
-            .expect("response")
     }
 
     async fn handle(self: Arc<Self>, request: Request<Body>) -> Response {
@@ -861,10 +823,12 @@ impl Server {
             "x-content-type-options",
             HeaderValue::from_static("nosniff"),
         );
-        headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+        // same-origin (not no-referrer): browsers then send a real Origin
+        // header on form posts, which the CSRF check relies on.
+        headers.insert("referrer-policy", HeaderValue::from_static("same-origin"));
         headers.insert(
             "content-security-policy",
-            HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"),
+            HeaderValue::from_static("default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"),
         );
         response
     }
@@ -924,9 +888,12 @@ impl Server {
             .get(header::ORIGIN)
             .and_then(|o| o.to_str().ok())
             .map(str::trim)
+            .filter(|o| *o != "null")
             .unwrap_or("")
             .to_string();
         let same_origin = !origin.is_empty() && expected_origin.contains(&origin);
+        let fetch_same_origin =
+            headers.get("sec-fetch-site").and_then(|v| v.to_str().ok()) == Some("same-origin");
         if !origin.is_empty() && !same_origin {
             return err(StatusCode::FORBIDDEN, "Origin mismatch.");
         }
@@ -1325,7 +1292,23 @@ impl Server {
                     accept_warnings,
                 )
             }
-            (Method::GET, p) if !p.starts_with("/api/") => Self::serve_static(p),
+            (Method::GET | Method::POST, p) if !p.starts_with("/api/") => {
+                let request = ui::Req {
+                    method: &method,
+                    path: p,
+                    query: &query,
+                    form: if method == Method::POST {
+                        ui::parse_form(&body)
+                    } else {
+                        HashMap::new()
+                    },
+                    headers: &headers,
+                    authorized,
+                    auth_required: self.auth.required(),
+                    can_post: same_origin || (origin.is_empty() && fetch_same_origin),
+                };
+                ui::handle(self, &request).await
+            }
             _ => err(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed."),
         }
     }
@@ -1629,9 +1612,195 @@ mod tests {
         );
     }
 
-    #[test]
-    fn embedded_ui_present() {
-        assert!(PUBLIC.get_file("index.html").is_some());
-        assert!(PUBLIC.get_file("views/channels.js").is_some());
+    fn test_server(dir: &Path, password: &str) -> Arc<Server> {
+        Arc::new(Server {
+            host: "127.0.0.1".into(),
+            port: 3000,
+            public_origin: String::new(),
+            paths: Paths {
+                config: dir.join("config.json"),
+                env: dir.join(".env"),
+                cache: dir.join("cache.json"),
+            },
+            auth: Auth::new("", "127.0.0.1", password.into(), None).unwrap(),
+            worker: tokio::sync::Mutex::new(Worker {
+                child: None,
+                busy: false,
+            }),
+        })
+    }
+
+    async fn call(
+        server: &Arc<Server>,
+        method: Method,
+        path: &str,
+        body: &str,
+        extra: &[(&str, &str)],
+    ) -> (StatusCode, HeaderMap, String) {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::HOST, "127.0.0.1:3000")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+        for (k, v) in extra {
+            builder = builder.header(*k, *v);
+        }
+        let response = server
+            .clone()
+            .handle(builder.body(Body::from(body.to_string())).unwrap())
+            .await;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = to_bytes(response.into_body(), MAX_BODY).await.unwrap();
+        (
+            status,
+            headers,
+            String::from_utf8_lossy(&bytes).into_owned(),
+        )
+    }
+
+    #[tokio::test]
+    async fn html_ui_end_to_end() {
+        let dir = std::env::temp_dir().join(format!("xfeeder-ui-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = "{\r\n  \"Settings\": {},\r\n  \"channels\": [\r\n    {\r\n      \"Webhook\": \"${HOOK}\",\r\n      \"RSS\": [\"https://a.example/feed\"]\r\n    }\r\n  ]\r\n}\r\n";
+        std::fs::write(dir.join("config.json"), config).unwrap();
+        std::fs::write(
+            dir.join(".env"),
+            "HOOK=https://discord.com/api/webhooks/1/S3cr3tXYZ\n",
+        )
+        .unwrap();
+        let server = test_server(&dir, "pw");
+        let origin = [("origin", "http://127.0.0.1:3000")];
+
+        // Unauthenticated pages redirect to the login form; assets are public.
+        let (status, headers, _) = call(&server, Method::GET, "/channels", "", &[]).await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        assert_eq!(headers[header::LOCATION], "/login");
+        let (status, headers, _) = call(&server, Method::GET, "/styles.css", "", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            headers["content-security-policy"]
+                .to_str()
+                .unwrap()
+                .starts_with("default-src 'none'")
+        );
+
+        // Cross-site and header-less posts are refused.
+        let (status, _, _) = call(
+            &server,
+            Method::POST,
+            "/login",
+            "password=pw",
+            &[("origin", "https://evil.example")],
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _, _) = call(&server, Method::POST, "/login", "password=pw", &[]).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _, body) =
+            call(&server, Method::POST, "/login", "password=bad", &origin).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(body.contains("Invalid dashboard password"));
+        // Origin: null (privacy mode) is accepted with Sec-Fetch-Site.
+        let (status, headers, _) = call(
+            &server,
+            Method::POST,
+            "/login",
+            "password=pw",
+            &[("origin", "null"), ("sec-fetch-site", "same-origin")],
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let cookie = headers[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
+        let auth = [
+            ("cookie", cookie.as_str()),
+            ("origin", "http://127.0.0.1:3000"),
+        ];
+
+        for page in [
+            "/",
+            "/channels",
+            "/activity",
+            "/diagnostics",
+            "/settings",
+            "/advanced",
+            "/channels/edit?group=channels&key=0",
+        ] {
+            let (status, _, body) = call(&server, Method::GET, page, "", &auth).await;
+            assert_eq!(status, StatusCode::OK, "{page}");
+            assert!(!body.contains("<script"), "{page}");
+        }
+        let (_, _, body) = call(&server, Method::GET, "/settings", "", &auth).await;
+        assert!(
+            body.contains("HOOK") && !body.contains("S3cr3tXYZ"),
+            "secret values are never rendered"
+        );
+
+        // Edit a channel: interval + second source, keeping CRLF line endings.
+        let rev = revision(&std::fs::read_to_string(dir.join("config.json")).unwrap());
+        let form = format!(
+            "rev={rev}&orig_group=channels&orig_key=0&group=channels&name=&webhook=%24%7BHOOK%7D&thread=&sources=https%3A%2F%2Fa.example%2Ffeed%0D%0Ahttps%3A%2F%2Fb.example%2Frss&time_checker=10&request_send=&first_run_send=&include=&exclude=&fields=&max_age=&extra="
+        );
+        let (status, headers, body) =
+            call(&server, Method::POST, "/channels/save", &form, &auth).await;
+        assert_eq!(status, StatusCode::SEE_OTHER, "{body}");
+        assert!(headers[header::LOCATION].to_str().unwrap().contains("ok="));
+        let written = std::fs::read_to_string(dir.join("config.json")).unwrap();
+        assert!(
+            written.contains("\r\n")
+                && written.contains("https://b.example/rss")
+                && written.contains("\"TimeChecker\": 10")
+        );
+        // The same (now stale) revision is rejected.
+        let (status, _, body) = call(&server, Method::POST, "/channels/save", &form, &auth).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("changed on disk"));
+
+        // Advanced editor rejects invalid JSON without touching the file.
+        let rev = revision(&written);
+        let (status, _, body) = call(
+            &server,
+            Method::POST,
+            "/advanced",
+            &format!("rev={rev}&config=%7Bnope"),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("Invalid JSON"));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("config.json")).unwrap(),
+            written
+        );
+
+        // Delete it.
+        let (status, _, _) = call(
+            &server,
+            Method::POST,
+            "/channels/delete",
+            &format!("rev={rev}&group=channels&key=0"),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let after: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap())
+                .unwrap();
+        assert_eq!(after["channels"], json!([]));
+
+        // Log out ends the session.
+        let (status, _, _) = call(&server, Method::POST, "/logout", "", &auth).await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let (status, _, _) = call(&server, Method::GET, "/", "", &auth).await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -4,11 +4,9 @@ RSS / Atom / JSON Feed / YouTube / Discord-channel monitor that delivers new
 entries to **Discord webhooks** (Components V2) and **Telegram**, with an
 optional local web dashboard.
 
-> **3.0 is a Rust rewrite.** Earlier releases (2.x and the 3.0 JavaScript
-> alpha) ran on Node.js. This branch is a single Rust binary that keeps the
-> same `config.json`, `.env`, `cache.json` and dashboard UI, so an existing
-> installation can be switched over in place (see
-> [Migrating from Node.js](#migrating-from-nodejs)).
+XFeeder 3.0 is a single Rust binary. It reads the same `config.json`, `.env`
+and `cache.json` as 2.x, so an existing installation can be switched over in
+place (see [Upgrading from 2.x](#upgrading-from-2x)).
 
 ## Features
 
@@ -31,8 +29,10 @@ optional local web dashboard.
 - A web page URL works too: the feed it advertises with
   `<link rel="alternate" type="application/rss+xml">` (or Atom/JSON Feed) is
   used.
-- Dashboard (`xfeeder dashboard`): config/secrets editor, channels, network
-  limits, live activity and metrics, start/stop of a dashboard-managed worker.
+- Dashboard (`xfeeder dashboard`): server-rendered HTML pages and forms, no
+  JavaScript. Channels editor, settings, network limits, `.env` secrets,
+  activity and metrics, diagnostics reports, raw config editor, start/stop of
+  a dashboard-managed worker.
 
 ## Build
 
@@ -43,8 +43,8 @@ cargo build --release
 # binary: target/release/xfeeder
 ```
 
-The dashboard UI (`dashboard/public`) and the Scrapling worker script are
-embedded into the binary; nothing else has to be copied next to it.
+The dashboard pages and the Scrapling worker script are embedded into the
+binary; nothing else has to be copied next to it.
 
 ## Quick start
 
@@ -199,24 +199,21 @@ Example units are in [`deploy/systemd`](deploy/systemd);
 [`docs/deployment.md`](docs/deployment.md) describes building from source on a
 server.
 
-## Migrating from Node.js
+## Upgrading from 2.x
 
-Stop the Node worker, keep `config.json`, `.env` and `cache.json` where they
+Stop the old worker, keep `config.json`, `.env` and `cache.json` where they
 are, and start `xfeeder` in the same directory. Delivery history recorded by
 2.x is reused: 2.x and 3.0 derive the per-channel cache key slightly
 differently, and the binary uses whichever key already exists in `cache.json`,
-so nothing is re-posted. `node_modules`, `package.json` and `main.js` are no
-longer needed. Details: [`docs/migration-from-node.md`](docs/migration-from-node.md).
+so nothing is re-posted. Everything else from the old installation can be
+deleted.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Deployment](docs/deployment.md)
-- [Migration from Node.js](docs/migration-from-node.md)
 - [Scrapling fallback](scrapling/README.md)
 - [Roadmap](docs/roadmap.md) — ideas taken from comparable projects
-- [`docs/legacy/`](docs/legacy/README.md) — documents of the former JavaScript
-  implementation (generated with GPT, kept for reference only).
 
 ## License
 

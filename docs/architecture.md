@@ -31,7 +31,8 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 | `state.rs` | JSON stores with atomic writes, corrupt-file quarantine and an "unsafe" latch; feed state (validators, snapshots, health). |
 | `diagnostics.rs` | Optional always-on recorder: JSON-lines event files and a periodic Markdown latency report (`Settings.Diagnostics`). |
 | `telemetry.rs` | Bounded, pseudonymised activity events and metrics, published every 2 s for the dashboard. |
-| `dashboard.rs` | HTTP API + embedded UI (`dashboard/public`), password sessions, Host/Origin checks, `If-Match` revisions, worker control. |
+| `dashboard.rs` | JSON API, password sessions, Host/Origin checks, `If-Match` revisions, worker control. |
+| `dashboard/ui.rs` | Server-rendered HTML pages and form posts (no JavaScript; CSP `default-src 'none'`), revision-checked saves. |
 | `text.rs`, `js.rs`, `diag.rs` | HTML/entity/date helpers and link normalisation, JavaScript-compatible value semantics, redacting logger. |
 
 ## Delivery identity and cache
@@ -77,7 +78,7 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
   cancels immediately.
 - State is flushed before exit.
 
-## Differences from the Node.js implementation
+## Changes compared with 2.x
 
 - Workshop plugins and the Docker image are not ported.
 - The HTTP client retries `406`/`415` responses once with `Accept: */*`;

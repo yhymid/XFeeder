@@ -1,6 +1,5 @@
-# Rust build output (and stray Node dependencies from older checkouts)
+# Rust build output
 /target/
-node_modules/
 
 # Secrets and user configuration; keep distributable examples
 .env
@@ -28,7 +27,6 @@ node_modules/
 /debug/*.txt
 !/debug/.gitkeep
 *.log
-npm-debug.log*
 /errorlog.txt
 /warnlog.txt
 /CrashLog.txt
@@ -90,11 +88,8 @@ Desktop.ini
 *.p12
 *.pfx
 *.pem
-!/tests/fixtures/tls/localhost-test-cert.pem
-!/tests/fixtures/tls/localhost-test-key.pem
 
 # Local package/cloud credentials and directory environment
-.npmrc
 .netrc
 .git-credentials
 .pypirc

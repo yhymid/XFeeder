@@ -152,6 +152,27 @@ are resolved from the process environment or from `.env` next to the config.
 - `schemaVersion: 2` configs are accepted as well.
 - Unsupported sections (e.g. the old `Workshop` plugins) only produce a warning.
 
+### Diagnostics
+
+`"Settings": { "Diagnostics": true }` (or `XFEEDER_DIAGNOSTICS=1`) records
+everything the worker does, redacted, into `diagnostics/` next to the config:
+
+- `events-YYYY-MM-DD.txt`: one JSON object per line: every log line, every
+  structured event (fetch, parse, scheduler, delivery, Scrapling), HTTP
+  phases per request (`http.timing`: queue, time to first byte, body,
+  cache headers, Discord rate-limit headers, server clock skew), per-entry
+  latency (`latency.entry`: publication → first fetch → Discord), feed
+  freshness, Discord 429 waits, process samples every minute (memory, CPU,
+  Chromium children) and anomalies (future dates, duplicate ids, clock skew,
+  panics).
+- `summary-YYYY-MM-DD.md`: refreshed every 15 minutes and on shutdown:
+  latency percentiles per channel and stage, feeds, hosts, Discord, browser,
+  resources, anomalies, warnings, and hints on what dominates the delay.
+
+Options: `{ "Enabled": true, "Dir": "diagnostics", "RetentionDays": 14,
+"MaxFileMB": 256, "SummaryMinutes": 15 }`. Writing happens on a background
+thread and never blocks the worker. Enabling it requires a restart.
+
 `config.json` and `.env` are re-read automatically; changes apply on the next
 scheduler tick without a restart.
 

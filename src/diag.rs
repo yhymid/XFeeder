@@ -140,10 +140,20 @@ pub fn sanitize_value(value: &Value, key: &str, depth: usize) -> Value {
 }
 
 pub fn emit(level: &str, scope: &str, message: &str, details: Option<&Value>) {
-    if level == "info" && !verbose() {
+    let recording = crate::diagnostics::enabled();
+    if level == "info" && !verbose() && !recording {
         return;
     }
     let message = sanitize_text(message).replace(['\r', '\n'], " ");
+    if recording {
+        crate::diagnostics::record(
+            "log",
+            serde_json::json!({ "level": level, "scope": scope, "message": message }),
+        );
+    }
+    if level == "info" && !verbose() {
+        return;
+    }
     let line = match details {
         Some(details) => format!(
             "[{scope}][{level}] {message} {}",
@@ -161,6 +171,14 @@ pub fn emit(level: &str, scope: &str, message: &str, details: Option<&Value>) {
 /// Expert diagnostics: structured, redacted, only with `--debug-expert`.
 pub fn expert(event: &str, details: Value) {
     crate::telemetry::observe(event, &details);
+    let recording = crate::diagnostics::enabled();
+    if !expert_enabled() && !recording {
+        return;
+    }
+    let sanitized = sanitize_value(&details, "", 0);
+    if recording {
+        crate::diagnostics::record(event, sanitized.clone());
+    }
     if !expert_enabled() {
         return;
     }
@@ -170,7 +188,7 @@ pub fn expert(event: &str, details: Value) {
         Value::String(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
     );
     payload.insert("event".into(), Value::String(event.into()));
-    if let Value::Object(map) = sanitize_value(&details, "", 0) {
+    if let Value::Object(map) = sanitized {
         payload.extend(map);
     }
     println!("[Expert] {}", Value::Object(payload));

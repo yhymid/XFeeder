@@ -326,6 +326,12 @@ pub async fn send_webhook(
                 if response.status == 429 && attempt < MAX_429_RETRIES =>
             {
                 let wait = discord_retry_ms(&response, attempt);
+                crate::diag::expert(
+                    "discord.rate_limited",
+                    json!({ "waitMs": wait, "attempt": attempt + 1,
+                            "global": response.header("x-ratelimit-global").is_some(),
+                            "scope": response.header("x-ratelimit-scope").unwrap_or("") }),
+                );
                 crate::warn!(
                     "Discord delivery",
                     "Rate limited (429), attempt {}/{MAX_429_RETRIES}, waiting {wait}ms",

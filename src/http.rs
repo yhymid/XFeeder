@@ -493,10 +493,87 @@ pub struct Get<'a> {
     pub timeout_ms: Option<u64>,
 }
 
+/// Diagnostics: one `http.timing` event per request with its phases.
+fn record_timing(
+    method: &str,
+    url: &url::Url,
+    started: Instant,
+    permitted: Instant,
+    headers_at: Option<Instant>,
+    result: &Result<Response, HttpError>,
+) {
+    if !crate::diagnostics::enabled() {
+        return;
+    }
+    let done = Instant::now();
+    let response = match result {
+        Ok(r) => Some(r),
+        Err(e) => e.response(),
+    };
+    let header = |name: &str| response.and_then(|r| r.header(name)).unwrap_or("");
+    let skew = response
+        .and_then(|r| r.header("date"))
+        .and_then(|d| chrono::DateTime::parse_from_rfc2822(d).ok())
+        .map(|d| d.timestamp_millis() - chrono::Utc::now().timestamp_millis());
+    let mut payload = serde_json::json!({
+        "method": method,
+        "host": url.host_str().unwrap_or(""),
+        "url": url.as_str(),
+        "status": response.map(|r| r.status),
+        "error": result.as_ref().err().map(HttpError::code),
+        "queueMs": permitted.duration_since(started).as_millis() as u64,
+        "ttfbMs": headers_at.map(|h| h.duration_since(permitted).as_millis() as u64),
+        "bodyMs": headers_at.map(|h| done.duration_since(h).as_millis() as u64),
+        "totalMs": done.duration_since(started).as_millis() as u64,
+        "bytes": response.map_or(0, |r| r.body.len()),
+        "cacheControl": header("cache-control"),
+        "age": header("age"),
+        "cfCacheStatus": header("cf-cache-status"),
+        "rateLimitRemaining": header("x-ratelimit-remaining"),
+        "rateLimitResetAfter": header("x-ratelimit-reset-after"),
+        "rateLimitBucket": header("x-ratelimit-bucket"),
+        "serverClockSkewMs": skew,
+    });
+    if let Value::Object(map) = &mut payload {
+        map.retain(|_, v| !v.is_null() && v.as_str() != Some(""));
+    }
+    crate::diagnostics::record("http.timing", crate::diag::sanitize_value(&payload, "", 0));
+    // Second-resolution Date header: only large differences are meaningful.
+    if let Some(skew) = skew
+        && skew.abs() > 5_000
+    {
+        crate::diagnostics::record(
+            "anomaly",
+            serde_json::json!({ "kind": "clock.skew", "host": url.host_str().unwrap_or(""), "serverClockSkewMs": skew }),
+        );
+    }
+}
+
 async fn once(get: &Get<'_>, url: &url::Url) -> Result<Response, HttpError> {
+    let started = Instant::now();
+    let mut headers_at = None;
+    let result = once_inner(get, url, &mut headers_at).await;
+    let permitted = headers_at.map_or(started, |(p, _)| p);
+    record_timing(
+        "GET",
+        url,
+        started,
+        permitted,
+        headers_at.map(|(_, h)| h),
+        &result,
+    );
+    result
+}
+
+async fn once_inner(
+    get: &Get<'_>,
+    url: &url::Url,
+    phases: &mut Option<(Instant, Instant)>,
+) -> Result<Response, HttpError> {
     let net = net();
     let config = net.config();
     let _permit = net.acquire(false, get.cancel).await?;
+    let permitted = Instant::now();
     let client = net.client()?;
     let mut request = client.get(url.clone()).headers(header_map(&get.headers));
     if let Some(timeout) = get.timeout_ms {
@@ -521,6 +598,7 @@ async fn once(get: &Get<'_>, url: &url::Url) -> Result<Response, HttpError> {
         () = get.cancel.cancelled() => return Err(HttpError::Cancelled),
         () = net.shutdown.cancelled() => return Err(HttpError::Cancelled),
     };
+    *phases = Some((permitted, Instant::now()));
     read_body(response, &config, get.cancel).await
 }
 
@@ -743,14 +821,37 @@ pub async fn post_json(
     cancel: &CancellationToken,
 ) -> Result<Response, HttpError> {
     let parsed = parse_url(url)?;
+    let started = Instant::now();
+    let mut phases = None;
+    let result = post_inner(&parsed, payload, timeout_ms, cancel, &mut phases).await;
+    let permitted = phases.map_or(started, |(p, _)| p);
+    record_timing(
+        "POST",
+        &parsed,
+        started,
+        permitted,
+        phases.map(|(_, h)| h),
+        &result,
+    );
+    result
+}
+
+async fn post_inner(
+    parsed: &url::Url,
+    payload: &Value,
+    timeout_ms: Option<u64>,
+    cancel: &CancellationToken,
+    phases: &mut Option<(Instant, Instant)>,
+) -> Result<Response, HttpError> {
     let net = net();
     let config = net.config();
     let _permit = net.acquire(false, cancel).await?;
+    let permitted = Instant::now();
     let client = net.client()?;
     let body = serde_json::to_vec(payload).unwrap_or_default();
     net.record(0, body.len() as u64);
     let mut request = client
-        .post(parsed)
+        .post(parsed.clone())
         .header("content-type", "application/json")
         .body(body);
     if let Some(ms) = timeout_ms.filter(|ms| *ms > 0) {
@@ -761,6 +862,7 @@ pub async fn post_json(
         () = cancel.cancelled() => return Err(HttpError::Cancelled),
         () = net.shutdown.cancelled() => return Err(HttpError::Cancelled),
     };
+    *phases = Some((permitted, Instant::now()));
     read_body(response, &config, cancel).await
 }
 

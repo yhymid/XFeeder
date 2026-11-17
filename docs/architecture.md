@@ -29,6 +29,7 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 | `scrapling.rs` | Optional Python worker (`scrapling/browser_worker.py`, embedded) speaking line-delimited JSON; anti-bot signal analysis and mode selection. |
 | `deliver.rs` | Discord Components V2 webhook payloads, 429 handling; Telegram HTML messages; Discord-channel source reader. |
 | `state.rs` | JSON stores with atomic writes, corrupt-file quarantine and an "unsafe" latch; feed state (validators, snapshots, health). |
+| `diagnostics.rs` | Optional always-on recorder: JSON-lines event files and a periodic Markdown latency report (`Settings.Diagnostics`). |
 | `telemetry.rs` | Bounded, pseudonymised activity events and metrics, published every 2 s for the dashboard. |
 | `dashboard.rs` | HTTP API + embedded UI (`dashboard/public`), password sessions, Host/Origin checks, `If-Match` revisions, worker control. |
 | `text.rs`, `js.rs`, `diag.rs` | HTML/entity/date helpers and link normalisation, JavaScript-compatible value semantics, redacting logger. |

@@ -129,3 +129,4 @@ user-data-dir/
 
 # Local review / diagnostic artifacts
 review/
+/diagnostics/

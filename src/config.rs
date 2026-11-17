@@ -425,6 +425,7 @@ pub fn v2_to_legacy(v2: &Value) -> Result<Value, Vec<Issue>> {
                 js::get(settings, "maxConcurrentChannels"),
             ),
             ("FirstRunSend", js::get(settings, "firstRunSend")),
+            ("Diagnostics", js::get(settings, "diagnostics")),
         ],
         settings.as_object().is_some_and(|m| !m.is_empty()),
     );

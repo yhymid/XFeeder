@@ -6,6 +6,7 @@ mod config;
 mod dashboard;
 mod deliver;
 mod diag;
+mod diagnostics;
 mod feed;
 mod filter;
 mod http;
@@ -51,6 +52,7 @@ struct Options {
     once: bool,
     check: bool,
     expert: bool,
+    diagnostics: bool,
 }
 
 /// Process environment first, then `.env` next to the config (like dotenv).
@@ -97,6 +99,7 @@ fn main() -> ExitCode {
         once: false,
         check: false,
         expert: false,
+        diagnostics: false,
     };
     let mut iter = args.into_iter();
     while let Some(arg) = iter.next() {
@@ -123,6 +126,7 @@ fn main() -> ExitCode {
     options.dry_run |= env_flag(&env, "XFEEDER_DRY_RUN");
     options.once |= env_flag(&env, "XFEEDER_RUN_ONCE");
     options.expert |= env_flag(&env, "XFEEDER_DEBUG_EXPERT");
+    options.diagnostics = env_flag(&env, "XFEEDER_DIAGNOSTICS");
     runtime.block_on(run_worker(options))
 }
 
@@ -219,9 +223,29 @@ async fn run_worker(options: Options) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let diagnostics_task = match diagnostics::Options::from_settings(
+        app.config().settings(),
+        &app.base,
+        options.diagnostics,
+    ) {
+        Some(diag_options) => match diagnostics::init(diag_options) {
+            Ok(()) => Some(tokio::spawn(async {
+                let mut tick = tokio::time::interval(Duration::from_secs(60));
+                loop {
+                    tick.tick().await;
+                    let _ = tokio::task::spawn_blocking(diagnostics::sample_process).await;
+                }
+            })),
+            Err(error) => {
+                crate::error!("Diagnostics", "Not started: {error}");
+                None
+            }
+        },
+        None => None,
+    };
     diag::expert(
         "app.start",
-        json!({ "dryRun": options.dry_run, "autostart": queue }),
+        json!({ "dryRun": options.dry_run, "autostart": queue, "once": options.once }),
     );
 
     if options.once {
@@ -238,6 +262,14 @@ async fn run_worker(options: Options) -> ExitCode {
         };
         scrapling::close().await;
         app.flush().await;
+        if let Some(task) = &diagnostics_task {
+            task.abort();
+        }
+        diag::expert(
+            "app.shutdown",
+            json!({ "dryRun": options.dry_run, "once": true }),
+        );
+        diagnostics::flush();
         return match result {
             Ok((checked, total)) => {
                 println!("[Once] Completed {checked}/{total} channels.");
@@ -293,6 +325,10 @@ async fn run_worker(options: Options) -> ExitCode {
     scrapling::close().await;
     app.flush().await;
     diag::expert("app.shutdown", json!({ "dryRun": options.dry_run }));
+    if let Some(task) = &diagnostics_task {
+        task.abort();
+    }
+    diagnostics::flush();
     let _ = tokio::task::spawn_blocking(move || {
         publisher.publish(false, true);
         publisher.retire();

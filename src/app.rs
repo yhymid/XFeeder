@@ -103,6 +103,8 @@ pub struct App {
     debug_expert: bool,
     /// Live delivery-cache bucket key per channel (current or 2.x legacy).
     bucket_keys: Mutex<HashMap<String, String>>,
+    /// Diagnostics: when each entry (source + identity) was first fetched.
+    first_seen: Mutex<HashMap<String, i64>>,
 }
 
 pub struct ChannelResult {
@@ -133,6 +135,7 @@ impl App {
             stopping: AtomicBool::new(false),
             debug_expert,
             bucket_keys: Mutex::new(HashMap::new()),
+            first_seen: Mutex::new(HashMap::new()),
         });
         let current = app.config();
         app.apply(&current, false);
@@ -385,6 +388,117 @@ impl App {
         }
     }
 
+    /// Diagnostics: remember first-fetch times and report feed freshness and
+    /// data anomalies (future dates, duplicate or missing identities).
+    fn observe_entries(&self, channel: &Channel, source: &str, identified: &[(String, Value)]) {
+        if !crate::diagnostics::enabled() {
+            return;
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let label = channel.label();
+        let mut dates: Vec<i64> = Vec::new();
+        let mut ids = std::collections::HashSet::new();
+        let anomaly = |kind: &str, extra: Value| {
+            let mut payload =
+                json!({ "kind": kind, "channel": label, "url": sanitize_url(source) });
+            if let (Value::Object(map), Value::Object(more)) = (&mut payload, extra) {
+                map.extend(more);
+            }
+            crate::diagnostics::record("anomaly", payload);
+        };
+        {
+            let mut seen = self.first_seen.lock().expect("lock");
+            if seen.len() > 100_000 {
+                let cutoff = now - 7 * 86_400_000;
+                seen.retain(|_, at| *at > cutoff);
+            }
+            for (identity, entry) in identified {
+                if identity.is_empty() {
+                    anomaly(
+                        "entry.no_identity",
+                        json!({ "title": sanitize_text(&crate::js::to_string_or_empty(crate::js::get(entry, "title"))) }),
+                    );
+                    continue;
+                }
+                if !ids.insert(identity.clone()) {
+                    anomaly(
+                        "entry.duplicate_in_feed",
+                        json!({ "id": sanitize_url(identity) }),
+                    );
+                }
+                seen.entry(format!("{source}\u{1}{identity}"))
+                    .or_insert(now);
+                if let Some(date) = crate::js::get(entry, "isoDate")
+                    .as_str()
+                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+                {
+                    let ms = date.timestamp_millis();
+                    if ms > now + 10 * 60_000 {
+                        anomaly(
+                            "entry.future_date",
+                            json!({ "id": sanitize_url(identity), "aheadMs": ms - now }),
+                        );
+                    } else {
+                        dates.push(ms.min(now));
+                    }
+                }
+            }
+        }
+        dates.sort_unstable_by(|a, b| b.cmp(a));
+        let mut gaps: Vec<i64> = dates
+            .windows(2)
+            .map(|w| w[0] - w[1])
+            .filter(|g| *g > 0)
+            .collect();
+        gaps.sort_unstable();
+        expert(
+            "feed.freshness",
+            json!({
+                "channel": channel.label(), "url": source, "entries": identified.len(), "dated": dates.len(),
+                "newestAgeMs": dates.first().map(|d| now - d),
+                "medianGapMs": gaps.get(gaps.len() / 2),
+            }),
+        );
+    }
+
+    /// Diagnostics: publication → first fetch → Discord for one delivery.
+    fn observe_sent(
+        &self,
+        channel: &Channel,
+        source: &str,
+        target: Target,
+        identity: &str,
+        entry: &Value,
+    ) {
+        if !crate::diagnostics::enabled() || self.dry_run {
+            return;
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let seen = self
+            .first_seen
+            .lock()
+            .expect("lock")
+            .get(&format!("{source}\u{1}{identity}"))
+            .copied();
+        let published = crate::js::get(entry, "isoDate")
+            .as_str()
+            .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+            .map(|d| d.timestamp_millis())
+            // A future publication date says nothing about our latency.
+            .filter(|p| *p <= now + 10 * 60_000);
+        expert(
+            "latency.entry",
+            json!({
+                "channel": channel.label(), "url": source, "target": target.kind(),
+                "title": crate::js::to_string_or_empty(crate::js::get(entry, "title")),
+                "publishedAt": crate::js::get(entry, "isoDate"),
+                "publishToSeenMs": published.zip(seen).map(|(p, s)| (s - p).max(0)),
+                "seenToSentMs": seen.map(|s| now - s),
+                "publishToSentMs": published.map(|p| (now - p).max(0)),
+            }),
+        );
+    }
+
     /// First sight of a feed for a destination (no delivery history and no
     /// legacy bucket): record its current entries as seen, except the newest
     /// `FirstRunSend`, so a new feed, a new destination or an edited channel
@@ -506,6 +620,7 @@ impl App {
             .into_iter()
             .map(|e| (entry_identity(&e, discord), e))
             .collect();
+        self.observe_entries(channel, source, &identified);
         self.baseline(channel, cache, source, &identified, &kinds, &bucket_key)
             .await?;
         let pending: Vec<&(String, Value)> = identified
@@ -536,7 +651,11 @@ impl App {
                         pause?;
                     }
                 }
-                match delivered? {
+                let delivered = delivered?;
+                if delivered == Sent::Yes {
+                    self.observe_sent(channel, source, target, identity, entry);
+                }
+                match delivered {
                     Sent::Yes if !identity.is_empty() => {
                         let name = format!("{source}::{}", target.kind());
                         let existing = cache
@@ -858,9 +977,14 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
             channel.index + 1,
             channels.len()
         );
+        let due_at = schedules.get(&key).map_or(0, |s| s.next_run_at);
         expert(
             "queue.channel.selected",
-            json!({ "index": channel.index + 1, "channel": channel.label() }),
+            json!({
+                "index": channel.index + 1, "channel": channel.label(),
+                "lateMs": (due_at > 0).then(|| now_ms().saturating_sub(due_at)),
+                "intervalMin": channel.time_checker, "active": active.len(),
+            }),
         );
         active.push(key.clone());
         let worker = app.clone();

@@ -806,6 +806,9 @@ impl Pipeline<'_> {
             json!({
                 "url": url, "ok": dl.ok, "status": dl.status, "reason": dl.reason, "bodyBytes": dl.data.len(),
                 "notModified": dl.not_modified, "scrapling": dl.scrapling, "elapsedMs": started.elapsed().as_millis() as u64,
+                "cacheControl": header(&dl.headers, "cache-control"),
+                "hasValidators": !header(&dl.headers, "etag").is_empty() || !header(&dl.headers, "last-modified").is_empty(),
+                "sentValidator": validator.is_some(),
             }),
         );
         let blocked = dl.ok

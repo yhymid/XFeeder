@@ -39,6 +39,9 @@
   `disableResources` explicitly to override), and the worker keeps one browser
   session at a time and uses the stealthy backend for every browser mode.
   Before, a second session failed with "Sync API inside the asyncio loop".
+- A feed returned after a solved challenge is accepted even though the
+  response headers still show `server: cloudflare` / `cf-mitigated`; a
+  rejected challenge page is now logged as a warning, not only in expert mode.
 - Optional `Solver` backend for FlareSolverr-compatible services
   (FlareSolverr, Byparr, TRAWL): per-feed or automatic on 403/503/challenge;
   the returned page is used directly and Chromium's XML/JSON viewer markup

@@ -973,19 +973,21 @@ pub fn is_blocked_page(body: &str, status: u16, headers: &serde_json::Map<String
     if status >= 400 {
         return true;
     }
-    if headers.iter().any(|(k, v)| {
-        k.eq_ignore_ascii_case("cf-mitigated") && js::to_string(v).eq_ignore_ascii_case("challenge")
-    }) {
-        return true;
-    }
     let source = js::trim(body.trim_start_matches('\u{feff}'));
     static FEED: OnceLock<Regex> = OnceLock::new();
     static HTML: OnceLock<Regex> = OnceLock::new();
+    // A feed document is never a challenge page, even when the headers of a
+    // solved request still carry `cf-mitigated: challenge`.
     if source.starts_with('{')
         || source.starts_with('[')
         || re(&FEED, r"(?i)^(?:<\?xml[^>]*>\s*)?<(?:rss|feed|rdf:RDF)\b").is_match(source)
     {
         return false;
+    }
+    if headers.iter().any(|(k, v)| {
+        k.eq_ignore_ascii_case("cf-mitigated") && js::to_string(v).eq_ignore_ascii_case("challenge")
+    }) {
+        return true;
     }
     if !re(
         &HTML,
@@ -1118,6 +1120,21 @@ mod tests {
     fn invalid_xml_falls_through() {
         let body = Body::new(fixture("feed-pipeline/invalid.xml"));
         assert!(parse_xml("https://e/x", &body).is_empty());
+    }
+
+    #[test]
+    fn solved_feed_with_challenge_headers_is_not_blocked() {
+        let mut headers = serde_json::Map::new();
+        headers.insert("cf-mitigated".into(), json!("challenge"));
+        headers.insert("server".into(), json!("cloudflare"));
+        let rss = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<rss version=\"2.0\"><channel></channel></rss>";
+        assert!(!is_blocked_page(rss, 200, &headers));
+        assert!(is_blocked_page(
+            "<html><title>Weryfikacja</title></html>",
+            200,
+            &headers
+        ));
+        assert!(is_blocked_page(rss, 403, &headers));
     }
 
     #[test]

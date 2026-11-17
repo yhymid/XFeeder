@@ -182,7 +182,12 @@ impl Ctx<'_> {
                     }
                     let signals =
                         scrapling::analyze(fetched.status, &fetched.headers, &fetched.html, &anti);
-                    if signals.blocked
+                    // A real feed document is the content itself: the headers
+                    // of a solved Cloudflare page still say "cloudflare" or
+                    // carry `cf-mitigated` from the challenge response.
+                    let feed_body = fetched.status.is_none_or(|s| (200..300).contains(&s))
+                        && looks_like_feed(&fetched.html);
+                    if (signals.blocked && !feed_body)
                         || parsers::is_blocked_page(
                             &fetched.html,
                             fetched.status.unwrap_or(200),
@@ -815,6 +820,12 @@ impl Pipeline<'_> {
             expert(
                 "feed.blocked_page",
                 json!({ "url": url, "status": dl.status, "reason": dl.reason }),
+            );
+            crate::warn!(
+                "Feed pipeline",
+                "{} returned a challenge/block page ({}); no entries this time",
+                sanitize_url(url),
+                dl.reason.unwrap_or("ANTIBOT_CHALLENGE_UNRESOLVED")
             );
             let reason = dl
                 .reason

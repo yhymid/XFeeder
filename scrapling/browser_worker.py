@@ -14,7 +14,10 @@ from urllib.parse import urlsplit
 
 PROTOCOL_OUT = sys.stdout
 sys.stdout = sys.stderr
-MAX_SESSIONS = 4
+# Scrapling's sync browser sessions each start their own Playwright event
+# loop; a second one in the same thread fails ("Sync API inside the asyncio
+# loop"). Keep a single live session and replace it when the options change.
+MAX_SESSIONS = 1
 sessions = OrderedDict()
 stopping = False
 
@@ -220,7 +223,10 @@ def session_class_for(mode, config):
     from scrapling import fetchers
 
     if not SCRAPLING_05:
-        return fetchers.StealthySession if mode == "stealthy-fetch" else fetchers.DynamicSession
+        # Patchright (stealthy) and Playwright (dynamic) sync sessions cannot
+        # coexist in one thread ("Sync API inside the asyncio loop"), so like
+        # Scrapling 0.5 every browser mode uses the stealthy backend.
+        return fetchers.StealthySession
     if config.get("cdp_url"):
         for key in ("real_chrome", "executable_path", "headless", "extra_flags", "user_data_dir"):
             config.pop(key, None)
@@ -234,17 +240,16 @@ def get_session(mode, url, options):
     parsed = urlsplit(url)
     origin = f"{parsed.scheme}://{parsed.netloc}".lower()
     config = browser_options(options, url)
-    if mode == "stealthy-fetch" or SCRAPLING_05:
-        # Stealth-only options; the dynamic backend of Scrapling 0.4 rejects them.
-        for camel, snake in (
-            ("solveCloudflare", "solve_cloudflare"),
-            ("hideCanvas", "hide_canvas"),
-            ("allowWebgl", "allow_webgl"),
-            ("blockWebrtc", "block_webrtc"),
-        ):
-            value = options.get(camel, options.get(snake))
-            if value is not None:
-                config[snake] = bool(value)
+    # Stealth options; every browser mode uses StealthySession (see session_class_for).
+    for camel, snake in (
+        ("solveCloudflare", "solve_cloudflare"),
+        ("hideCanvas", "hide_canvas"),
+        ("allowWebgl", "allow_webgl"),
+        ("blockWebrtc", "block_webrtc"),
+    ):
+        value = options.get(camel, options.get(snake))
+        if value is not None:
+            config[snake] = bool(value)
     session_options = {
         key: value
         for key, value in options.items()

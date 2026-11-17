@@ -34,6 +34,11 @@
 - Scrapling worker works with Scrapling 0.4.15 and 0.5.x (0.5 removed the
   dynamic browser backend; CDP uses `RemoteSession`), and now passes
   `solve_cloudflare` and other stealth options to browser sessions.
+- Scrapling: a Cloudflare solve (`stealthy-fetch`) no longer blocks page
+  resources by default (the Turnstile widget needs them; set
+  `disableResources` explicitly to override), and the worker keeps one browser
+  session at a time and uses the stealthy backend for every browser mode.
+  Before, a second session failed with "Sync API inside the asyncio loop".
 - Optional `Solver` backend for FlareSolverr-compatible services
   (FlareSolverr, Byparr, TRAWL): per-feed or automatic on 403/503/challenge;
   the returned page is used directly and Chromium's XML/JSON viewer markup

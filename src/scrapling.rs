@@ -768,20 +768,23 @@ pub fn request_options(
             merged.insert(camel.into(), value);
         }
     }
-    if mode == "fetch" || mode == "stealthy-fetch" {
-        let saving = merged
-            .remove("scraplingResourceSaving")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(network_saving);
-        if merged.get("disableResources").is_none_or(Value::is_null) {
-            merged.insert("disableResources".into(), Value::Bool(saving));
-        }
-    }
     if mode == "stealthy-fetch"
         && merged.get("solveCloudflare").is_none_or(Value::is_null)
         && merged.get("solveCaptcha").is_none_or(Value::is_null)
     {
         merged.insert("solveCloudflare".into(), Value::Bool(true));
+    }
+    if mode == "fetch" || mode == "stealthy-fetch" {
+        let saving = merged
+            .remove("scraplingResourceSaving")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(network_saving);
+        // The Turnstile widget cannot load with resources blocked, so a
+        // Cloudflare solve keeps them unless `disableResources` is explicit.
+        let solving = truthy(merged.get("solveCloudflare").unwrap_or(&Value::Null));
+        if merged.get("disableResources").is_none_or(Value::is_null) {
+            merged.insert("disableResources".into(), Value::Bool(saving && !solving));
+        }
     }
     if truthy(merged.get("solveCloudflare").unwrap_or(&Value::Null)) {
         let timeout_ms = merged
@@ -828,6 +831,25 @@ mod tests {
         headers.insert("cf-ray".into(), json!("abc"));
         let ok = analyze(Some(200), &headers, "<rss></rss>", &anti());
         assert!(!ok.blocked, "cloudflare alone stays below confidence floor");
+    }
+
+    #[test]
+    fn cloudflare_solve_keeps_resources() {
+        let root = json!({ "Scrapling": { "PerUrlConfig": { "https://p": { "wait": 8000 } } } });
+        let cfg = ScraplingConfig::new(&root);
+        let stealth = request_options(&cfg, "https://p", "stealthy-fetch", true);
+        assert_eq!(stealth["solveCloudflare"], json!(true));
+        assert_eq!(stealth["disableResources"], json!(false));
+        let plain = request_options(&cfg, "https://p", "fetch", true);
+        assert_eq!(plain["disableResources"], json!(true));
+        let root = json!({ "Scrapling": { "DefaultOptions": { "disableResources": true } } });
+        let explicit = request_options(
+            &ScraplingConfig::new(&root),
+            "https://p",
+            "stealthy-fetch",
+            false,
+        );
+        assert_eq!(explicit["disableResources"], json!(true));
     }
 
     #[test]

@@ -309,15 +309,16 @@ pub async fn send_webhook(
         let started = std::time::Instant::now();
         match http::post_json(url.as_str(), &payload, None, cancel).await {
             Ok(response) => {
-                let confirmed = serde_json::from_str::<Value>(&response.body)
-                    .ok()
-                    .is_some_and(|b| truthy(get(&b, "id")));
+                let body = serde_json::from_str::<Value>(&response.body).unwrap_or(Value::Null);
+                let confirmed = truthy(get(&body, "id"));
                 crate::info!(
                     "ComponentsV2",
-                    "Sent: {} (HTTP {}, {}ms, confirmed={confirmed})",
+                    "Sent: {} (HTTP {}, {}ms, confirmed={confirmed}, message={} channel={})",
                     crate::diag::sanitize_text(&label),
                     response.status,
-                    started.elapsed().as_millis()
+                    started.elapsed().as_millis(),
+                    js::to_string_or_empty(get(&body, "id")),
+                    js::to_string_or_empty(get(&body, "channel_id"))
                 );
                 return Ok(());
             }

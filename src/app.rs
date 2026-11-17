@@ -779,8 +779,11 @@ fn reschedule(schedule: &mut Schedule, minutes: u64, failed: bool) {
     }
 }
 
-/// Run the round-robin queue until shutdown. One channel is considered per
-/// tick (`delay`); with concurrency > 1 different channels may overlap.
+/// Run the round-robin queue until shutdown. Due channels are started one
+/// after another in round-robin order (up to `MaxConcurrentChannels` at a
+/// time); the queue only sleeps for `delay` when no channel is due. 2.x
+/// considered a single channel per tick, so with N channels a due channel
+/// could wait N × 30 s.
 pub async fn run_queue(app: Arc<App>, delay: Duration) {
     let mut schedules: HashMap<String, Schedule> = HashMap::new();
     let mut cursor = 0usize;
@@ -790,12 +793,15 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
     let mut first = true;
     loop {
         if !first {
+            // Something may have finished while the previous channel ran.
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}
                 () = app.stop.cancelled() => break,
                 () = app.cancel.cancelled() => break,
                 Some(done) = running.join_next(), if !running.is_empty() => {
                     handle_done(&app, done, &mut schedules, &mut active);
+                    // A slot is free: start the next due channel right away.
+                    first = true;
                     continue;
                 }
             }
@@ -824,20 +830,27 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
             expert("queue.wait", json!({ "reason": "no channels" }));
             continue;
         }
-        cursor = next_index(channels, next_key.as_deref(), cursor);
-        let channel = channels[cursor].clone();
-        cursor = (cursor + 1) % channels.len();
-        next_key = Some(channels[cursor].cache_key.clone());
-        let key = channel.cache_key.clone();
-        let schedule = schedules.get(&key).copied().unwrap_or_default();
         let limit = config.max_concurrent_channels().clamp(1, 8);
-        if active.contains(&key) || active.len() >= limit || now_ms() < schedule.next_run_at {
-            expert(
-                "queue.channel.skipped",
-                json!({ "channel": channel.label(), "reason": "interval not elapsed or busy" }),
-            );
+        if active.len() >= limit {
             continue;
         }
+        // Next due channel in round-robin order, starting at the cursor.
+        cursor = next_index(channels, next_key.as_deref(), cursor);
+        let picked = (0..channels.len())
+            .map(|step| (cursor + step) % channels.len())
+            .find(|&index| {
+                let key = &channels[index].cache_key;
+                !active.contains(key)
+                    && schedules.get(key).is_none_or(|s| s.next_run_at <= now_ms())
+            });
+        let Some(index) = picked else {
+            expert("queue.wait", json!({ "reason": "no channel due" }));
+            continue;
+        };
+        let channel = channels[index].clone();
+        cursor = (index + 1) % channels.len();
+        next_key = Some(channels[cursor].cache_key.clone());
+        let key = channel.cache_key.clone();
         crate::info!(
             "Scheduler",
             "Checking channel {} ({}/{})",
@@ -857,13 +870,15 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
             (channel.cache_key.clone(), channel.label(), minutes, result)
         });
         if limit == 1 {
-            // Sequential mode: finish this channel before the next tick.
+            // Sequential mode: finish this channel before the next one.
             tokio::select! {
                 Some(done) = running.join_next() => handle_done(&app, done, &mut schedules, &mut active),
                 () = app.stop.cancelled() => break,
                 () = app.cancel.cancelled() => break,
             }
         }
+        // Look for the next due channel right away instead of sleeping.
+        first = true;
     }
     // Shutdown: give running channels the network grace period, then cancel.
     let grace = Duration::from_millis(net().config().shutdown_grace_ms);

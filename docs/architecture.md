@@ -64,8 +64,10 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 
 ## Scheduling
 
-- One channel is considered every 30 s, round robin.
-- A channel runs when its `TimeChecker` interval has elapsed.
+- Due channels (their `TimeChecker` interval has elapsed) are started one
+  after another in round-robin order; the scheduler sleeps 30 s only when no
+  channel is due. 2.x considered one channel per 30 s tick, so a due channel
+  could wait up to N × 30 s.
 - After a run with errors the next run is delayed by `interval × 2^(n-1)`,
   capped at 8 intervals or 1 hour.
 - `MaxConcurrentChannels > 1` runs different channels in parallel.

@@ -681,7 +681,14 @@ impl App {
                 continue;
             }
             if self
-                .process(channel, &mut cache, url, outcome.items, &targets, false)
+                .process(
+                    channel,
+                    &mut cache,
+                    outcome.source.as_deref().unwrap_or(url),
+                    outcome.items,
+                    &targets,
+                    false,
+                )
                 .await?
             {
                 failure.get_or_insert_with(|| "Delivery failed".into());

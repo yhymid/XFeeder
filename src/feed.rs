@@ -34,6 +34,9 @@ impl From<UnsafeState> for Stop {
 pub struct Outcome {
     pub items: Vec<Value>,
     pub failure: Option<String>,
+    /// Feed URL discovered on the configured web page, if one was used.
+    /// Delivery history is kept under this URL.
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -247,7 +250,99 @@ impl Ctx<'_> {
         })
     }
 
+    /// Direct/Scrapling download, then the optional `Solver` backend when the
+    /// feed is listed in `Solver.Feeds` or (with `Solver.Auto`) the result is
+    /// a challenge or a configured error status.
     async fn download(
+        &self,
+        url: &str,
+        validator: Option<&(String, String)>,
+        allow_browser: bool,
+    ) -> Result<Download, Stop> {
+        let solver = crate::solver::SolverConfig::from_root(&self.config.root)
+            .filter(|_| !self.config.network.public_only());
+        let forced = solver.as_ref().is_some_and(|s| s.forced(url));
+        if !forced {
+            let dl = self.download_direct(url, validator, allow_browser).await?;
+            let challenge = matches!(dl.reason, Some("ANTIBOT_CHALLENGE_UNRESOLVED"))
+                || (dl.ok
+                    && !dl.not_modified
+                    && parsers::is_blocked_page(&dl.data, dl.status.unwrap_or(200), &dl.headers));
+            let retry = !dl.ok || challenge;
+            match &solver {
+                Some(s) if retry && allow_browser && s.retry(dl.status, challenge) => {}
+                _ => return Ok(dl),
+            }
+        }
+        let Some(solver) = solver else {
+            unreachable!("forced implies a solver")
+        };
+        if !allow_browser {
+            return Ok(Download {
+                reason: Some("SOLVER_COOLDOWN"),
+                ..Default::default()
+            });
+        }
+        let started = Instant::now();
+        let _permit = http::net()
+            .acquire(true, self.cancel)
+            .await
+            .map_err(|_| Stop::Cancelled)?;
+        let result = solver.fetch(url, self.cancel).await;
+        if self.cancel.is_cancelled() {
+            return Err(Stop::Cancelled);
+        }
+        match result {
+            Ok(solved)
+                if (200..300).contains(&solved.status)
+                    && !parsers::is_blocked_page(&solved.body, solved.status, &solved.headers) =>
+            {
+                crate::info!(
+                    "Solver",
+                    "Fetched {} through the solver ({} bytes, {}ms)",
+                    sanitize_url(url),
+                    solved.body.len(),
+                    started.elapsed().as_millis()
+                );
+                Ok(Download {
+                    ok: true,
+                    status: Some(solved.status),
+                    headers: solved.headers,
+                    data: solved.body,
+                    ..Default::default()
+                })
+            }
+            Ok(solved) => {
+                crate::warn!(
+                    "Solver",
+                    "Solver could not get {} (HTTP {})",
+                    sanitize_url(url),
+                    solved.status
+                );
+                Ok(Download {
+                    status: Some(solved.status),
+                    reason: Some("SOLVER_BLOCKED"),
+                    error: Some(format!("solver returned HTTP {}", solved.status)),
+                    ..Default::default()
+                })
+            }
+            Err(error) => {
+                crate::warn!(
+                    "Solver",
+                    "Solver failed for {}: {}",
+                    sanitize_url(url),
+                    crate::diag::sanitize_text(&error)
+                );
+                Ok(Download {
+                    reason: Some("SOLVER_ERROR"),
+                    error: Some(error),
+                    ..Default::default()
+                })
+            }
+        }
+    }
+
+    async fn download_direct(
         &self,
         url: &str,
         validator: Option<&(String, String)>,
@@ -539,9 +634,15 @@ impl Circuit {
         let at = now_ms();
         let streak = (health.consecutive_failures + 1).min(1000);
         let browser = scrapling
-            || ["SCRAPLING", "ANTIBOT", "CHALLENGE", "BLOCKED_PAGE"]
-                .iter()
-                .any(|k| reason.to_uppercase().contains(k));
+            || [
+                "SCRAPLING",
+                "SOLVER",
+                "ANTIBOT",
+                "CHALLENGE",
+                "BLOCKED_PAGE",
+            ]
+            .iter()
+            .any(|k| reason.to_uppercase().contains(k));
         let browser_failures = if browser {
             (health.browser_failures + 1).min(1000)
         } else {
@@ -609,6 +710,7 @@ impl Pipeline<'_> {
                 return Ok(Outcome {
                     items: Vec::new(),
                     failure: None,
+                    source: None,
                 });
             }
             if probe {
@@ -616,11 +718,13 @@ impl Pipeline<'_> {
             }
         }
         let allow_scrapling = health.scrapling_cooldown_until <= at;
-        let result = self.fetch_core(url, allow_scrapling).await;
+        let mut discovered = None;
+        let result = self.fetch_core(url, allow_scrapling, &mut discovered).await;
         if probe {
             self.circuit.probes.lock().expect("lock").remove(url);
         }
-        let (outcome, report) = result?;
+        let (mut outcome, report) = result?;
+        outcome.source = discovered;
         match report {
             Some((reason, scrapling)) => {
                 Circuit::failed(self.state, url, &reason, scrapling).await?
@@ -654,6 +758,7 @@ impl Pipeline<'_> {
         &self,
         url: &str,
         allow_scrapling: bool,
+        discovered: &mut Option<String>,
     ) -> Result<(Outcome, Option<(String, bool)>), Stop> {
         let started = Instant::now();
         let validator = self.state.validator(url);
@@ -666,9 +771,31 @@ impl Pipeline<'_> {
             base: self.base,
             cancel: self.cancel,
         };
-        let dl = ctx
+        let mut dl = ctx
             .download(url, validator.as_ref(), allow_scrapling)
             .await?;
+        // A web page instead of a feed: follow the feed it advertises.
+        if dl.ok
+            && !dl.not_modified
+            && !looks_like_feed(&dl.data)
+            && let Some(found) = parsers::discover_feed(url, &dl.data)
+        {
+            let next = ctx.download(&found, None, allow_scrapling).await?;
+            if next.ok && looks_like_feed(&next.data) {
+                crate::info!(
+                    "Feed pipeline",
+                    "{} is a web page; using the feed it advertises: {} (put that URL in config.json to skip this step)",
+                    sanitize_url(url),
+                    sanitize_url(&found)
+                );
+                // Validators of the discovered feed must not be sent to the page.
+                dl = Download {
+                    headers: Map::new(),
+                    ..next
+                };
+                *discovered = Some(found);
+            }
+        }
         expert(
             "feed.download.complete",
             json!({
@@ -697,6 +824,7 @@ impl Pipeline<'_> {
                 Outcome {
                     items: Vec::new(),
                     failure: Some("Challenge/error page rejected".into()),
+                    source: None,
                 },
                 Some((reason, dl.scrapling)),
             ));
@@ -711,6 +839,7 @@ impl Pipeline<'_> {
                 Outcome {
                     items,
                     failure: None,
+                    source: None,
                 },
                 None,
             ));
@@ -726,6 +855,7 @@ impl Pipeline<'_> {
                 Outcome {
                     items: Vec::new(),
                     failure: None,
+                    source: None,
                 },
                 Some((dl.reason.unwrap_or_default().to_string(), false)),
             ));
@@ -749,6 +879,7 @@ impl Pipeline<'_> {
                 Outcome {
                     items,
                     failure: Some(message),
+                    source: None,
                 },
                 Some((reason.to_string(), dl.scrapling)),
             ));
@@ -777,6 +908,7 @@ impl Pipeline<'_> {
                     Outcome {
                         items,
                         failure: None,
+                        source: None,
                     },
                     None,
                 ));
@@ -805,6 +937,7 @@ impl Pipeline<'_> {
                     Outcome {
                         items,
                         failure: None,
+                        source: None,
                     },
                     None,
                 ));
@@ -825,6 +958,7 @@ impl Pipeline<'_> {
                 Outcome {
                     items,
                     failure: None,
+                    source: None,
                 },
                 None,
             ));
@@ -846,6 +980,7 @@ impl Pipeline<'_> {
             Outcome {
                 items: Vec::new(),
                 failure: None,
+                source: None,
             },
             None,
         ))

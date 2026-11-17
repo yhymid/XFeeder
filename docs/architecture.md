@@ -24,6 +24,8 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 | `feed.rs` | Feed pipeline: conditional download, fallbacks, parser chain, saved-snapshot replay on failure, per-feed circuit breaker. |
 | `http.rs` | Shared `reqwest` client(s), GET retries with `Retry-After`, bandwidth shaping and concurrency permits, optional public-only outbound policy, byte/rate accounting. |
 | `parsers.rs`, `xmltree.rs` | Feed parsers (YouTube, Atom, XML/RSS, JSON, API, regex RSS, HTML fallback) and an xml2js-compatible XML tree; blocked/challenge page detection. |
+| `solver.rs` | Optional FlareSolverr-compatible `/v1` client; unwraps browser XML/JSON viewer markup. |
+| `filter.rs` | Channel `Filters` (include/exclude, regex, fields, max age). |
 | `scrapling.rs` | Optional Python worker (`scrapling/browser_worker.py`, embedded) speaking line-delimited JSON; anti-bot signal analysis and mode selection. |
 | `deliver.rs` | Discord Components V2 webhook payloads, 429 handling; Telegram HTML messages; Discord-channel source reader. |
 | `state.rs` | JSON stores with atomic writes, corrupt-file quarantine and an "unsafe" latch; feed state (validators, snapshots, health). |

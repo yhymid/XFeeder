@@ -718,8 +718,9 @@ const CHANNEL_HINTS: [&str; 14] = [
     "CacheKey",
     "Matrix",
 ];
-const RESERVED_ROOT: [&str; 8] = [
+const RESERVED_ROOT: [&str; 9] = [
     "Settings",
+    "Solver",
     "network",
     "Auth",
     "Proxy",
@@ -774,6 +775,8 @@ pub struct Telegram {
     pub chat_id: String,
     pub message_thread_id: Option<u64>,
     pub disable_preview: bool,
+    /// Send entries with an image as a photo with caption (`SendPhoto`).
+    pub send_photo: bool,
     pub timeout_ms: u64,
 }
 
@@ -964,6 +967,7 @@ fn merge_telegram(root: &Value, local: &Value) -> Option<Telegram> {
             && thread > 0.0)
             .then_some(thread as u64),
         disable_preview: get("DisableWebPagePreview") == &Value::Bool(true),
+        send_photo: get("SendPhoto") != &Value::Bool(false),
         timeout_ms: if !timeout_value.is_null() && timeout.is_finite() && timeout > 0.0 {
             (timeout.floor() as u64).max(1)
         } else {

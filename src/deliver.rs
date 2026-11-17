@@ -396,6 +396,8 @@ fn escape_limited(value: &Value, max: usize) -> String {
     output
 }
 
+const TELEGRAM_CAPTION_MAX: usize = 1024;
+
 pub fn telegram_text(entry: &Value) -> Result<String, String> {
     const MAX: usize = 4096;
     let title = escape_limited(js::or(&[get(entry, "title"), &json!("New entry")]), 480);
@@ -462,6 +464,67 @@ pub fn telegram_text(entry: &Value) -> Result<String, String> {
     }
 }
 
+/// Telegram rejects these photo URLs with a 400 that a text message avoids.
+fn telegram_photo_rejected(status: u16, description: &str) -> bool {
+    status == 400
+        && !telegram_target_gone(status, description)
+        && !description
+            .to_ascii_lowercase()
+            .contains("can't parse entities")
+}
+
+async fn telegram_call(
+    config: &Telegram,
+    method: &str,
+    payload: &Value,
+    cancel: &CancellationToken,
+) -> Result<(), (SendError, u16, String)> {
+    let url = format!("https://api.telegram.org/bot{}/{method}", config.bot_token);
+    match http::post_json(&url, payload, Some(config.timeout_ms), cancel).await {
+        Ok(response) => {
+            let body: Value = serde_json::from_str(&response.body).unwrap_or(Value::Null);
+            if get(&body, "ok") == &Value::Bool(false) {
+                let description = js::to_string(js::or(&[
+                    get(&body, "description"),
+                    &json!("request was rejected"),
+                ]));
+                return Err((
+                    SendError::Failed(format!("Telegram API error: {description}")),
+                    response.status,
+                    description,
+                ));
+            }
+            Ok(())
+        }
+        Err(HttpError::Cancelled) => Err((SendError::Cancelled, 0, String::new())),
+        Err(HttpError::Status(response)) => {
+            let body: Value = serde_json::from_str(&response.body).unwrap_or(Value::Null);
+            let description = get(&body, "description").as_str().unwrap_or("").to_string();
+            let message = if description.is_empty() {
+                format!("Telegram API request failed with HTTP {}.", response.status)
+            } else {
+                format!("Telegram API error: {description}")
+            };
+            let error = if telegram_target_gone(response.status, &description) {
+                SendError::Unreachable(message)
+            } else {
+                SendError::Failed(message)
+            };
+            Err((error, response.status, description))
+        }
+        Err(error) => Err((
+            SendError::Failed(format!("Telegram API request failed ({}).", error.code())),
+            0,
+            String::new(),
+        )),
+    }
+}
+
+/// Photo to attach: the entry image (`enclosure`), when it is an http(s) URL.
+fn telegram_photo(entry: &Value) -> Option<String> {
+    http_url(get(entry, "enclosure"))
+}
+
 pub async fn send_telegram(
     config: &Telegram,
     entry: &Value,
@@ -470,51 +533,39 @@ pub async fn send_telegram(
     if !config.enabled {
         return Err(SendError::Failed("Telegram target is disabled.".into()));
     }
-    let mut payload = json!({ "chat_id": config.chat_id, "text": telegram_text(entry).map_err(SendError::Failed)?, "parse_mode": "HTML" });
+    let text = telegram_text(entry).map_err(SendError::Failed)?;
+    let mut base = json!({ "chat_id": config.chat_id, "parse_mode": "HTML" });
     if let Some(thread) = config.message_thread_id {
-        payload["message_thread_id"] = json!(thread);
+        base["message_thread_id"] = json!(thread);
     }
+    // A photo carries the text as its caption (max 1024 characters).
+    if config.send_photo
+        && len16(&text) <= TELEGRAM_CAPTION_MAX
+        && let Some(photo) = telegram_photo(entry)
+    {
+        let mut payload = base.clone();
+        payload["photo"] = json!(photo);
+        payload["caption"] = json!(text);
+        match telegram_call(config, "sendPhoto", &payload, cancel).await {
+            Ok(()) => return Ok(()),
+            Err((_, status, description)) if telegram_photo_rejected(status, &description) => {
+                crate::warn!(
+                    "Telegram",
+                    "Photo rejected ({}); sending text only",
+                    crate::diag::sanitize_text(&description)
+                );
+            }
+            Err((error, _, _)) => return Err(error),
+        }
+    }
+    let mut payload = base;
+    payload["text"] = json!(text);
     if config.disable_preview {
         payload["link_preview_options"] = json!({ "is_disabled": true });
     }
-    let url = format!(
-        "https://api.telegram.org/bot{}/sendMessage",
-        config.bot_token
-    );
-    match http::post_json(&url, &payload, Some(config.timeout_ms), cancel).await {
-        Ok(response) => {
-            let body: Value = serde_json::from_str(&response.body).unwrap_or(Value::Null);
-            if get(&body, "ok") == &Value::Bool(false) {
-                return Err(SendError::Failed(format!(
-                    "Telegram API error: {}",
-                    js::to_string(js::or(&[
-                        get(&body, "description"),
-                        &json!("request was rejected")
-                    ]))
-                )));
-            }
-            Ok(())
-        }
-        Err(HttpError::Cancelled) => Err(SendError::Cancelled),
-        Err(HttpError::Status(response)) => {
-            let body: Value = serde_json::from_str(&response.body).unwrap_or(Value::Null);
-            let description = get(&body, "description").as_str().unwrap_or("");
-            let message = if description.is_empty() {
-                format!("Telegram API request failed with HTTP {}.", response.status)
-            } else {
-                format!("Telegram API error: {description}")
-            };
-            if telegram_target_gone(response.status, description) {
-                Err(SendError::Unreachable(message))
-            } else {
-                Err(SendError::Failed(message))
-            }
-        }
-        Err(error) => Err(SendError::Failed(format!(
-            "Telegram API request failed ({}).",
-            error.code()
-        ))),
-    }
+    telegram_call(config, "sendMessage", &payload, cancel)
+        .await
+        .map_err(|(error, _, _)| error)
 }
 
 // ----------------------------------------------------------- Discord source --
@@ -724,6 +775,25 @@ mod tests {
             400,
             "Bad Request: can't parse entities"
         ));
+    }
+
+    #[test]
+    fn telegram_photo_fallback_rules() {
+        assert!(telegram_photo_rejected(
+            400,
+            "Bad Request: wrong file identifier/HTTP URL specified"
+        ));
+        assert!(telegram_photo_rejected(
+            400,
+            "Bad Request: failed to get HTTP URL content"
+        ));
+        assert!(!telegram_photo_rejected(400, "Bad Request: chat not found"));
+        assert!(!telegram_photo_rejected(429, "Too Many Requests"));
+        assert_eq!(
+            telegram_photo(&json!({ "enclosure": "https://i/1.jpg" })).as_deref(),
+            Some("https://i/1.jpg")
+        );
+        assert!(telegram_photo(&json!({ "enclosure": "javascript:x" })).is_none());
     }
 
     use super::*;

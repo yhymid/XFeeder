@@ -26,7 +26,11 @@ optional local web dashboard.
   quarantined instead of overwritten; the worker refuses to deliver when state
   cannot be saved.
 - Optional [Scrapling](scrapling/README.md) browser fallback for sites that
-  block plain HTTP clients.
+  block plain HTTP clients, and an optional FlareSolverr-compatible `Solver`
+  (FlareSolverr, Byparr, TRAWL).
+- A web page URL works too: the feed it advertises with
+  `<link rel="alternate" type="application/rss+xml">` (or Atom/JSON Feed) is
+  used.
 - Dashboard (`xfeeder dashboard`): config/secrets editor, channels, network
   limits, live activity and metrics, start/stop of a dashboard-managed worker.
 
@@ -96,7 +100,29 @@ are resolved from the process environment or from `.env` next to the config.
   `channels2`, …); each holds one channel object or an array of them.
 - A `Telegram` object inside a channel (`Enabled`, `BotToken`, `ChatID`,
   optional `MessageThreadID`) adds a second destination; a top-level `Telegram`
-  section supplies defaults.
+  section supplies defaults. Entries with an image are sent as a photo with the
+  text as caption when it fits Telegram's 1024-character limit; if Telegram
+  cannot load the image, the text is sent alone. `"SendPhoto": false` turns
+  this off.
+- `Solver` (top level, optional) points to a service with the FlareSolverr
+  `/v1` API:
+
+  ```json
+  "Solver": {
+    "Url": "http://127.0.0.1:8191",
+    "Feeds": ["https://example.com/feed"],
+    "Auto": false,
+    "OnStatus": [403, 503],
+    "MaxTimeoutMs": 60000
+  }
+  ```
+
+  URLs in `Feeds` are always fetched through it; with `"Auto": true` any feed
+  is retried through it after a status from `OnStatus` or a challenge page.
+  The page returned by the solver is used directly (browser XML/JSON viewer
+  markup is removed). It is disabled by `network.outboundPolicy:
+  "public-only"` and shares the browser cooldown of the circuit breaker.
+  Check that the sites you use it for allow automated access.
 - `FirstRunSend` (channel, `ChannelDefaults` or `Settings`; default 0): when
   a feed is checked for the first time for a destination, its existing
   entries are only recorded as seen and just the newest `FirstRunSend` are

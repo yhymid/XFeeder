@@ -844,6 +844,46 @@ fn select_text(doc: &Html, selector: &str, first: bool) -> String {
     }
 }
 
+/// Feed advertised by an HTML page (`<link rel="alternate"
+/// type="application/rss+xml" href="…">`, also Atom and JSON Feed), resolved
+/// against the page URL. RSS is preferred over Atom over JSON Feed.
+pub fn discover_feed(page_url: &str, html: &str) -> Option<String> {
+    let base = url::Url::parse(page_url).ok()?;
+    let doc = Html::parse_document(html);
+    let selector = scraper::Selector::parse("link[href][type]").ok()?;
+    let mut best: Option<(usize, String)> = None;
+    for link in doc.select(&selector) {
+        let rel = link.value().attr("rel").unwrap_or("").to_ascii_lowercase();
+        if !rel.split_whitespace().any(|r| r == "alternate") {
+            continue;
+        }
+        let kind = link
+            .value()
+            .attr("type")
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        let Some(rank) = [
+            "application/rss+xml",
+            "application/atom+xml",
+            "application/feed+json",
+        ]
+        .iter()
+        .position(|t| *t == kind) else {
+            continue;
+        };
+        let href = link.value().attr("href").unwrap_or("").trim();
+        let Ok(found) = base.join(href) else { continue };
+        if !matches!(found.scheme(), "http" | "https") || found.as_str() == page_url {
+            continue;
+        }
+        if best.as_ref().is_none_or(|(r, _)| rank < *r) {
+            best = Some((rank, found.to_string()));
+        }
+    }
+    best.map(|(_, url)| url)
+}
+
 /// A well-formed RSS/Atom/RDF document. When it has no entries it is an
 /// empty feed (e.g. a YouTube channel without videos), not a web page.
 pub fn is_feed_document(body: &Body) -> bool {
@@ -1026,6 +1066,35 @@ mod tests {
             &Body::new(fixture("feed-pipeline/json-feed.json")),
         );
         assert!(!items.is_empty());
+    }
+
+    #[test]
+    fn feed_discovery() {
+        let page = r#"<html><head>
+            <link rel="alternate" type="application/feed+json" href="/feed.json">
+            <link rel="alternate" type="application/atom+xml" href="atom.xml">
+            <link rel="Alternate Home" type="application/rss+xml" href="https://cdn.example.com/rss">
+            <link rel="stylesheet" type="text/css" href="/s.css">
+        </head><body></body></html>"#;
+        assert_eq!(
+            discover_feed("https://example.com/blog/", page).as_deref(),
+            Some("https://cdn.example.com/rss")
+        );
+        let atom = r#"<link rel="alternate" type="application/atom+xml" href="atom.xml">"#;
+        assert_eq!(
+            discover_feed("https://example.com/blog/", atom).as_deref(),
+            Some("https://example.com/blog/atom.xml")
+        );
+        assert!(
+            discover_feed("https://e/", "<link rel=alternate type=text/html href=/x>").is_none()
+        );
+        assert!(
+            discover_feed(
+                "https://e/f",
+                r#"<link rel="alternate" type="application/rss+xml" href="/f">"#
+            )
+            .is_none()
+        );
     }
 
     #[test]

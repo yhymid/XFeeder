@@ -12,6 +12,7 @@ mod http;
 mod js;
 mod parsers;
 mod scrapling;
+mod solver;
 mod state;
 mod telemetry;
 mod text;

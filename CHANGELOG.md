@@ -34,6 +34,17 @@
 - Scrapling worker works with Scrapling 0.4.15 and 0.5.x (0.5 removed the
   dynamic browser backend; CDP uses `RemoteSession`), and now passes
   `solve_cloudflare` and other stealth options to browser sessions.
+- Optional `Solver` backend for FlareSolverr-compatible services
+  (FlareSolverr, Byparr, TRAWL): per-feed or automatic on 403/503/challenge;
+  the returned page is used directly and Chromium's XML/JSON viewer markup
+  is unwrapped.
+- Feed autodiscovery: a configured web page URL is replaced by the feed it
+  advertises (`<link rel="alternate">`, RSS > Atom > JSON Feed); delivery
+  history is kept under the discovered URL, so the first-check baseline
+  applies.
+- Telegram: entries with an image are sent with `sendPhoto` (caption up to
+  1024 characters), falling back to `sendMessage` when Telegram rejects the
+  image; `SendPhoto: false` disables it.
 - A valid but empty RSS/Atom feed (e.g. a YouTube channel without videos) is
   no longer turned into a fake entry by the HTML fallback parser; 2.x posted
   the feed URL itself once per such feed.

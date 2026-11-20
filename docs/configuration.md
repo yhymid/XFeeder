@@ -312,7 +312,7 @@ Spis parametrów:
 8. [`network`](#8-network-limity-i-czasy)
 9. [`Scrapling`](#9-scrapling-przeglądarka-dla-stron-które-blokują-boty)
 10. [`Solver`](#10-solver-flaresolverr--byparr)
-11. [Zmienne środowiskowe](#11-zmienne-środowiskowe-xfeedera)
+11. [Polecenia i zmienne środowiskowe](#11-polecenia-i-zmienne-środowiskowe)
 12. [Sprawdzanie configu i częste problemy](#12-sprawdzanie-configu-i-częste-problemy)
 
 ## 1. Sekrety i `.env`
@@ -768,9 +768,29 @@ TRAWL), uruchomiona osobno (zwykle w Dockerze).
 "Solver": { "Url": "http://127.0.0.1:8191", "Feeds": ["https://boop.pl/rss"], "Auto": false }
 ```
 
-## 11. Zmienne środowiskowe XFeedera
+## 11. Polecenia i zmienne środowiskowe
 
-Można je ustawić w systemie albo w `.env`.
+```
+xfeeder [run] [--dry-run] [--once] [--check-config] [--debug-expert]
+              [--config ŚCIEŻKA] [--cache ŚCIEŻKA]
+xfeeder dashboard [--data-dir FOLDER]
+xfeeder --version | --help
+```
+
+| Opcja | Co robi |
+|-------|---------|
+| `--check-config` | Wczytuje i sprawdza config, wypisuje liczbę kanałów i ostrzeżenia, kończy. |
+| `--dry-run` | Pobiera wszystko i pokazuje, co by wysłał; nic nie wysyła i nie zapisuje. |
+| `--once` | Jeden obieg wszystkich kanałów i koniec. **Wysyła naprawdę**, chyba że razem z `--dry-run`. |
+| `--debug-expert` | Szczegółowe zdarzenia techniczne w logu (sekrety są ukryte). |
+| `--config`, `--cache` | Inne położenie `config.json` i `cache.json` (domyślnie bieżący folder). |
+| `dashboard --data-dir` | Uruchamia panel WWW dla folderu z `config.json`. Domyślnie `http://127.0.0.1:3000`. Steruje tylko workerem, którego sam uruchomił; worker z systemd obsługuje `systemctl`. |
+
+```sh
+XFEEDER_DASHBOARD_PASSWORD='silne-hasło' ./xfeeder dashboard --data-dir /opt/xfeeder
+```
+
+Zmienne można ustawić w systemie albo w `.env`.
 
 | Zmienna | Co robi |
 |---------|---------|

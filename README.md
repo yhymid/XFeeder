@@ -1,221 +1,87 @@
+<div align="center">
+
 # XFeeder
 
-RSS / Atom / JSON Feed / YouTube / Discord-channel monitor that delivers new
-entries to **Discord webhooks** (Components V2) and **Telegram**, with an
-optional local web dashboard.
+**News, game updates, commits and videos delivered to Discord and Telegram the moment they are found.**
 
-XFeeder 3.0 is a single Rust binary. It reads the same `config.json`, `.env`
-and `cache.json` as 2.x, so an existing installation can be switched over in
-place (see [Upgrading from 2.x](#upgrading-from-2x)).
+![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust)
+![Version](https://img.shields.io/badge/version-3.0%20beta-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Features
+</div>
 
-- Feed formats: RSS 2.0, Atom, YouTube Atom, JSON Feed / JSON APIs, HTML
-  fallback; conditional requests (`ETag` / `Last-Modified`).
-- Destinations: Discord webhooks (optionally into a forum post/thread via
-  `Thread`) and Telegram bots. Delivery history is tracked **per destination**,
-  so a failed Telegram send never causes a duplicate Discord post.
-- Discord channel as a *source* (read with a user token, relayed to a webhook
-  or Telegram).
-- Per-channel interval (`TimeChecker`, minutes) and burst limit (`RequestSend`).
-- Per-channel failure backoff, per-feed circuit breaker, `Retry-After` support,
-  Discord 429 handling; POSTs are never blindly retried.
-- Crash-safe state: atomic writes (`fsync` + rename); corrupt files are
-  quarantined instead of overwritten; the worker refuses to deliver when state
-  cannot be saved.
-- Optional [Scrapling](scrapling/README.md) browser fallback for sites that
-  block plain HTTP clients, and an optional FlareSolverr-compatible `Solver`
-  (FlareSolverr, Byparr, TRAWL).
-- A web page URL works too: the feed it advertises with
-  `<link rel="alternate" type="application/rss+xml">` (or Atom/JSON Feed) is
-  used.
-- Dashboard (`xfeeder dashboard`): server-rendered HTML pages and forms, no
-  JavaScript. Channels editor, settings, network limits, `.env` secrets,
-  activity and metrics, diagnostics reports, raw config editor, start/stop of
-  a dashboard-managed worker.
+<table>
+  <tr>
+    <td align="center"><img src="docs/showcase/blogs-v2.jpg" width="260" height="411" alt="News blog entries in Discord"><br><sub>Blogs</sub></td>
+    <td align="center"><img src="docs/showcase/github-commits-v2.jpg" width="260" height="411" alt="GitHub commit feed in Discord"><br><sub>GitHub commits</sub></td>
+    <td align="center"><img src="docs/showcase/valve-tracker-v2.jpg" width="260" height="411" alt="Valve / Counter-Strike 2 updates in Discord"><br><sub>Valve tracker</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/showcase/facepunch-tracker-v2.jpg" width="260" height="411" alt="Facepunch s&amp;box updates in Discord"><br><sub>Facepunch tracker</sub></td>
+    <td align="center"><img src="docs/showcase/steam-v2.jpg" width="260" height="411" alt="Steam announcements in Discord"><br><sub>Steam news</sub></td>
+    <td align="center"><img src="docs/showcase/youtube-v2.jpg" width="260" height="411" alt="YouTube uploads in Discord"><br><sub>YouTube</sub></td>
+  </tr>
+</table>
 
-## Build
+## Why XFeeder
 
-Requires Rust **1.88+** (edition 2024).
+- **One small binary.** Written in Rust: no Node.js, no Docker, nothing to install next to it.
+- **Light.** About 35 MB of memory and 1.5 % CPU with 10 channels and 32 feeds.
+- **Never posts twice.** Delivery history is kept per destination and survives crashes and
+  restarts; a new feed does not flood the channel with old entries.
+- **Gets through Cloudflare.** Sites that block bots are fetched with a real browser
+  (Scrapling) or FlareSolverr, and only when they actually block.
+- **Looks good in Discord.** Cards with image, author and date (Components V2), posts into
+  forum threads; Telegram with photos as well.
+- **You decide what is posted.** Per-channel filters (words or regex, maximum age) and
+  check intervals.
+- **No restarts.** Changes to `config.json` and `.env` apply on their own.
+- **Shows what is slow.** 24/7 diagnostics measure the delay from publication to Discord and
+  suggest what to change.
+- **Web dashboard** to edit channels and settings, with no JavaScript.
 
-```sh
-cargo build --release
-# binary: target/release/xfeeder
-```
-
-The dashboard pages and the Scrapling worker script are embedded into the
-binary; nothing else has to be copied next to it.
+**Sources:** RSS, Atom, JSON Feed, YouTube channels, GitHub commits, Steam and SteamDB news,
+any page that links its feed, Discord channels.
+**Destinations:** Discord webhooks (channels and forum threads), Telegram (chats, channels,
+topics).
 
 ## Quick start
 
 ```sh
+cargo build --release                 # binary: target/release/xfeeder
 cp config.json.example config.json
-cp .env.example .env          # webhook URLs / tokens go here
-./xfeeder --check-config      # validate and print a summary
-./xfeeder --dry-run --once    # fetch everything, post nothing, save nothing
-./xfeeder                     # run the scheduler
+cp .env.example .env                  # webhook URLs and tokens go here
+./xfeeder --check-config              # validate
+./xfeeder --dry-run --once            # test run: fetch everything, post nothing
+./xfeeder                             # run
 ```
 
-Run it from the directory that holds `config.json`, or pass `--config` /
-`--cache`.
-
-### Command line
-
-```
-xfeeder [run] [--dry-run] [--once] [--check-config] [--debug-expert]
-              [--config PATH] [--cache PATH]
-xfeeder dashboard [--data-dir DIR]
-xfeeder --version | --help
-```
-
-| Option | Meaning |
-|---|---|
-| `--dry-run` | Fetch and log what would be sent; no posts, no cache writes. |
-| `--once` | One pass over every channel, then exit (**posts for real** unless combined with `--dry-run`). |
-| `--check-config` | Load and validate the config, print a summary, exit. |
-| `--debug-expert` | Detailed diagnostics (secrets are redacted). |
-
-`XFEEDER_DRY_RUN=1`, `XFEEDER_RUN_ONCE=1` and `XFEEDER_DEBUG_EXPERT=1` work too,
-from the environment or from `.env`.
-
-## Configuration
-
-`config.json` keeps the 2.x format. Values such as `"${DISCORD_WEBHOOK_MAIN}"`
-are resolved from the process environment or from `.env` next to the config.
+The smallest working `config.json`:
 
 ```json
 {
-  "Settings": { "Logs": true, "MaxConcurrentChannels": 1 },
   "channels": {
-    "Webhook": "${DISCORD_WEBHOOK_MAIN}",
-    "Thread": "123456789012345678",
-    "RSS": ["https://example.com/feed.xml"],
-    "TimeChecker": 30,
-    "RequestSend": 5
+    "news": {
+      "Webhook": "${DISCORD_WEBHOOK}",
+      "RSS": ["https://example.com/feed.xml"]
+    }
   }
 }
 ```
 
-- Channel groups are top-level keys starting with `channels` (`channels`,
-  `channels2`, …); each holds one channel object or an array of them.
-- A `Telegram` object inside a channel (`Enabled`, `BotToken`, `ChatID`,
-  optional `MessageThreadID`) adds a second destination; a top-level `Telegram`
-  section supplies defaults. Entries with an image are sent as a photo with the
-  text as caption when it fits Telegram's 1024-character limit; if Telegram
-  cannot load the image, the text is sent alone. `"SendPhoto": false` turns
-  this off.
-- `Solver` (top level, optional) points to a service with the FlareSolverr
-  `/v1` API:
-
-  ```json
-  "Solver": {
-    "Url": "http://127.0.0.1:8191",
-    "Feeds": ["https://example.com/feed"],
-    "Auto": false,
-    "OnStatus": [403, 503],
-    "MaxTimeoutMs": 60000
-  }
-  ```
-
-  URLs in `Feeds` are always fetched through it; with `"Auto": true` any feed
-  is retried through it after a status from `OnStatus` or a challenge page.
-  The page returned by the solver is used directly (browser XML/JSON viewer
-  markup is removed). It is disabled by `network.outboundPolicy:
-  "public-only"` and shares the browser cooldown of the circuit breaker.
-  Check that the sites you use it for allow automated access.
-- `FirstRunSend` (channel, `ChannelDefaults` or `Settings`; default 0): when
-  a feed is checked for the first time for a destination, its existing
-  entries are only recorded as seen and just the newest `FirstRunSend` are
-  posted. This also applies after editing a channel's `Webhook`, `Thread` or
-  feed list, because that changes the channel's cache key.
-- `Filters` (channel or `ChannelDefaults`) limits what gets posted:
-
-  ```json
-  "Filters": {
-    "Include": ["patch notes", "/\\bv\\d+\\.\\d+/"],
-    "Exclude": ["sponsored"],
-    "Fields": ["title", "contentSnippet", "categories"],
-    "CaseSensitive": false,
-    "MaxAgeHours": 72
-  }
-  ```
-
-  Patterns are substrings, or regular expressions when written as `/…/`. An
-  entry is posted when it matches any `Include` pattern (or `Include` is
-  empty), no `Exclude` pattern, and is not older than `MaxAgeHours` (undated
-  entries are kept). `Fields` may be `title`, `contentSnippet`, `content`,
-  `categories`, `author`, `link`, `guid`.
-- `Settings.MaxConcurrentChannels` (1–8, default 1) lets different channels run
-  in parallel; one channel never overlaps itself.
-- `network` (optional) sets the bandwidth profile, concurrency and timeouts; it
-  can be edited from the dashboard.
-- `schemaVersion: 2` configs are accepted as well.
-- Unsupported sections (e.g. the old `Workshop` plugins) only produce a warning.
-
-### Diagnostics
-
-`"Settings": { "Diagnostics": true }` (or `XFEEDER_DIAGNOSTICS=1`) records
-everything the worker does, redacted, into `diagnostics/` next to the config:
-
-- `events-YYYY-MM-DD.txt`: one JSON object per line: every log line, every
-  structured event (fetch, parse, scheduler, delivery, Scrapling), HTTP
-  phases per request (`http.timing`: queue, time to first byte, body,
-  cache headers, Discord rate-limit headers, server clock skew), per-entry
-  latency (`latency.entry`: publication → first fetch → Discord), feed
-  freshness, Discord 429 waits, process samples every minute (memory, CPU,
-  Chromium children) and anomalies (future dates, duplicate ids, clock skew,
-  panics).
-- `summary-YYYY-MM-DD.md`: refreshed every 15 minutes and on shutdown:
-  latency percentiles per channel and stage, feeds, hosts, Discord, browser,
-  resources, anomalies, warnings, and hints on what dominates the delay.
-
-Options: `{ "Enabled": true, "Dir": "diagnostics", "RetentionDays": 14,
-"MaxFileMB": 256, "SummaryMinutes": 15 }`. Writing happens on a background
-thread and never blocks the worker. Enabling it requires a restart.
-
-`config.json` and `.env` are re-read automatically; changes apply on the next
-scheduler tick without a restart.
-
-## Dashboard
-
-```sh
-XFEEDER_DASHBOARD_PASSWORD='…' ./xfeeder dashboard --data-dir /path/to/xfeeder
-```
-
-Listens on `127.0.0.1:3000` by default (`XFEEDER_DASHBOARD_HOST`,
-`XFEEDER_DASHBOARD_PORT`; both may also be set in `.env`). Binding to a
-non-loopback address, or setting `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` (the exact
-`https://host` origin when behind a reverse proxy), requires a password. Host
-and Origin headers are checked on every request.
-
-The dashboard reads the worker's telemetry files
-(`config.json.network-runtime.json`, `config.json.activity-runtime.json`,
-refreshed every 2 s). It can only stop workers it started itself; a
-systemd-managed worker is controlled with systemd.
-
-## Running under systemd
-
-Example units are in [`deploy/systemd`](deploy/systemd);
-[`docs/deployment.md`](docs/deployment.md) describes building from source on a
-server.
-
-## Upgrading from 2.x
-
-Stop the old worker, keep `config.json`, `.env` and `cache.json` where they
-are, and start `xfeeder` in the same directory. Delivery history recorded by
-2.x is reused: 2.x and 3.0 derive the per-channel cache key slightly
-differently, and the binary uses whichever key already exists in `cache.json`,
-so nothing is re-posted. Everything else from the old installation can be
-deleted.
-
 ## Documentation
 
-- [Configuration](docs/configuration.md): every `config.json` setting with examples (Polish)
-- [Architecture](docs/architecture.md)
-- [Deployment](docs/deployment.md)
-- [Scrapling fallback](scrapling/README.md)
-- [Roadmap](docs/roadmap.md) — ideas taken from comparable projects
+| | |
+|---|---|
+| [Configuration guide](docs/configuration.md) | Easy → medium → hard (Cloudflare) setup, and every setting explained (Polish) |
+| [Deployment](docs/deployment.md) | Building on a server and running under systemd ([unit files](deploy/systemd)) |
+| [Scrapling](scrapling/README.md) | Installing the browser for sites that block bots |
+| [Architecture](docs/architecture.md) | How the code is organised |
+| [Changelog](CHANGELOG.md) | What changed, with measurements |
+
+Upgrading from 2.x: keep `config.json`, `.env` and `cache.json` and start `xfeeder` in the
+same folder; nothing is posted again.
 
 ## License
 
-See [LICENSE](LICENSE).
+[MIT](LICENSE)

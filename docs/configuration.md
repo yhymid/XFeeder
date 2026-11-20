@@ -1,64 +1,321 @@
 # Konfiguracja XFeedera (`config.json`)
 
-Ten dokument opisuje każdy parametr `config.json`: co robi, jaka jest wartość domyślna,
-czego wymaga i jak wygląda w praktyce. Pełny przykład jest w
-[`config.json.example`](../config.json.example).
+Dokument ma dwie części:
 
-Spis treści:
+- **Część 1: przewodnik w trzech poziomach.** Zacznij od poziomu łatwego i idź dalej tylko
+  wtedy, gdy czegoś potrzebujesz.
+  - [Poziom 1: Łatwy](#poziom-1-łatwy-pierwszy-działający-config): jeden feed na jeden kanał
+    Discorda, 5 minut.
+  - [Poziom 2: Średni](#poziom-2-średni-kilka-kanałów-wątki-filtry-telegram): kilka kanałów,
+    wątki na forum, filtry, Telegram, diagnostyka.
+  - [Poziom 3: Trudny](#poziom-3-trudny-strony-które-blokują-boty-cloudflare): strony, które
+    blokują boty (Cloudflare i inne zabezpieczenia).
+- **Część 2: [wszystkie parametry](#część-2-wszystkie-parametry)**: co robi każdy klucz,
+  wartości domyślne i wymagania.
 
-1. [Jak to działa w skrócie](#1-jak-to-działa-w-skrócie)
-2. [Najmniejszy działający config](#2-najmniejszy-działający-config)
-3. [Sekrety i `.env`](#3-sekrety-i-env)
-4. [Kanały](#4-kanały)
-5. [`ChannelDefaults`: wspólne ustawienia kanałów](#5-channeldefaults-wspólne-ustawienia-kanałów)
-6. [`Settings`: ustawienia ogólne](#6-settings-ustawienia-ogólne)
-7. [`Telegram`](#7-telegram)
-8. [`Auth` i kanał Discorda jako źródło](#8-auth-i-kanał-discorda-jako-źródło)
-9. [`Proxy`](#9-proxy)
-10. [`network`: limity i czasy](#10-network-limity-i-czasy)
-11. [`Scrapling`: przeglądarka dla stron, które blokują boty](#11-scrapling-przeglądarka-dla-stron-które-blokują-boty)
-12. [`Solver`: FlareSolverr / Byparr](#12-solver-flaresolverr--byparr)
-13. [Zmienne środowiskowe XFeedera](#13-zmienne-środowiskowe-xfeedera)
-14. [Sprawdzanie configu i częste problemy](#14-sprawdzanie-configu-i-częste-problemy)
+Pełny przykładowy plik: [`config.json.example`](../config.json.example).
 
----
-
-## 1. Jak to działa w skrócie
-
+**Jak to działa w skrócie:**
 - XFeeder co jakiś czas sprawdza **kanały**. Kanał to lista feedów (RSS, Atom, JSON Feed,
   YouTube, zwykła strona z linkiem do feedu) i miejsce, gdzie trafiają nowe wpisy: webhook
   Discorda, Telegram albo oba.
 - Każdy wpis jest wysyłany do każdego celu **dokładnie raz**. Historia wysłanych wpisów jest
-  w `cache.json`, osobno dla każdego celu.
+  w `cache.json`.
 - **Zmiany w `config.json` i `.env` są wczytywane same**, przy następnym obiegu (co około
-  30 s). Restart jest potrzebny tylko dla `Settings.Diagnostics`.
+  30 s). Restart jest potrzebny tylko dla `Settings.Diagnostics` i po instalacji Scraplinga.
 - Wielkość liter w nazwach kluczy ma znaczenie: `TimeChecker` działa, `timechecker` nie.
-- Wszystkie sekcje poza kanałami są opcjonalne.
 
-## 2. Najmniejszy działający config
+---
 
-```json
-{
-  "channels": [
-    {
-      "Webhook": "${DISCORD_WEBHOOK}",
-      "RSS": ["https://example.com/feed.xml"]
-    }
-  ]
-}
-```
+# Część 1: przewodnik
 
-i w `.env` obok:
+## Poziom 1: Łatwy (pierwszy działający config)
+
+**Cel:** nowe wpisy z jednego feedu trafiają na jeden kanał Discorda.
+
+**Krok 1. Webhook.** W Discordzie: ustawienia kanału → *Integracje* → *Webhooki* →
+*Nowy webhook* → *Kopiuj adres URL webhooka*.
+
+**Krok 2. Plik `.env`** (w tym samym folderze co `config.json`):
 
 ```dotenv
 DISCORD_WEBHOOK=https://discord.com/api/webhooks/123456/abcdef
 ```
 
-Ten kanał sprawdza feed co 30 minut (domyślnie) i wysyła maksymalnie 5 nowych wpisów na
-jedno sprawdzenie. Przy pierwszym uruchomieniu niczego nie wysyła: obecne wpisy oznacza jako
-już widziane (patrz [`FirstRunSend`](#6-settings-ustawienia-ogólne)).
+**Krok 3. Plik `config.json`:**
 
-## 3. Sekrety i `.env`
+```json
+{
+  "channels": {
+    "news": {
+      "Webhook": "${DISCORD_WEBHOOK}",
+      "RSS": ["https://wiadomosci.onet.pl/.feed"],
+      "FirstRunSend": 1
+    }
+  }
+}
+```
+
+**Krok 4. Sprawdzenie i start:**
+
+```sh
+./xfeeder --check-config      # musi pokazać "warnings": []
+./xfeeder --dry-run --once    # pobiera feedy, nic nie wysyła: widać, czy feed działa
+./xfeeder                     # właściwe uruchomienie
+```
+
+### Co znaczy każda linia
+
+| Linia | Znaczenie |
+|-------|-----------|
+| `"channels": { … }` | Grupa kanałów. Nazwa musi zaczynać się od `channels`. |
+| `"news": { … }` | Kanał o nazwie `news`. Nazwa pojawia się w logach, a historia wysłanych wpisów jest pod nią zapisana, więc kanał można potem dowolnie edytować. |
+| `"Webhook": "${DISCORD_WEBHOOK}"` | Gdzie wysyłać. `${…}` bierze wartość z `.env`, dzięki czemu adres webhooka nie leży w configu. |
+| `"RSS": [ … ]` | Lista feedów. Może być ich wiele. |
+| `"FirstRunSend": 1` | Przy pierwszym sprawdzeniu wyślij 1 najnowszy wpis, żeby od razu zobaczyć, że działa. Bez tego XFeeder za pierwszym razem tylko zapamiętuje istniejące wpisy i wysyła dopiero nowe. |
+
+### Co dzieje się domyślnie (nie trzeba tego wpisywać)
+
+| Ustawienie | Domyślnie | Kiedy zmienić |
+|------------|-----------|---------------|
+| `TimeChecker` (co ile minut sprawdzać) | 30 | Chcesz szybciej: wpis czeka średnio pół interwału, więc przy 30 min to około 15 min opóźnienia. |
+| `RequestSend` (ile wpisów na raz z jednego feedu) | 5 | Feed publikuje dużo naraz, a chcesz wszystko: zwiększ. |
+| `FirstRunSend` | 0 | Patrz wyżej. |
+
+**Najczęstsze problemy na tym poziomie:**
+- `missing delivery target`: zmienna z `${…}` nie istnieje w `.env` albo jest literówka.
+- Nic nie przyszło: pierwsze sprawdzenie tylko zapamiętuje wpisy. Ustaw `FirstRunSend` albo
+  poczekaj na nowy wpis.
+- `--dry-run` pokazuje 403: strona blokuje boty, patrz [Poziom 3](#poziom-3-trudny-strony-które-blokują-boty-cloudflare).
+
+## Poziom 2: Średni (kilka kanałów, wątki, filtry, Telegram)
+
+```json
+{
+  "Settings": {
+    "MaxConcurrentChannels": 2,
+    "FirstRunSend": 1,
+    "Diagnostics": true
+  },
+  "ChannelDefaults": {
+    "Webhook": "${DISCORD_WEBHOOK}",
+    "TimeChecker": 15
+  },
+  "Telegram": {
+    "BotToken": "${TELEGRAM_BOT_TOKEN}",
+    "ChatID": "${TELEGRAM_CHAT_ID}",
+    "Enabled": false
+  },
+  "channels": {
+    "news": {
+      "Thread": "1419684809055272960",
+      "RSS": ["https://wiadomosci.onet.pl/.feed", "https://lowcygier.pl/rss"],
+      "Filters": { "Exclude": ["sponsorowany"], "MaxAgeHours": 24 }
+    },
+    "cs2": {
+      "Thread": "1424422020971499670",
+      "RSS": [
+        "https://store.steampowered.com/feeds/news/app/730",
+        "https://steamdb.info/api/PatchnotesRSS/?appid=730"
+      ],
+      "TimeChecker": 60
+    },
+    "github": {
+      "Thread": "1419683936510148810",
+      "RSS": ["https://github.com/yhymid/XFeeder/commits/main.atom"],
+      "Telegram": { "Enabled": true },
+      "Filters": { "Exclude": ["/^Merge (pull request|branch)/"] }
+    }
+  }
+}
+```
+
+### Co włączyć, żeby działało prawidłowo
+
+| Co | Po co |
+|----|-------|
+| **Kanały z nazwami** (`"news": {…}` zamiast listy `[…]`) | Historia wysłanych wpisów zależy tylko od nazwy, więc zmiana webhooka, wątku albo listy feedów niczego nie psuje. W kanałach w liście `[…]` taka zmiana zaczyna historię od nowa. |
+| **`ChannelDefaults`** | Wspólny webhook i interwał wpisujesz raz; kanał może je nadpisać (`cs2` ma 60 min). |
+| **`Thread`** | Webhook pisze do wątku albo posta na forum zamiast do samego kanału. ID wątku: prawy klik na wątek → *Kopiuj ID* (włącz tryb dewelopera w ustawieniach Discorda). |
+| **`MaxConcurrentChannels: 2`** | Wolny kanał (np. strona przez przeglądarkę) nie blokuje pozostałych. |
+| **`Filters`** | Odrzucanie niechcianych wpisów (`Exclude`) albo przepuszczanie tylko pasujących (`Include`). Szczegóły w [2.3](#23-filters-filtrowanie-wpisów). |
+| **`Telegram`** z `"Enabled": false` w sekcji głównej | **Ważne:** gdy główna sekcja ma token i czat, a nie ma `Enabled: false`, na Telegram idzie **każdy** kanał. Tutaj Telegram jest wyłączony globalnie i włączony tylko w `github`. |
+| **`Diagnostics: true`** | Raport `diagnostics/summary-*.md` co 15 minut: ile trwa droga od publikacji do Discorda, które feedy są wolne i które można sprawdzać częściej. Wymaga restartu. |
+
+### Jak dobrać `TimeChecker`
+
+- Opóźnienie to średnio **połowa interwału**: przy 15 min wpis czeka około 7 minut.
+- Feedy z GitHuba, Steama i SteamDB zwykle odpowiadają „bez zmian” (304), więc częste
+  sprawdzanie prawie nic nie kosztuje.
+- SteamDB trzyma odpowiedź w cache przez godzinę: sprawdzanie częściej niż co 60 min nic nie
+  da.
+- Feedy rzadko aktualizowane (patche gier, commity) mogą mieć 30–60 min; newsy 5–15 min.
+- Raport diagnostyki pokazuje dla każdego feedu, jak często publikuje
+  (`publishes every`), i podpowiada, który można sprawdzać częściej.
+
+## Poziom 3: Trudny (strony, które blokują boty, Cloudflare)
+
+Niektóre strony odrzucają programy, które nie są przeglądarką. Najczęściej to Cloudflare
+(strona „Just a moment…”, „Verify you are human”). Wtedy XFeeder dostaje błąd 403 zamiast
+feedu. Rozwiązanie: **Scrapling**, czyli pobieranie prawdziwą przeglądarką (Chromium), która
+sama przechodzi sprawdzenie Cloudflare.
+
+### Krok 1. Upewnij się, że strona naprawdę blokuje
+
+Sprawdź **z serwera, na którym działa XFeeder** (blokady często zależą od adresu IP):
+
+```sh
+curl -sI -A "Mozilla/5.0" https://boop.pl/rss | grep -iE "^HTTP|^server|^cf-mitigated"
+```
+
+| Wynik | Znaczenie |
+|-------|-----------|
+| `HTTP/2 200` | Strona nie blokuje. Problem jest gdzie indziej (zły adres, to nie jest feed). |
+| `HTTP/2 403` + `cf-mitigated: challenge` | Wyzwanie Cloudflare. Przejdź dalej. |
+| `HTTP/2 403` + `server: cloudflare`, bez `cf-mitigated` | Cloudflare blokuje (reguła firewalla). Przeglądarka może pomóc, ale nie musi. |
+| `403` / `429` / `503` bez Cloudflare | Inne zabezpieczenie (DataDome, Akamai, Sucuri…) albo limit zapytań. |
+
+W logu XFeedera widać to jako 403 albo
+`returned a challenge/block page; no entries this time`.
+
+### Krok 2. Zainstaluj Scrapling (raz)
+
+W folderze z `config.json` (szczegóły w [`scrapling/README.md`](../scrapling/README.md)):
+
+```bash
+python3 -m venv scrapling/.venv
+scrapling/.venv/bin/pip install --no-deps -r /ścieżka/do/repo/scrapling/requirements.lock.txt
+scrapling/.venv/bin/python -m playwright install chromium
+scrapling/.venv/bin/python -m patchright install chromium
+```
+
+Zrestartuj XFeedera. Gdy włączysz `Logs`, w logu pojawi się
+`[Scrapling] Runtime available (scrapling 0.4.x)`.
+
+### Krok 3. Najprostsze ustawienie: przeglądarka tylko gdy trzeba
+
+```json
+"Scrapling": {
+  "AutoFallback": false,
+  "PerUrlConfig": {
+    "https://boop.pl/rss": { "fallback": true, "mode": "stealthy-fetch" }
+  }
+}
+```
+
+Adres w `PerUrlConfig` musi być **dokładnie taki sam** jak w kanale.
+
+Co się wtedy dzieje:
+1. XFeeder pobiera feed zwykłym zapytaniem (ułamek sekundy).
+2. Gdy dostanie 403/429/503 albo stronę wyzwania, otwiera przeglądarkę w trybie
+   `stealthy-fetch`.
+3. `stealthy-fetch` sam rozwiązuje wyzwanie Cloudflare (`solveCloudflare` jest w tym trybie
+   domyślnie włączone, a limit czasu podniesiony do 60 s).
+
+> **Bez `PerUrlConfig` też zadziała:** `AutoFallback` jest domyślnie `true`, więc każdy
+> zablokowany feed sam przejdzie na przeglądarkę. `AutoFallback: false` + `fallback` dla
+> konkretnych adresów daje kontrolę nad tym, gdzie przeglądarka jest używana (jest wolna
+> i zużywa kilkaset MB RAM).
+
+### Krok 4. Strona blokuje zawsze: od razu przeglądarka
+
+Gdy zwykłe zapytanie nigdy nie przechodzi, nie ma sensu go próbować:
+
+```json
+"https://boop.pl/rss": { "enabled": true, "mode": "stealthy-fetch" }
+```
+
+| `PerUrlConfig` | Zwykłe zapytanie | Przeglądarka | Dla jakich stron |
+|----------------|------------------|--------------|------------------|
+| `"fallback": true` | najpierw | tylko przy blokadzie | blokują czasem albo przestały blokować |
+| `"enabled": true` | nigdy | zawsze | blokują zawsze |
+| `"enabled": false` | zawsze | nigdy | nigdy nie używaj przeglądarki dla tego adresu |
+
+Pomiar z produkcji: boop.pl przez przeglądarkę to około 26 s na sprawdzenie; gry-wideo.pl
+przestało blokować, więc z `fallback` schodzi z 10,5 s do 0,3 s.
+
+### Krok 5. Przeglądarka przechodzi, ale wpisów brak albo są niepełne
+
+Strona ładuje treść z opóźnieniem. Dodaj czekanie:
+
+```json
+"https://gry-wideo.pl/rss": {
+  "fallback": true,
+  "mode": "stealthy-fetch",
+  "wait": 8000,
+  "networkIdle": true
+}
+```
+
+| Opcja | Kiedy |
+|-------|-------|
+| `"wait": 8000` | Treść pojawia się po kilku sekundach (czas w ms). |
+| `"networkIdle": true` | Czekaj, aż strona skończy pobierać dane. |
+| `"waitSelector": ".post"` | Czekaj na konkretny element strony. |
+| `"timeoutMs": 90000` | Wolna strona albo długie wyzwanie: więcej czasu (ms). |
+
+Jeśli adres to zwykła strona, a nie feed, dodaj `htmlParseOptions` z selektorami CSS wpisów
+(patrz [9.5](#95-htmlparseoptions-strona-bez-feedu)).
+
+### Krok 6. Nadal zablokowane: diagnoza
+
+1. Włącz wyjaśnienia w logu:
+   ```json
+   "Scrapling": { "AntiBot": { "LogDecisions": true }, "PerUrlConfig": { … } }
+   ```
+   W logu zobaczysz `Mode stealthy-fetch looks blocked for … score=…` i powody.
+2. Spróbuj kolejnych opcji w `PerUrlConfig` (po jednej):
+   - `"realChrome": true`: prawdziwy Chrome zamiast Chromium (musi być zainstalowany);
+   - `"locale": "pl-PL"`, `"extraHeaders": {"Accept-Language": "pl"}`: wygląda jak polski
+     użytkownik;
+   - `"proxy": "http://user:hasło@host:port"`: inny adres IP, gdy strona zablokowała IP
+     serwera.
+3. Alternatywa: zewnętrzny solver FlareSolverr albo Byparr (zwykle w Dockerze), patrz
+   [`Solver`](#10-solver-flaresolverr--byparr):
+   ```json
+   "Solver": { "Url": "http://127.0.0.1:8191", "Feeds": ["https://boop.pl/rss"] }
+   ```
+
+### Krok 7. Wydajność przy przeglądarce
+
+| Ustawienie | Po co |
+|------------|-------|
+| `"Settings": { "MaxConcurrentChannels": 2 }` | Kanał czekający 30 s na przeglądarkę nie blokuje innych kanałów. |
+| `"network": { "maxConcurrentScraplingRequests": 1 }` | Najwyżej jedna przeglądarka naraz: mniej RAM-u na małym serwerze. |
+| `fallback` zamiast `enabled` | Przeglądarka tylko wtedy, gdy naprawdę trzeba. |
+| Nie używaj `ForceGlobal: true` | Przeglądarka dla każdego feedu: kilkadziesiąt razy wolniej. |
+
+**Fałszywe alarmy.** Zdrowy feed RSS/Atom nie jest sprawdzany pod kątem tekstów typu
+„captcha”, więc artykuł o captchach nie wywoła przeglądarki. Gdy jakaś zwykła strona HTML
+jest błędnie uznawana za blokadę, podnieś `AntiBot.MinConfidence` (domyślnie 40, zakres
+0–100) dla tego adresu w `PerUrlConfig[…].antiBot`.
+
+### Inne zaawansowane rzeczy
+
+- Kanał Discorda jako źródło wpisów: [rozdział 6](#6-auth-i-kanał-discorda-jako-źródło).
+- Proxy dla wszystkich zapytań: [rozdział 7](#7-proxy).
+- Limity łącza, czasy, blokada adresów prywatnych: [rozdział 8](#8-network-limity-i-czasy).
+
+---
+
+# Część 2: wszystkie parametry
+
+Spis parametrów:
+
+1. [Sekrety i `.env`](#1-sekrety-i-env)
+2. [Kanały](#2-kanały)
+3. [`ChannelDefaults`](#3-channeldefaults-wspólne-ustawienia-kanałów)
+4. [`Settings`](#4-settings-ustawienia-ogólne)
+5. [`Telegram`](#5-telegram)
+6. [`Auth` i kanał Discorda jako źródło](#6-auth-i-kanał-discorda-jako-źródło)
+7. [`Proxy`](#7-proxy)
+8. [`network`](#8-network-limity-i-czasy)
+9. [`Scrapling`](#9-scrapling-przeglądarka-dla-stron-które-blokują-boty)
+10. [`Solver`](#10-solver-flaresolverr--byparr)
+11. [Zmienne środowiskowe](#11-zmienne-środowiskowe-xfeedera)
+12. [Sprawdzanie configu i częste problemy](#12-sprawdzanie-configu-i-częste-problemy)
+
+## 1. Sekrety i `.env`
 
 Wartość, która w całości ma postać `"${NAZWA}"`, jest zastępowana zmienną `NAZWA`:
 
@@ -77,9 +334,9 @@ Zasady:
   linie zaczynające się od `#` są pomijane.
 - Webhooki i tokeny trzymaj w `.env`, nie w `config.json`. Pliku `.env` nie wrzucaj do gita.
 
-## 4. Kanały
+## 2. Kanały
 
-### 4.1 Grupy kanałów: lista albo nazwy
+### 2.1 Grupy kanałów: lista albo nazwy
 
 Kanały są w kluczach, których nazwa zaczyna się od `channels` (`channels`, `channels2`,
 `channelsNews`…). Każda grupa może być **listą** albo **obiektem z nazwami**:
@@ -109,7 +366,7 @@ Kanały są w kluczach, których nazwa zaczyna się od `channels` (`channels`, `
 > parametrem `ID` (patrz niżej).
 
 Skróty: zamiast obiektu kanał może być samym adresem albo listą adresów. Wtedy wszystkie
-pozostałe ustawienia (np. `Webhook`) muszą przyjść z [`ChannelDefaults`](#5-channeldefaults-wspólne-ustawienia-kanałów):
+pozostałe ustawienia (np. `Webhook`) muszą przyjść z [`ChannelDefaults`](#3-channeldefaults-wspólne-ustawienia-kanałów):
 
 ```json
 "channels": [
@@ -118,7 +375,7 @@ pozostałe ustawienia (np. `Webhook`) muszą przyjść z [`ChannelDefaults`](#5-
 ]
 ```
 
-### 4.2 Parametry kanału
+### 2.2 Parametry kanału
 
 | Parametr       | Typ                    | Domyślnie | Co robi |
 |----------------|------------------------|-----------|---------|
@@ -128,9 +385,9 @@ pozostałe ustawienia (np. `Webhook`) muszą przyjść z [`ChannelDefaults`](#5-
 | `TimeChecker`  | liczba (minuty)        | `30`      | Co ile minut sprawdzać kanał. Wartość ≤ 0 lub niepoprawna = 30. |
 | `RequestSend`  | liczba                 | `5`       | Ile najwyżej wpisów wysłać na jedno sprawdzenie i jeden feed. Reszta poczeka na kolejne sprawdzenie. |
 | `FirstRunSend` | liczba ≥ 0             | z `Settings.FirstRunSend`, inaczej `0` | Ile najnowszych wpisów wysłać, gdy feed jest widziany pierwszy raz. Pozostałe są tylko oznaczane jako widziane. |
-| `Filters`      | obiekt                 | –         | Filtr wpisów, patrz [4.3](#43-filters-filtrowanie-wpisów). |
-| `Telegram`     | obiekt                 | –         | Ustawienia Telegrama dla tego kanału, patrz [Telegram](#7-telegram). |
-| `Discord`      | obiekt                 | –         | Kanał Discorda jako **źródło** wpisów, patrz [rozdział 8](#8-auth-i-kanał-discorda-jako-źródło). |
+| `Filters`      | obiekt                 | –         | Filtr wpisów, patrz [4.3](#23-filters-filtrowanie-wpisów). |
+| `Telegram`     | obiekt                 | –         | Ustawienia Telegrama dla tego kanału, patrz [Telegram](#5-telegram). |
+| `Discord`      | obiekt                 | –         | Kanał Discorda jako **źródło** wpisów, patrz [rozdział 8](#6-auth-i-kanał-discorda-jako-źródło). |
 | `ID` / `Key` / `CacheKey` | tekst       | –         | Własny, stały klucz historii kanału (zamiast liczonego). |
 
 Wymagania kanału (sprawdza je `--check-config`):
@@ -167,7 +424,7 @@ Przykład pełnego kanału:
 }
 ```
 
-### 4.3 `Filters`: filtrowanie wpisów
+### 2.3 `Filters`: filtrowanie wpisów
 
 | Parametr        | Typ              | Domyślnie | Co robi |
 |-----------------|------------------|-----------|---------|
@@ -197,7 +454,7 @@ Bez wpisów sponsorowanych i promocji, tylko z ostatnich 2 dni.
 ```
 Tylko wpisy z numerem wersji (np. `v1.2`) w tytule.
 
-## 5. `ChannelDefaults`: wspólne ustawienia kanałów
+## 3. `ChannelDefaults`: wspólne ustawienia kanałów
 
 Ustawienia wpisane w `ChannelDefaults` (dawniej `DefaultChannel`) dostaje każdy kanał.
 To, co jest wpisane w samym kanale, ma pierwszeństwo. Obiekty `Telegram` i `Discord` są
@@ -218,14 +475,14 @@ To, co jest wpisane w samym kanale, ma pierwszeństwo. Obiekty `Telegram` i `Dis
 
 Oba kanały piszą na ten sam webhook. Pierwszy jest sprawdzany co 30 minut, drugi co 10.
 
-## 6. `Settings`: ustawienia ogólne
+## 4. `Settings`: ustawienia ogólne
 
 | Parametr                | Typ              | Domyślnie | Co robi |
 |-------------------------|------------------|-----------|---------|
 | `Logs`                  | `true` / `false` | `false`   | Wypisuje do logu (stdout / `journalctl`) także zwykłe informacje, np. każde wysłanie. Ostrzeżenia i błędy są wypisywane zawsze. |
 | `DebugExpert`           | `true` / `false` | `false`   | Szczegółowe zdarzenia techniczne (`[Expert] {...}`) w logu. Do szukania błędów, bardzo dużo tekstu. |
 | `MaxConcurrentChannels` | liczba 1–8       | `1`       | Ile kanałów może być sprawdzanych jednocześnie. `2` wystarcza, żeby wolny kanał (np. strona przez przeglądarkę) nie blokował reszty. |
-| `FirstRunSend`          | liczba ≥ 0       | `0`       | Domyślna wartość `FirstRunSend` dla kanałów (patrz [4.2](#42-parametry-kanału)). `0` = przy nowym feedzie nic nie wysyłaj, tylko zapamiętaj obecne wpisy. |
+| `FirstRunSend`          | liczba ≥ 0       | `0`       | Domyślna wartość `FirstRunSend` dla kanałów (patrz [4.2](#22-parametry-kanału)). `0` = przy nowym feedzie nic nie wysyłaj, tylko zapamiętaj obecne wpisy. |
 | `Diagnostics`           | `true` lub obiekt | wyłączone | Rejestrator diagnostyki, patrz niżej. **Wymaga restartu.** |
 
 ### `Settings.Diagnostics`
@@ -255,7 +512,7 @@ najwolniejsze feedy i wskazówki, co przyspieszyć.
 Krócej: `"Diagnostics": true` (same wartości domyślne). Na produkcji przy 10 kanałach
 zajmuje około 3 MB dziennie.
 
-## 7. `Telegram`
+## 5. `Telegram`
 
 Sekcja `Telegram` w głównym configu to ustawienia wspólne. Kanał może je uzupełnić albo
 nadpisać swoim obiektem `Telegram`.
@@ -294,7 +551,7 @@ Pusty `BotToken` lub `ChatID` w kanale (`""`) oznacza „użyj wartości z głó
 }
 ```
 
-## 8. `Auth` i kanał Discorda jako źródło
+## 6. `Auth` i kanał Discorda jako źródło
 
 Kanał może czytać wiadomości z kanału Discorda (zamiast feedu) i przekazywać je na webhook
 albo Telegram. Do odczytu potrzebny jest **token konta użytkownika** Discorda.
@@ -331,7 +588,7 @@ Obiekt `Discord` w kanale:
 }
 ```
 
-## 9. `Proxy`
+## 7. `Proxy`
 
 | Parametr  | Domyślnie | Co robi |
 |-----------|-----------|---------|
@@ -344,7 +601,7 @@ Obiekt `Discord` w kanale:
 
 Przeglądarka Scraplinga ma osobne ustawienie: `proxy` w opcjach Scraplinga.
 
-## 10. `network`: limity i czasy
+## 8. `network`: limity i czasy
 
 Sekcja jest opcjonalna, a wartości domyślne są dobre dla serwera. Nieznany klucz albo wartość
 spoza zakresu to **błąd** configu, który zgłosi `--check-config`.
@@ -369,7 +626,7 @@ spoza zakresu to **błąd** configu, który zgłosi `--check-config`.
 "network": { "networkFriendlyMode": true, "requestDeadlineMs": 60000 }
 ```
 
-## 11. `Scrapling`: przeglądarka dla stron, które blokują boty
+## 9. `Scrapling`: przeglądarka dla stron, które blokują boty
 
 Niektóre strony (np. za Cloudflare) odrzucają zwykłe zapytania. Scrapling pobiera je
 prawdziwą przeglądarką (Chromium). **Wymaga** Pythona i Scraplinga zainstalowanych w
@@ -377,7 +634,7 @@ prawdziwą przeglądarką (Chromium). **Wymaga** Pythona i Scraplinga zainstalow
 jest dużo wolniejsza (10–30 s na stronę zamiast ułamka sekundy) i zużywa kilkaset MB RAM,
 więc warto jej używać tylko tam, gdzie to konieczne.
 
-### 11.1 Kiedy XFeeder używa przeglądarki
+### 9.1 Kiedy XFeeder używa przeglądarki
 
 | Ustawienie | Efekt |
 |------------|-------|
@@ -405,7 +662,7 @@ Przykład z produkcji: boop.pl zawsze blokuje, a gry-wideo.pl działa bez przegl
 }
 ```
 
-### 11.2 Parametry główne
+### 9.2 Parametry główne
 
 | Parametr | Domyślnie | Co robi |
 |----------|-----------|---------|
@@ -417,7 +674,7 @@ Przykład z produkcji: boop.pl zawsze blokuje, a gry-wideo.pl działa bez przegl
 | `DefaultOptions` | – | Opcje pobierania dla wszystkich adresów, patrz 11.3. |
 | `PerUrlConfig` | – | Ustawienia dla konkretnych adresów (adres musi być **identyczny** jak w kanale). Te same opcje co w `DefaultOptions` oraz `enabled`, `fallback`, `antiBot`, `htmlParseOptions`. |
 
-### 11.3 Opcje pobierania (`DefaultOptions` i `PerUrlConfig`)
+### 9.3 Opcje pobierania (`DefaultOptions` i `PerUrlConfig`)
 
 Tryby (`mode`):
 
@@ -453,7 +710,7 @@ Najważniejsze opcje przeglądarki (`fetch`, `stealthy-fetch`):
 Opcje trybu `get`: `headers`, `timeoutSeconds` (domyślnie 30), `followRedirects` (`true`),
 `verify` (`true`), `impersonate` (np. `"chrome"`), `stealthyHeaders` (`true`), `proxy`.
 
-### 11.4 `AntiBot`: rozpoznawanie stron blokujących
+### 9.4 `AntiBot`: rozpoznawanie stron blokujących
 
 Można je ustawić globalnie (`Scrapling.AntiBot`) albo dla adresu (`PerUrlConfig[…].antiBot`).
 
@@ -471,7 +728,7 @@ Można je ustawić globalnie (`Scrapling.AntiBot`) albo dla adresu (`PerUrlConfi
 | `MaxAttempts` | `3` | Ile trybów najwyżej spróbować. |
 | `LogDecisions` | `false` | Wypisuj w logu, dlaczego strona została uznana za zablokowaną. |
 
-### 11.5 `htmlParseOptions`: strona bez feedu
+### 9.5 `htmlParseOptions`: strona bez feedu
 
 Gdy przeglądarka zwróci zwykłą stronę HTML, wpisy są z niej wycinane selektorami CSS:
 
@@ -493,7 +750,7 @@ Gdy przeglądarka zwróci zwykłą stronę HTML, wpisy są z niej wycinane selek
 }
 ```
 
-## 12. `Solver`: FlareSolverr / Byparr
+## 10. `Solver`: FlareSolverr / Byparr
 
 Alternatywa dla Scraplinga: zewnętrzna usługa z API FlareSolverr (FlareSolverr, Byparr,
 TRAWL), uruchomiona osobno (zwykle w Dockerze).
@@ -511,7 +768,7 @@ TRAWL), uruchomiona osobno (zwykle w Dockerze).
 "Solver": { "Url": "http://127.0.0.1:8191", "Feeds": ["https://boop.pl/rss"], "Auto": false }
 ```
 
-## 13. Zmienne środowiskowe XFeedera
+## 11. Zmienne środowiskowe XFeedera
 
 Można je ustawić w systemie albo w `.env`.
 
@@ -526,7 +783,7 @@ Można je ustawić w systemie albo w `.env`.
 | `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` | Publiczny adres dashboardu za reverse proxy, np. `https://feeds.example.com`. |
 | `XFEEDER_DASHBOARD_SESSION_TTL_HOURS` | Jak długo trwa zalogowanie (domyślnie 12 h). |
 
-## 14. Sprawdzanie configu i częste problemy
+## 12. Sprawdzanie configu i częste problemy
 
 Przed uruchomieniem:
 

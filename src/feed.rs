@@ -108,7 +108,9 @@ impl Ctx<'_> {
             signals.blocked = signals.status_blocked || signals.header_blocked;
         }
         signals.blocked |= parsers::is_blocked_page(body, status.unwrap_or(200), headers);
-        if cfg.should_use(url, status) || (cfg.auto_fallback() && anti.enabled && signals.blocked) {
+        if cfg.should_use(url, status)
+            || ((cfg.auto_fallback() || cfg.url_fallback(url)) && anti.enabled && signals.blocked)
+        {
             if anti.log_decisions && signals.blocked {
                 crate::warn!(
                     "Scrapling AntiBot",
@@ -898,6 +900,7 @@ impl Pipeline<'_> {
                 Some((reason.to_string(), dl.scrapling)),
             ));
         }
+        let parse_started = Instant::now();
         if dl.scrapling && scrapling::detect_format(&dl.data) == "html" {
             let cfg = ScraplingConfig::new(&self.config.root);
             let options = cfg
@@ -915,7 +918,7 @@ impl Pipeline<'_> {
                 );
                 expert(
                     "feed.parsed",
-                    json!({ "url": url, "parser": "scrapling-html", "itemCount": items.len(), "durationMs": started.elapsed().as_millis() as u64 }),
+                    json!({ "url": url, "parser": "scrapling-html", "itemCount": items.len(), "durationMs": started.elapsed().as_millis() as u64, "parseMs": parse_started.elapsed().as_millis() as u64 }),
                 );
                 self.save(url, &dl, &items).await?;
                 return Ok((
@@ -944,7 +947,7 @@ impl Pipeline<'_> {
                 );
                 expert(
                     "feed.parsed",
-                    json!({ "url": url, "parser": name, "itemCount": items.len(), "durationMs": started.elapsed().as_millis() as u64 }),
+                    json!({ "url": url, "parser": name, "itemCount": items.len(), "durationMs": started.elapsed().as_millis() as u64, "parseMs": parse_started.elapsed().as_millis() as u64 }),
                 );
                 self.save(url, &dl, &items).await?;
                 return Ok((
@@ -965,7 +968,7 @@ impl Pipeline<'_> {
         if !items.is_empty() {
             expert(
                 "feed.parsed",
-                json!({ "url": url, "parser": "rss-regex", "itemCount": items.len(), "durationMs": started.elapsed().as_millis() as u64 }),
+                json!({ "url": url, "parser": "rss-regex", "itemCount": items.len(), "durationMs": started.elapsed().as_millis() as u64, "parseMs": parse_started.elapsed().as_millis() as u64 }),
             );
             self.save(url, &dl, &items).await?;
             return Ok((

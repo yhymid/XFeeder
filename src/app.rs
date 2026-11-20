@@ -864,6 +864,19 @@ impl App {
 struct Schedule {
     next_run_at: u64,
     failures: u32,
+    /// When the last successful run finished (0 = never).
+    last_run_at: u64,
+}
+
+/// A shorter `TimeChecker` (config reload) applies to runs that are
+/// already planned: next run = last run + new interval, if that is sooner.
+fn apply_interval(schedule: &mut Schedule, minutes: u64) {
+    if schedule.failures == 0 && schedule.last_run_at > 0 {
+        let sooner = schedule.last_run_at + minutes * 60_000;
+        if sooner < schedule.next_run_at {
+            schedule.next_run_at = sooner;
+        }
+    }
 }
 
 fn now_ms() -> u64 {
@@ -894,7 +907,8 @@ fn reschedule(schedule: &mut Schedule, minutes: u64, failed: bool) {
         schedule.next_run_at = now_ms() + interval.max(backoff);
     } else {
         schedule.failures = 0;
-        schedule.next_run_at = now_ms() + interval;
+        schedule.last_run_at = now_ms();
+        schedule.next_run_at = schedule.last_run_at + interval;
     }
 }
 
@@ -935,6 +949,11 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
         app.refresh(false);
         let config = app.config();
         let channels = &config.channels;
+        for channel in channels {
+            if let Some(schedule) = schedules.get_mut(&channel.cache_key) {
+                apply_interval(schedule, channel.time_checker);
+            }
+        }
         let due = channels
             .iter()
             .filter(|c| {
@@ -1080,6 +1099,25 @@ mod tests {
             reschedule(&mut short, 1, true);
         }
         assert!(short.next_run_at - now_ms() <= 8 * 60_000 + 1000);
+    }
+
+    #[test]
+    fn shorter_interval_moves_planned_run_forward() {
+        let mut schedule = Schedule::default();
+        reschedule(&mut schedule, 60, false);
+        let planned = schedule.next_run_at;
+        apply_interval(&mut schedule, 90);
+        assert_eq!(
+            schedule.next_run_at, planned,
+            "a longer interval waits for the planned run"
+        );
+        apply_interval(&mut schedule, 30);
+        assert_eq!(schedule.next_run_at, schedule.last_run_at + 30 * 60_000);
+        let mut failing = Schedule::default();
+        reschedule(&mut failing, 60, true);
+        let backoff = failing.next_run_at;
+        apply_interval(&mut failing, 1);
+        assert_eq!(failing.next_run_at, backoff, "backoff is kept");
     }
 
     #[test]

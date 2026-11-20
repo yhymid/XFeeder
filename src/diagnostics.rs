@@ -192,9 +192,10 @@ pub fn sample_process() {
     if let Ok(entries) = fs::read_dir("/proc/self/fd") {
         payload.insert("fds".into(), json!(entries.count()));
     }
-    let (children, children_rss) = descendants_rss(pid);
+    let (children, children_rss, children_pss) = descendants_memory(pid);
     payload.insert("childProcesses".into(), json!(children));
     payload.insert("childRssKb".into(), json!(children_rss));
+    payload.insert("childPssKb".into(), json!(children_pss));
     if let Ok(load) = fs::read_to_string("/proc/loadavg")
         && let Some(first) = load.split_whitespace().next()
     {
@@ -239,10 +240,24 @@ fn proc_cpu_ms(pid: u32) -> Option<(u64, u64)> {
     ))
 }
 
-/// Number and total RSS of all descendant processes (Scrapling/Chromium).
-fn descendants_rss(root: u32) -> (u64, u64) {
+/// Proportional set size: shared pages are split between the processes
+/// using them, so the PSS of a process tree adds up correctly (RSS does not).
+fn proc_pss(pid: u32) -> Option<u64> {
+    fs::read_to_string(format!("/proc/{pid}/smaps_rollup"))
+        .ok()?
+        .lines()
+        .find(|l| l.starts_with("Pss:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
+/// Number, summed RSS and summed PSS of all descendant processes
+/// (Scrapling/Chromium). Summed RSS counts shared memory once per process.
+fn descendants_memory(root: u32) -> (u64, u64, u64) {
     let Ok(entries) = fs::read_dir("/proc") else {
-        return (0, 0);
+        return (0, 0, 0);
     };
     let mut parent: HashMap<u32, u32> = HashMap::new();
     for entry in entries.flatten() {
@@ -258,13 +273,16 @@ fn descendants_rss(root: u32) -> (u64, u64) {
     }
     let mut count = 0;
     let mut rss = 0;
+    let mut pss = 0;
     for &pid in parent.keys() {
         let mut current = pid;
         let mut depth = 0;
         while let Some(&up) = parent.get(&current) {
             if up == root {
                 count += 1;
-                rss += proc_status(pid).map_or(0, |(r, _)| r);
+                let own = proc_status(pid).map_or(0, |(r, _)| r);
+                rss += own;
+                pss += proc_pss(pid).unwrap_or(own);
                 break;
             }
             current = up;
@@ -274,7 +292,7 @@ fn descendants_rss(root: u32) -> (u64, u64) {
             }
         }
     }
-    (count, rss)
+    (count, rss, pss)
 }
 
 // ------------------------------------------------------------------ writer --
@@ -586,7 +604,7 @@ impl Aggregates {
                 }
             }
             "feed.parsed" => {
-                if let Some(ms) = num(p, "durationMs") {
+                if let Some(ms) = num(p, "parseMs") {
                     self.feed(p).parse_ms.push(ms);
                 }
             }
@@ -670,7 +688,7 @@ impl Aggregates {
                 if let Some(kb) = num(p, "rssKb") {
                     self.rss_kb.push(kb);
                 }
-                if let Some(kb) = num(p, "childRssKb") {
+                if let Some(kb) = num(p, "childPssKb").or_else(|| num(p, "childRssKb")) {
                     self.child_rss_kb.push(kb);
                 }
                 if let (Some(u), Some(s)) = (num(p, "cpuUserMs"), num(p, "cpuSysMs")) {
@@ -925,7 +943,11 @@ impl Aggregates {
             self.send_ms.stats().map_or("–".into(), |s| ms(s.p90)),
             self.rate_limited,
             self.rate_wait_ms.stats().map_or("–".into(), |s| ms(s.p50)),
-            ms(self.rate_wait_ms.0.iter().sum()),
+            if self.rate_wait_ms.0.is_empty() {
+                "–".to_string()
+            } else {
+                ms(self.rate_wait_ms.0.iter().sum())
+            },
         );
 
         let _ = writeln!(out, "## Browser (Scrapling)\n");
@@ -958,7 +980,7 @@ impl Aggregates {
         });
         let _ = writeln!(
             out,
-            "- XFeeder RSS: p50 {} MB, max {} MB\n- Child processes (Scrapling/Chromium) RSS: p50 {} MB, max {} MB\n- Average CPU of XFeeder today: {}\n",
+            "- XFeeder RSS: p50 {} MB, max {} MB\n- Child processes (Scrapling/Chromium), PSS: p50 {} MB, max {} MB\n- Average CPU of XFeeder today: {}\n",
             self.rss_kb
                 .stats()
                 .map_or("–".into(), |s| format!("{:.1}", s.p50 / 1024.0)),

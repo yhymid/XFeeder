@@ -15,9 +15,12 @@ Bez niego RSS/Atom/JSON działają normalnie.
   Przy zamknięciu workera cała grupa (razem z Chromium) jest kończona.
 - Scrapling jest używany, gdy `Scrapling.Enabled` jest włączone i zachodzi
   jeden z warunków:
-  - zwykłe pobranie zwróci kod z `FallbackStatusCodes`;
-  - wykryto stronę anty-bot;
-  - `ForceGlobal` albo `PerUrlConfig` wymusza użycie.
+  - `AutoFallback` jest włączone, a zwykłe pobranie zwróci kod z
+    `FallbackStatusCodes` albo stronę anty-bot;
+  - `PerUrlConfig["URL"].fallback: true`: to samo, ale tylko dla tego adresu
+    (najpierw zwykłe HTTP, przeglądarka dopiero przy blokadzie);
+  - `ForceGlobal` albo `PerUrlConfig["URL"].enabled: true` wymusza przeglądarkę
+    przy każdym pobraniu.
 - `network.outboundPolicy: "public-only"` wyłącza Scrapling.
 
 ## Instalacja (ręczna)

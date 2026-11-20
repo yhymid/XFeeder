@@ -322,8 +322,15 @@ impl<'a> ScraplingConfig<'a> {
         if self.force_global() {
             return true;
         }
-        self.auto_fallback()
+        (self.auto_fallback() || self.url_fallback(url))
             && status.is_some_and(|s| self.fallback_status_codes().contains(&f64::from(s)))
+    }
+
+    /// `PerUrlConfig.<url>.fallback: true`: plain HTTP first, the browser
+    /// only when that is blocked (unlike `enabled: true`, which always uses
+    /// the browser).
+    pub fn url_fallback(&self, url: &str) -> bool {
+        self.url_config(url).get("fallback") == Some(&Value::Bool(true))
     }
 }
 
@@ -816,6 +823,23 @@ mod tests {
 
     fn anti() -> AntiBot {
         ScraplingConfig::new(&json!({})).antibot("https://x")
+    }
+
+    #[test]
+    fn per_url_fallback_only_on_blocked_status() {
+        let cfg_root = json!({ "Scrapling": { "Enabled": true, "AutoFallback": false, "PerUrlConfig": {
+            "https://f": { "fallback": true, "wait": 8000 },
+            "https://e": { "enabled": true }
+        } } });
+        let cfg = ScraplingConfig::new(&cfg_root);
+        assert!(cfg.url_fallback("https://f") && !cfg.url_fallback("https://e"));
+        assert!(!cfg.should_use("https://f", Some(200)));
+        assert!(cfg.should_use("https://f", Some(403)));
+        assert!(
+            !cfg.should_use("https://other", Some(403)),
+            "AutoFallback stays off elsewhere"
+        );
+        assert!(cfg.should_use("https://e", Some(200)));
     }
 
     #[test]

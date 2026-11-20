@@ -1,81 +1,128 @@
 # Changelog
 
-## [3.0.0-alpha.1] - unreleased (branch `rust-rewrite`)
+Releases are cut by hand when enough has changed. Each release on GitHub uses the matching
+section below as its description.
 
-**XFeeder rewritten in Rust.**
+## 3.0 Beta - Unreleased
 
-- The worker and the dashboard are one Rust binary (`xfeeder`,
-  `xfeeder dashboard`); Node.js, npm and `node_modules` are no longer required.
-- Same `config.json` (2.x and schema v2), `.env`, `cache.json`, feed state and
-  dashboard UI/API; existing installations switch over in place.
-- Delivery history written by 2.x is reused automatically (2.x and 3.0 compute
-  the channel cache key differently; the existing key wins), so nothing is
-  re-posted after migration.
-- The dashboard UI and the Scrapling worker script are embedded in the binary.
-- HTTP: one retry with `Accept: */*` on 406/415; healthy XML/JSON responses are
-  no longer scanned for anti-bot body signatures.
-- The Scrapling `get` mode runs in the persistent Python worker.
-- Dates with a wrong weekday name (`Mon, 02 Jan 2024`) are accepted like in
-  JavaScript.
-- `XFEEDER_*` flags and dashboard settings are also read from `.env`.
-- A destination that is gone or forbidden (Discord 401/403/404, or 400 with
-  Unknown Channel/Webhook, Missing Access, locked thread; Telegram 401/403,
-  chat/thread not found) is skipped for the rest of the channel run instead of
-  failing once per pending entry.
-- First check of a feed no longer replays it: when a destination has no
-  delivery history for a feed (new feed, new channel, or a channel whose cache
-  key changed after editing `Webhook`/`Thread`/feeds), its current entries are
-  recorded as seen and only the newest `FirstRunSend` (default 0) are sent.
-- Channel `Filters`: `Include`/`Exclude` substrings or `/regex/`, `Fields`,
-  `CaseSensitive`, `MaxAgeHours` (also in `ChannelDefaults`).
-- Feed bodies in ISO-8859-2/windows-1250 (and any WHATWG encoding) are
-  decoded correctly, using the `Content-Type` charset or the document's own
-  `<?xml encoding>`/`<meta charset>`; valid UTF-8 always stays UTF-8.
-- Scrapling worker works with Scrapling 0.4.15 and 0.5.x (0.5 removed the
-  dynamic browser backend; CDP uses `RemoteSession`), and now passes
-  `solve_cloudflare` and other stealth options to browser sessions.
-- Dashboard UI rewritten as server-rendered HTML in Rust (`src/dashboard/ui.rs`):
-  plain forms, no JavaScript (CSP `default-src 'none'`). Pages: overview with
-  worker control and metrics, channels (add/edit/duplicate/delete with filters),
-  activity, diagnostics reports, settings (general, diagnostics recorder,
-  network, `.env` secrets) and the raw config editor. Every save is checked
-  against the config revision it was rendered from. The JSON API is unchanged.
-- Removed the remaining JavaScript: the browser UI, Node-era documentation
-  (`docs/legacy`, `docs/migration-from-node.md`) and unused Node test fixtures;
-  dropped the `include_dir` dependency.
-- Diagnostics recorder (`Settings.Diagnostics`): every event and log line in
-  `diagnostics/events-*.txt`, with HTTP phase timing, per-entry publication →
-  Discord latency, Discord 429 waits, process samples and anomalies, plus a
-  Markdown latency report with hints every 15 minutes.
+XFeeder is written in Rust now: one binary (`xfeeder`, `xfeeder dashboard`), no Node.js,
+npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.json` and the
+feed state are read as before, so an existing installation switches over in place.
+
+### Added
+- Delivery history written by 2.x is reused (2.x and 3.0 compute the channel cache key
+  differently; the existing key wins), so nothing is re-posted after the switch.
+- First check of a feed no longer replays it: when a destination has no history for a feed
+  (new feed, new channel, or a channel whose key changed after editing `Webhook`, `Thread`
+  or feeds), the current entries are marked as seen and only the newest `FirstRunSend`
+  (default 0) are sent.
+- Channel `Filters`: `Include`/`Exclude` (text or `/regex/`), `Fields`, `CaseSensitive`,
+  `MaxAgeHours` (also in `ChannelDefaults`).
+- Feed autodiscovery: a web page URL is replaced by the feed it advertises
+  (`<link rel="alternate">`, RSS > Atom > JSON Feed); history is kept under the found URL.
+- Optional `Solver` for FlareSolverr-compatible services (FlareSolverr, Byparr, TRAWL), per
+  feed or automatically on 403/503/challenge pages.
+- Telegram: entries with an image are sent with `sendPhoto` (caption up to 1024 characters),
+  with `sendMessage` as fallback; `SendPhoto: false` turns it off.
+- Scrapling `PerUrlConfig["URL"].fallback: true`: plain HTTP first, the browser only when the
+  site blocks it (`enabled: true` still uses the browser every time). Measured on the VPS
+  with gry-wideo.pl, which no longer blocks plain requests:
+
+  ```text
+  ┌──────────────────────────────────────┬───────────┐
+  │ gry-wideo.pl/rss                     │ per check │
+  ├──────────────────────────────────────┼───────────┤
+  │ Browser (stealthy-fetch, wait 8 s)   │ 10.5 s    │
+  ├──────────────────────────────────────┼───────────┤
+  │ Plain HTTP (XFeeder dry run)         │ 0.88 s    │
+  └──────────────────────────────────────┴───────────┘
+  ```
+
+- 24/7 diagnostics (`Settings.Diagnostics` or `XFEEDER_DIAGNOSTICS=1`): every event and log
+  line, without tokens or webhook URLs, in `diagnostics/events-YYYY-MM-DD.txt`, and a latency
+  report every 15 minutes in `diagnostics/summary-YYYY-MM-DD.md`: publication → Discord per
+  channel and stage, every HTTP request (queue, time to first byte, body, cache headers,
+  Discord rate-limit headers, server clock), feed freshness and publishing rate, Discord 429
+  waits, scheduler lateness, memory and CPU of XFeeder and the browser, anomalies (future
+  dates, duplicate or missing ids, clock skew, panics) and hints. Writing runs on its own
+  thread and never blocks the worker. First three days on production (10 channels, 32
+  feeds, `TimeChecker` 60 min):
+
+  ```text
+  ┌──────────────────────────────┬────────────┬────────────┬────────────┐
+  │ Publication → Discord        │ 2026-11-17 │ 2026-11-18 │ 2026-11-19 │
+  ├──────────────────────────────┼────────────┼────────────┼────────────┤
+  │ Median                       │ 33.4 min   │ 39.8 min   │ 28.1 min   │
+  ├──────────────────────────────┼────────────┼────────────┼────────────┤
+  │ 90th percentile              │ 54.9 min   │ 59.3 min   │ 55.7 min   │
+  ├──────────────────────────────┼────────────┼────────────┼────────────┤
+  │ Posts sent                   │ 170        │ 213        │ 197        │
+  ├──────────────────────────────┼────────────┼────────────┼────────────┤
+  │ Failed sends / Discord 429   │ 0 / 0      │ 0 / 0      │ 0 / 0      │
+  └──────────────────────────────┴────────────┴────────────┴────────────┘
+  ```
+
+  Where the time went on 2026-11-19 (197 posts):
+
+  ```text
+  ┌──────────────────────────────────────────┬──────────┬──────────┐
+  │ Stage                                    │  Median  │  90th    │
+  ├──────────────────────────────────────────┼──────────┼──────────┤
+  │ Waiting for the next check (TimeChecker) │ 27.9 min │ 55.7 min │
+  ├──────────────────────────────────────────┼──────────┼──────────┤
+  │ Inside XFeeder (fetched → sent)          │ 3.8 s    │ 10.9 s   │
+  ├──────────────────────────────────────────┼──────────┼──────────┤
+  │ Discord webhook request                  │ 0.74 s   │ 1.8 s    │
+  ├──────────────────────────────────────────┼──────────┼──────────┤
+  │ Slowest feed: boop.pl (browser)          │ 26.3 s   │ 34.6 s   │
+  └──────────────────────────────────────────┴──────────┴──────────┘
+  ```
+
+  Almost the whole delay is the polling interval, not XFeeder; XFeeder itself used 35 MB
+  of memory and 1.5 % CPU on average, with no leak over three days.
+- Dashboard rewritten as server-rendered HTML in Rust: plain forms, no JavaScript
+  (CSP `default-src 'none'`). Overview with worker control and metrics, channels
+  (add/edit/duplicate/delete with filters), activity, diagnostics reports, settings
+  (general, diagnostics, network, `.env` secrets; values are never shown) and the raw
+  config editor. Every save is checked against the revision it was opened with; CRLF line
+  endings are kept. The JSON API is unchanged.
 - Discord webhook sends log the created message and channel id.
-- Scheduler: due channels start immediately one after another instead of one
-  channel per 30-second tick (with 10 channels a due channel could wait up to
-  5 minutes).
-- Scrapling: a Cloudflare solve (`stealthy-fetch`) no longer blocks page
-  resources by default (the Turnstile widget needs them; set
-  `disableResources` explicitly to override), and the worker keeps one browser
-  session at a time and uses the stealthy backend for every browser mode.
-  Before, a second session failed with "Sync API inside the asyncio loop".
-- A feed returned after a solved challenge is accepted even though the
-  response headers still show `server: cloudflare` / `cf-mitigated`; a
-  rejected challenge page is now logged as a warning, not only in expert mode.
-- Optional `Solver` backend for FlareSolverr-compatible services
-  (FlareSolverr, Byparr, TRAWL): per-feed or automatic on 403/503/challenge;
-  the returned page is used directly and Chromium's XML/JSON viewer markup
-  is unwrapped.
-- Feed autodiscovery: a configured web page URL is replaced by the feed it
-  advertises (`<link rel="alternate">`, RSS > Atom > JSON Feed); delivery
-  history is kept under the discovered URL, so the first-check baseline
-  applies.
-- Telegram: entries with an image are sent with `sendPhoto` (caption up to
-  1024 characters), falling back to `sendMessage` when Telegram rejects the
-  image; `SendPhoto: false` disables it.
-- A valid but empty RSS/Atom feed (e.g. a YouTube channel without videos) is
-  no longer turned into a fake entry by the HTML fallback parser; 2.x posted
-  the feed URL itself once per such feed.
-- Removed: Workshop plugins, Dockerfile/compose, npm scripts. Documents of the
-  JavaScript implementation moved to `docs/legacy/` (GPT-generated, reference
-  only).
+
+### Changed
+- Scheduler: due channels start at once, one after another (up to
+  `MaxConcurrentChannels`), instead of one channel per 30-second tick. With 10 channels a
+  due channel could wait up to 5 minutes; a full pass of all 10 now takes about 7 s.
+- A shorter `TimeChecker` after a config reload applies to checks that are already
+  planned (last check + new interval); before, the next check still waited for the old
+  interval.
+- Feed bodies in ISO-8859-2/windows-1250 (and any WHATWG encoding) are decoded from the
+  `Content-Type` charset or the document's own declaration; valid UTF-8 stays UTF-8. 2.x
+  garbled Polish characters.
+- A destination that is gone or forbidden (Discord 401/403/404 or Unknown
+  Channel/Webhook, Missing Access, locked thread; Telegram 401/403, chat not found) is
+  skipped for the rest of the run instead of failing once per pending entry.
+- HTTP: one retry with `Accept: */*` on 406/415; healthy XML/JSON responses are not
+  scanned for anti-bot text (articles that mention "captcha" were treated as blocks).
+- Scrapling: works with Scrapling 0.4.15 and 0.5.x, runs `get` in the persistent Python
+  worker, passes `solve_cloudflare` and the other stealth options, keeps page resources
+  for a Cloudflare solve (the Turnstile widget needs them) and uses one browser session
+  at a time.
+- `XFEEDER_*` flags and dashboard settings are also read from `.env`.
+
+### Fixed
+- A feed returned after a solved challenge is accepted even though the headers still say
+  `server: cloudflare` / `cf-mitigated`; a rejected challenge page is logged as a warning.
+- A second browser session failed with "Sync API inside the asyncio loop".
+- A valid but empty feed (e.g. a YouTube channel without videos) is no longer turned into
+  a fake entry; 2.x posted the feed URL once per such feed.
+- Dates with a wrong weekday name (`Mon, 02 Jan 2024`) are accepted.
+- Diagnostics report: parse time no longer includes the download, browser memory is
+  counted once (PSS instead of summed RSS: about 1.3 GB was reported for a few hundred
+  MB), and "-0 ms" is no longer shown when Discord never rate-limited.
+
+### Removed
+- Node.js, npm and the JavaScript browser UI; Workshop plugins, Dockerfile/compose;
+  Node-era documentation and test fixtures; the `include_dir` dependency.
 
 ## [2.2.0] - 2026-10-09
 

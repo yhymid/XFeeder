@@ -2,7 +2,14 @@
   "Settings": {
     "Logs": false,
     "DebugExpert": false,
-    "MaxConcurrentChannels": 1
+    "MaxConcurrentChannels": 2,
+    "FirstRunSend": 0,
+    "Diagnostics": {
+      "Enabled": false,
+      "RetentionDays": 14,
+      "MaxFileMB": 256,
+      "SummaryMinutes": 15
+    }
   },
   "Auth": {
     "Token": "${DISCORD_AUTH_TOKEN}",
@@ -15,7 +22,8 @@
     "ChatID": "${TELEGRAM_CHAT_ID}",
     "MessageThreadID": null,
     "DisableWebPagePreview": false,
-    "TimeoutMs": 15000
+    "TimeoutMs": 15000,
+    "SendPhoto": true
   },
   "Proxy": {
     "Enabled": false,
@@ -24,10 +32,7 @@
   "Scrapling": {
     "Enabled": true,
     "ForceGlobal": false,
-    "AutoFallback": true,
-    "AutoUseShellForAdvancedOptions": true,
-    "PersistentBrowserSessions": true,
-    "PreferredMode": "cli",
+    "AutoFallback": false,
     "FallbackStatusCodes": [
       403,
       429,
@@ -76,16 +81,10 @@
       "MaxAttempts": 3
     },
     "DefaultOptions": {
-      "runtimeMode": "cli",
-      "extractMode": "stealthy-fetch",
       "mode": "stealthy-fetch",
       "headers": {},
       "extraHeaders": {},
       "cookies": "",
-      "auth": null,
-      "params": {},
-      "data": "",
-      "jsonData": null,
       "followRedirects": true,
       "verify": true,
       "impersonate": null,
@@ -113,8 +112,6 @@
     "PerUrlConfig": {
       "https://protected-site.com/feed": {
         "enabled": true,
-        "runtimeMode": "cli",
-        "extractMode": "stealthy-fetch",
         "mode": "stealthy-fetch",
         "solveCloudflare": true,
         "headless": true,
@@ -149,6 +146,11 @@
           "titleSelector": "h2",
           "linkSelector": "a.read-more"
         }
+      },
+      "https://sometimes-blocked.example/rss": {
+        "fallback": true,
+        "mode": "stealthy-fetch",
+        "wait": 3000
       }
     }
   },
@@ -180,7 +182,13 @@
         "https://example.org/project/commits.atom"
       ],
       "TimeChecker": 60,
-      "RequestSend": 2
+      "RequestSend": 2,
+      "Filters": {
+        "Exclude": [
+          "/^Merge (pull request|branch)/"
+        ],
+        "MaxAgeHours": 72
+      }
     }
   }
 }

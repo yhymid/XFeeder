@@ -210,6 +210,7 @@ deleted.
 
 ## Documentation
 
+- [Configuration](docs/configuration.md): every `config.json` setting with examples (Polish)
 - [Architecture](docs/architecture.md)
 - [Deployment](docs/deployment.md)
 - [Scrapling fallback](scrapling/README.md)

@@ -51,7 +51,40 @@ fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
 }
 
 fn snippet(raw: &str, max: usize) -> String {
-    js::trim(prefix16(&html_to_text(raw), max)).to_string()
+    let text = html_to_text(raw);
+    let cut = prefix16(&text, max);
+    if cut.len() == text.len() {
+        return js::trim(cut).to_string();
+    }
+    // Cut at the last word boundary and show that the text goes on.
+    let cut = cut
+        .rfind(char::is_whitespace)
+        .filter(|&i| i > cut.len() / 2)
+        .map_or(cut, |i| &cut[..i]);
+    format!("{}…", js::trim_end(cut))
+}
+
+/// Commit trailers are noise in a message card (and `Claude-Session` links
+/// should not be published).
+fn without_trailers(text: &str) -> String {
+    static TRAILER: OnceLock<Regex> = OnceLock::new();
+    let trailer = re(
+        &TRAILER,
+        r"(?i)^(co-authored-by|signed-off-by|reviewed-by|acked-by|tested-by|reported-by|helped-by|change-id|claude-session):\s",
+    );
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| !trailer.is_match(l.trim()))
+        .collect();
+    js::trim(&kept.join("\n")).to_string()
+}
+
+/// Name for a commit whose e-mail is not linked to a GitHub account
+/// (`86289848+login@users.noreply.github.com` → `login`, `me@x.pl` → `me`).
+fn name_from_email(email: &str) -> Option<String> {
+    let local = email.trim().split('@').next()?.trim();
+    let local = local.split_once('+').map_or(local, |(_, login)| login);
+    (!local.is_empty()).then(|| local.to_string())
 }
 
 fn xml_doc(body: &Body) -> Option<Value> {
@@ -166,7 +199,7 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
         }
         let title = map.get("title").map(js::to_string).unwrap_or_default();
         if let Some(text) = map.get("contentSnippet").and_then(Value::as_str) {
-            let trimmed = without_title(text, &title);
+            let trimmed = without_title(&without_trailers(text), &title);
             if trimmed != text {
                 map.insert("contentSnippet".into(), json!(trimmed));
             }
@@ -307,6 +340,12 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                 path(e, &["author", "name"]),
                 path(feed, &["author", "name"]),
             ]));
+            let author = if truthy(&author) {
+                author
+            } else {
+                name_from_email(&node_text(path(e, &["author", "email"])))
+                    .map_or(Value::Null, Value::String)
+            };
             let links = get(e, "link");
             let link = match links {
                 Value::Array(list) => list
@@ -1289,6 +1328,26 @@ mod tests {
         assert_eq!(
             steam[0]["enclosure"],
             "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg"
+        );
+    }
+
+    #[test]
+    fn commit_cards_drop_trailers_and_name_unlinked_authors() {
+        let text = "Fix it\nCo-Authored-By: Claude <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_x";
+        assert_eq!(without_trailers(text), "Fix it");
+        assert_eq!(
+            name_from_email("86289848+yhymid@users.noreply.github.com").as_deref(),
+            Some("yhymid")
+        );
+        assert_eq!(
+            name_from_email("codex@openai.local").as_deref(),
+            Some("codex")
+        );
+        let long = format!("<p>{}</p>", "word ".repeat(200));
+        let cut = snippet(&long, 500);
+        assert!(
+            cut.ends_with("word…") && cut.chars().count() <= 501,
+            "{cut}"
         );
     }
 }

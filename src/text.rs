@@ -145,7 +145,26 @@ pub fn strip_html(input: &str) -> String {
 pub fn html_to_text(input: &str) -> String {
     static LI: OnceLock<Regex> = OnceLock::new();
     static SPACE: OnceLock<Regex> = OnceLock::new();
-    let marked = re(&LI, r"(?i)<li\b[^>]*>").replace_all(input, "\n•\n");
+    static PRE: OnceLock<Regex> = OnceLock::new();
+    static WS: OnceLock<Regex> = OnceLock::new();
+    // In HTML a line break in the source is just a space (GitHub's activity
+    // feed breaks lines between every tag); only `<pre>` keeps them.
+    let input = if input.contains('<') {
+        let pre = re(&PRE, r"(?is)<pre\b.*?</pre\s*>");
+        let ws = re(&WS, r"\s+");
+        let mut out = String::with_capacity(input.len());
+        let mut last = 0;
+        for m in pre.find_iter(input) {
+            out.push_str(&ws.replace_all(&input[last..m.start()], " "));
+            out.push_str(m.as_str());
+            last = m.end();
+        }
+        out.push_str(&ws.replace_all(&input[last..], " "));
+        out
+    } else {
+        input.to_string()
+    };
+    let marked = re(&LI, r"(?i)<li\b[^>]*>").replace_all(&input, "\n•\n");
     let text = strip_html(&marked)
         .replace(
             ['\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}', '\u{feff}'],
@@ -164,6 +183,17 @@ pub fn html_to_text(input: &str) -> String {
         }
         if line == "•" {
             bullet = true;
+            continue;
+        }
+        // "• 7f3a037" + "docs: crop…" (a commit id on its own) → one line.
+        if !bullet
+            && let Some(last) = lines.last_mut()
+            && let Some(word) = last.strip_prefix("• ")
+            && !word.contains(' ')
+            && word.len() <= 12
+        {
+            last.push(' ');
+            last.push_str(line);
             continue;
         }
         lines.push(if bullet {
@@ -376,6 +406,14 @@ pub fn parse_date_str(text: &str) -> Option<DateTime<Utc>> {
             return Some(dt.with_timezone(&Utc));
         }
     }
+    // "2026-11-19 12:58:18 UTC" (GitHub activity feeds).
+    if let Some(naive) = text
+        .strip_suffix(" UTC")
+        .or_else(|| text.strip_suffix(" GMT"))
+        .and_then(|t| NaiveDateTime::parse_from_str(t, "%Y-%m-%d %H:%M:%S%.f").ok())
+    {
+        return Some(Utc.from_utc_datetime(&naive));
+    }
     // RFC 822 dates with a named zone chrono does not know (e.g. "CEST").
     static ZONE: OnceLock<Regex> = OnceLock::new();
     if let Some(caps) = re(&ZONE, r"^(.*\d{1,2}:\d{2}(?::\d{2})?)\s+([A-Z]{2,5})$").captures(text) {
@@ -546,6 +584,24 @@ mod tests {
         assert_eq!(
             entry_identity(&before, false),
             entry_identity(&after, false)
+        );
+    }
+
+    #[test]
+    fn html_source_line_breaks_are_spaces_except_in_pre() {
+        let html = "<div>yhymid\n  deleted\n branch <a>3.0-alpha</a></div><ul><li><code><a>7f3a037</a></code>\n<div>docs: crop</div></li></ul><pre>line one\nline two</pre>";
+        assert_eq!(
+            html_to_text(html),
+            "yhymid deleted branch 3.0-alpha\n• 7f3a037 docs: crop\nline one\nline two"
+        );
+        assert_eq!(html_to_text("plain\ntext"), "plain\ntext");
+    }
+
+    #[test]
+    fn github_activity_dates_parse() {
+        assert_eq!(
+            parse_date(&json!("2026-11-19 12:58:18 UTC")).as_deref(),
+            Some("2026-11-19T12:58:18.000Z")
         );
     }
 }

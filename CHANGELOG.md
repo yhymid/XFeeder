@@ -132,8 +132,15 @@ feed state are read as before, so an existing installation switches over in plac
   `\[ ]` escapes are removed; a text that only repeats the title, or starts with the
   site name and the title (WordPress feeds), is trimmed.
 - RSS `<author>` given as plain text is used as the author (Gitea feeds).
+- GitHub cards: commit trailers (`Co-Authored-By`, `Signed-off-by`, `Claude-Session`…)
+  are not shown; a commit whose e-mail is not linked to a GitHub account shows the name
+  from the e-mail (`codex`, `release`) instead of "Anonymous"; long texts end at a whole
+  word with `…`.
 
 ### Fixed
+- GitHub activity feeds (`github.com/<user>.atom`) showed one word per line (line
+  breaks in the HTML source were kept; they are spaces outside `<pre>`) and no time
+  (dates like `2026-11-19 12:58:18 UTC` were not parsed).
 - Relative links in feeds (Gitea writes `/owner/repo/commit/…`) are made absolute, so
   "Open" works. The original link stays the delivery identity, so nothing is sent again
   (checked on all 220 entries of the 12 production sources).

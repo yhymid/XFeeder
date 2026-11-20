@@ -108,8 +108,35 @@ feed state are read as before, so an existing installation switches over in plac
   for a Cloudflare solve (the Turnstile widget needs them) and uses one browser session
   at a time.
 - `XFEEDER_*` flags and dashboard settings are also read from `.env`.
+- Sharper images. Each site in production was checked to see how it builds its posts:
+
+  ```
+  ┌──────────────────────┬──────────────────────────┬──────────────────────────────┐
+  │ Source               │ Image the feed gives     │ Image sent now               │
+  ├──────────────────────┼──────────────────────────┼──────────────────────────────┤
+  │ GitHub commits       │ avatar 30×30             │ avatar 460 px, as thumbnail  │
+  │ lowcygier.pl (WP)    │ thumbnail 224×224        │ original 800×800             │
+  │ YouTube              │ hqdefault 480×360        │ maxresdefault 1280×720       │
+  │ Steam news (CS2)     │ none in 9 of 10 posts    │ game header 460×215          │
+  │ gry-wideo, onet,     │ 1200–2400 px             │ unchanged                    │
+  │ boop, SteamDB        │                          │                              │
+  └──────────────────────┴──────────────────────────┴──────────────────────────────┘
+  ```
+
+  The larger image is checked with a 1 KB ranged request before sending; when it does
+  not exist (some YouTube videos have no `maxresdefault`), the feed's own image is used.
+  Avatars appear small next to the text (Section + Thumbnail) instead of as a large
+  pixelated picture, and are not sent to Telegram as photos.
+- Message text keeps paragraphs and list items (`• `) instead of one long line (Steam
+  patch notes, FMHY changes, multi-line commits); invisible characters and Steam's
+  `\[ ]` escapes are removed; a text that only repeats the title, or starts with the
+  site name and the title (WordPress feeds), is trimmed.
+- RSS `<author>` given as plain text is used as the author (Gitea feeds).
 
 ### Fixed
+- Relative links in feeds (Gitea writes `/owner/repo/commit/…`) are made absolute, so
+  "Open" works. The original link stays the delivery identity, so nothing is sent again
+  (checked on all 220 entries of the 12 production sources).
 - A feed returned after a solved challenge is accepted even though the headers still say
   `server: cloudflare` / `cf-mitigated`; a rejected challenge page is logged as a warning.
 - A second browser session failed with "Sync API inside the asyncio loop".

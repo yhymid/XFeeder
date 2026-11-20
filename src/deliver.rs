@@ -107,6 +107,24 @@ impl Container {
             self.0.push(json!({ "type": 12, "items": items }));
         }
     }
+    /// Texts with a small picture on the right (Section + Thumbnail).
+    fn section(&mut self, texts: Vec<String>, thumbnail: &Value) {
+        let texts: Vec<Value> = texts
+            .into_iter()
+            .map(|t| safe_text(&json!(t), MAX_TEXT))
+            .filter(|t| !t.is_empty())
+            .take(3)
+            .map(|t| json!({ "type": 10, "content": t }))
+            .collect();
+        match http_url(thumbnail) {
+            Some(url) if !texts.is_empty() => self.0.push(json!({
+                "type": 9,
+                "components": texts,
+                "accessory": { "type": 11, "media": { "url": url } },
+            })),
+            _ => self.0.extend(texts),
+        }
+    }
     fn button(&mut self, label: &str, url: &Value) {
         let Some(url) = http_url(url) else { return };
         let label = safe_text(&json!(label), MAX_BUTTON);
@@ -221,15 +239,22 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         c.button("Open", link);
         label = format!("Discord message from {}", js::to_string(&username));
     } else {
-        c.text(format!(
+        let heading = format!(
             "📰 **{}**",
             js::to_string(js::or(&[title, &json!("New entry")]))
-        ));
-        c.text(truncate(get(entry, "contentSnippet"), 800));
-        c.media(vec![(
-            get(entry, "enclosure").clone(),
-            js::or(&[title, &json!("Media")]).clone(),
-        )]);
+        );
+        let body = truncate(get(entry, "contentSnippet"), 800);
+        let image = get(entry, "enclosure");
+        if crate::text::is_avatar(image) {
+            c.section(vec![heading, body], image);
+        } else {
+            c.text(heading);
+            c.text(body);
+            c.media(vec![(
+                image.clone(),
+                js::or(&[title, &json!("Media")]).clone(),
+            )]);
+        }
         if truthy(get(entry, "author")) || truthy(get(entry, "isoDate")) {
             let ts = if truthy(get(entry, "isoDate")) {
                 locale_en_us(&js::to_string(get(entry, "isoDate")))
@@ -431,6 +456,7 @@ pub fn telegram_text(entry: &Value) -> Result<String, String> {
         .take(2)
         .collect();
     if let Some(enclosure) = http_url(get(entry, "enclosure"))
+        && !crate::text::is_avatar(get(entry, "enclosure"))
         && !attachments.contains(&enclosure)
         && attachments.len() < 2
     {
@@ -528,8 +554,13 @@ async fn telegram_call(
 }
 
 /// Photo to attach: the entry image (`enclosure`), when it is an http(s) URL.
+/// Profile pictures are not worth a photo message.
 fn telegram_photo(entry: &Value) -> Option<String> {
-    http_url(get(entry, "enclosure"))
+    let image = get(entry, "enclosure");
+    if crate::text::is_avatar(image) {
+        return None;
+    }
+    http_url(image)
 }
 
 pub async fn send_telegram(
@@ -843,5 +874,21 @@ mod tests {
         .unwrap();
         assert!(text.starts_with("<b>&lt;b&gt;&amp;</b>"));
         assert!(text.contains("href=\"https://a/?x=1&amp;y=2\""));
+    }
+
+    #[test]
+    fn avatar_is_a_thumbnail_next_to_the_text() {
+        let entry = json!({ "title": "fix", "link": "https://g/c/1", "contentSnippet": "body",
+                            "enclosure": "https://avatars.githubusercontent.com/u/1?s=460" });
+        let (payload, _) = webhook_payload(&entry);
+        let parts = payload["components"][0]["components"].as_array().unwrap();
+        assert_eq!(parts[0]["type"], 9);
+        assert_eq!(parts[0]["components"].as_array().unwrap().len(), 2);
+        assert_eq!(parts[0]["accessory"]["type"], 11);
+        assert!(
+            parts.iter().all(|p| p["type"] != 12),
+            "no big gallery image"
+        );
+        assert!(telegram_photo(&entry).is_none());
     }
 }

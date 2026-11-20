@@ -10,7 +10,10 @@ use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
 
 use crate::js::{self, get, or, path, prefix16, truthy};
-use crate::text::{first_image_in_html, node_text, now_iso, parse_date, strip_html};
+use crate::text::{
+    first_image_in_html, html_to_text, node_text, now_iso, parse_date, resolve_url, strip_html,
+    upgrade_image,
+};
 use crate::xmltree::{self, as_list};
 
 pub struct Body {
@@ -48,8 +51,7 @@ fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
 }
 
 fn snippet(raw: &str, max: usize) -> String {
-    let text = js::collapse_ws(&strip_html(raw));
-    js::trim(prefix16(js::trim(&text), max)).to_string()
+    js::trim(prefix16(&html_to_text(raw), max)).to_string()
 }
 
 fn xml_doc(body: &Body) -> Option<Value> {
@@ -108,6 +110,93 @@ fn string_value(value: &Value) -> Value {
         },
         other => Value::String(js::to_string(other)),
     }
+}
+
+// ---------------------------------------------------------------- Finish --
+
+/// Fixes applied to the entries of every feed after parsing (not to Discord
+/// channel messages):
+/// - relative links and images become absolute (Gitea writes `/owner/repo/…`);
+///   the original link stays in `sourceLink`, the delivery identity;
+/// - small images are swapped for larger versions (`imageFallback` keeps the
+///   original in case the larger one does not exist);
+/// - Steam store news without a picture get the game's header image;
+/// - the text does not repeat the title (WordPress "Site\nTitle\nText…").
+///
+/// Running it twice gives the same result.
+pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
+    static STEAM_APP: OnceLock<Regex> = OnceLock::new();
+    let steam_app = re(
+        &STEAM_APP,
+        r"^https?://store\.steampowered\.com/feeds/news/app/(\d+)",
+    )
+    .captures(url)
+    .map(|c| c[1].to_string());
+    for item in &mut items {
+        let Some(map) = item.as_object_mut() else {
+            continue;
+        };
+        if let Some(link) = map.get("link").and_then(Value::as_str)
+            && let Some(absolute) = resolve_url(url, link)
+        {
+            map.insert("sourceLink".into(), json!(link));
+            map.insert("link".into(), json!(absolute));
+        }
+        if let Some(image) = map
+            .get("enclosure")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        {
+            let image = resolve_url(url, &image).unwrap_or(image);
+            if let Some(better) = upgrade_image(&image) {
+                map.insert("imageFallback".into(), json!(image));
+                map.insert("enclosure".into(), json!(better));
+            } else {
+                map.insert("enclosure".into(), json!(image));
+            }
+        } else if let Some(app) = &steam_app
+            && !map.get("enclosure").is_some_and(truthy)
+        {
+            map.insert(
+                "enclosure".into(),
+                json!(format!(
+                    "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app}/header.jpg"
+                )),
+            );
+        }
+        let title = map.get("title").map(js::to_string).unwrap_or_default();
+        if let Some(text) = map.get("contentSnippet").and_then(Value::as_str) {
+            let trimmed = without_title(text, &title);
+            if trimmed != text {
+                map.insert("contentSnippet".into(), json!(trimmed));
+            }
+        }
+    }
+    items
+}
+
+/// Drop the title (and a site-name line before it) from the start of the text.
+fn without_title(text: &str, title: &str) -> String {
+    let title = js::collapse_ws(title);
+    let title = title.trim();
+    if title.chars().count() < 8 {
+        return text.to_string();
+    }
+    if text.trim().eq_ignore_ascii_case(title) {
+        return String::new();
+    }
+    let lines: Vec<&str> = text.lines().collect();
+    for (index, line) in lines.iter().take(3).enumerate() {
+        if line.trim().eq_ignore_ascii_case(title) {
+            let rest = lines[index + 1..].join("\n");
+            return if rest.trim().is_empty() {
+                text.to_string()
+            } else {
+                rest
+            };
+        }
+    }
+    text.to_string()
 }
 
 // --------------------------------------------------------------- YouTube --
@@ -253,7 +342,7 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                 path(e, &["content", "VALUE"]),
                 get(e, "content"),
             ]));
-            let content = js::trim(prefix16(&strip_html(&description), 500)).to_string();
+            let content = snippet(&description, 500);
             let guid = or(&[get(e, "id"), &link, &json!(title.clone())]).clone();
             let categories = match get(e, "category") {
                 Value::Null => json!([]),
@@ -322,6 +411,7 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
                 path(e, &["author", "VALUE"]),
                 get(e, "dc:creator"),
                 get(e, "creator"),
+                get(e, "author"),
             ]));
             let pub_date = or(&[
                 get(e, "pubDate"),
@@ -1162,5 +1252,43 @@ mod tests {
             &empty
         ));
         assert!(is_blocked_page("ok", 403, &empty));
+    }
+
+    #[test]
+    fn finish_fixes_links_images_and_repeated_titles() {
+        let items = vec![
+            json!({ "title": "Recenzenci GTA 6 muszą uważać", "link": "/news/1", "enclosure": "https://a.pl/wp-content/uploads/x-150x150.png",
+                    "contentSnippet": "Gry-Wideo.pl\nRecenzenci GTA 6 muszą uważać\nPatrick O’Rourke twierdzi" }),
+            json!({ "title": "removed site", "link": "https://g/c/1", "enclosure": "https://avatars.githubusercontent.com/u/1?s=30", "contentSnippet": "removed site" }),
+        ];
+        let once = finish("https://a.pl/rss", items);
+        assert_eq!(once[0]["link"], "https://a.pl/news/1");
+        assert_eq!(once[0]["sourceLink"], "/news/1");
+        assert_eq!(
+            once[0]["enclosure"],
+            "https://a.pl/wp-content/uploads/x.png"
+        );
+        assert_eq!(
+            once[0]["imageFallback"],
+            "https://a.pl/wp-content/uploads/x-150x150.png"
+        );
+        assert_eq!(once[0]["contentSnippet"], "Patrick O’Rourke twierdzi");
+        assert_eq!(once[1]["contentSnippet"], "");
+        assert_eq!(
+            finish("https://a.pl/rss", once.clone()),
+            once,
+            "finish is idempotent"
+        );
+
+        let steam = finish(
+            "https://store.steampowered.com/feeds/news/app/730",
+            vec![
+                json!({ "title": "Counter-Strike 2 Update", "link": "https://s/1", "enclosure": null }),
+            ],
+        );
+        assert_eq!(
+            steam[0]["enclosure"],
+            "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg"
+        );
     }
 }

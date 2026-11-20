@@ -140,6 +140,101 @@ pub fn strip_html(input: &str) -> String {
     js::trim(&decode_entities(&text)).to_string()
 }
 
+/// Readable text from HTML for message bodies: one line per paragraph or
+/// list item (`• `), no empty lines, no invisible characters.
+pub fn html_to_text(input: &str) -> String {
+    static LI: OnceLock<Regex> = OnceLock::new();
+    static SPACE: OnceLock<Regex> = OnceLock::new();
+    let marked = re(&LI, r"(?i)<li\b[^>]*>").replace_all(input, "\n•\n");
+    let text = strip_html(&marked)
+        .replace(
+            ['\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}', '\u{feff}'],
+            "",
+        )
+        // Steam escapes BBCode brackets in its HTML ("\[ MAPS ]").
+        .replace("\\[", "[")
+        .replace("\\]", "]");
+    let mut lines: Vec<String> = Vec::new();
+    let mut bullet = false;
+    for line in text.lines() {
+        let line = re(&SPACE, r"\s+").replace_all(line, " ");
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line == "•" {
+            bullet = true;
+            continue;
+        }
+        lines.push(if bullet {
+            format!("• {line}")
+        } else {
+            line.to_string()
+        });
+        bullet = false;
+    }
+    lines.join("\n")
+}
+
+/// Absolute form of a possibly relative link found in a feed.
+pub fn resolve_url(base: &str, href: &str) -> Option<String> {
+    if href.is_empty() || Url::parse(href).is_ok() {
+        return None;
+    }
+    let joined = Url::parse(base).ok()?.join(href).ok()?;
+    matches!(joined.scheme(), "http" | "https").then(|| joined.to_string())
+}
+
+/// Profile pictures (GitHub, Gravatar): shown small, next to the text.
+pub fn is_avatar(value: &Value) -> bool {
+    let Some(url) = value.as_str().and_then(|u| Url::parse(u).ok()) else {
+        return false;
+    };
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    host == "avatars.githubusercontent.com"
+        || (host.ends_with("gravatar.com") && url.path().starts_with("/avatar/"))
+}
+
+/// A larger version of a known small feed image, if the site offers one:
+/// GitHub/Gravatar avatars (30 px), YouTube `hqdefault` (480×360, letterboxed)
+/// and WordPress thumbnails (`name-224x224.jpg`).
+pub fn upgrade_image(input: &str) -> Option<String> {
+    static YT: OnceLock<Regex> = OnceLock::new();
+    static WP: OnceLock<Regex> = OnceLock::new();
+    let mut url = Url::parse(input).ok()?;
+    let host = url.host_str()?.to_ascii_lowercase();
+    if is_avatar(&Value::String(input.to_string())) {
+        let pairs: Vec<(String, String)> = url
+            .query_pairs()
+            .filter(|(k, _)| k != "s" && k != "size")
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        url.query_pairs_mut()
+            .clear()
+            .extend_pairs(pairs)
+            .append_pair("s", "460");
+    } else if host.ends_with("ytimg.com") {
+        let caps = re(
+            &YT,
+            r"^/vi(?:_webp)?/([A-Za-z0-9_-]{11})/(?:default|mqdefault|hqdefault|sddefault)\.(?:jpg|webp)$",
+        )
+        .captures(url.path())?;
+        return Some(format!(
+            "https://i.ytimg.com/vi/{}/maxresdefault.jpg",
+            &caps[1]
+        ));
+    } else if url.path().contains("/wp-content/uploads/") {
+        let path = re(&WP, r"(?i)-\d{2,4}x\d{2,4}(\.(?:jpe?g|png|webp|gif))$")
+            .replace(url.path(), "$1")
+            .into_owned();
+        url.set_path(&path);
+    } else {
+        return None;
+    }
+    let upgraded = url.to_string();
+    (upgraded != input).then_some(upgraded)
+}
+
 /// Text of an xml2js-like value (`a?.VALUE` for nodes with attributes).
 pub fn node_text(value: &Value) -> String {
     match value {
@@ -199,7 +294,13 @@ pub fn normalize_link(input: &str) -> String {
 
 /// Delivery identity: link > guid > stable content hash.
 pub fn entry_identity(entry: &Value, discord: bool) -> String {
-    let direct = js::or(&[js::get(entry, "link"), js::get(entry, "guid")]);
+    // `sourceLink`: the link as the feed wrote it, before it was made absolute,
+    // so entries delivered earlier keep their identity.
+    let direct = js::or(&[
+        js::get(entry, "sourceLink"),
+        js::get(entry, "link"),
+        js::get(entry, "guid"),
+    ]);
     let direct = js::to_string_or_empty(direct);
     let key = normalize_link(&direct);
     if !key.is_empty() {
@@ -389,6 +490,62 @@ mod tests {
         assert_eq!(
             first_image_in_html(r#"<p><img class="x" src="https://i/1.png"></p>"#).as_deref(),
             Some("https://i/1.png")
+        );
+    }
+
+    #[test]
+    fn html_to_text_keeps_paragraphs_and_list_items() {
+        let html = r#"<p class="bb_paragraph">\[ MAPS ]</p><ul><li><p>Fixed ledges</p></li><li>Fixed&nbsp;gaps</li></ul><p>A"#.to_string() + "\u{2060}" + "B   C</p>";
+        assert_eq!(
+            html_to_text(&html),
+            "[ MAPS ]\n• Fixed ledges\n• Fixed gaps\nAB C"
+        );
+    }
+
+    #[test]
+    fn small_images_get_larger_versions() {
+        assert_eq!(
+            upgrade_image("https://avatars.githubusercontent.com/u/1?s=30&v=4").as_deref(),
+            Some("https://avatars.githubusercontent.com/u/1?v=4&s=460")
+        );
+        assert_eq!(
+            upgrade_image("https://0.gravatar.com/avatar/ab?d=x&r=g&s=30").as_deref(),
+            Some("https://0.gravatar.com/avatar/ab?d=x&r=g&s=460")
+        );
+        assert_eq!(
+            upgrade_image("https://i4.ytimg.com/vi/GOUuN2Zivys/hqdefault.jpg").as_deref(),
+            Some("https://i.ytimg.com/vi/GOUuN2Zivys/maxresdefault.jpg")
+        );
+        assert_eq!(
+            upgrade_image("https://a.pl/wp-content/uploads/2026/01/x_miniaturka-224x224.jpg")
+                .as_deref(),
+            Some("https://a.pl/wp-content/uploads/2026/01/x_miniaturka.jpg")
+        );
+        assert_eq!(upgrade_image("https://a.pl/wp-content/uploads/x.jpg"), None);
+        assert_eq!(
+            upgrade_image("https://i.ytimg.com/vi/GOUuN2Zivys/maxresdefault.jpg"),
+            None
+        );
+        assert_eq!(upgrade_image("https://img.boop.pl/a.jpg?class=1200"), None);
+        assert!(is_avatar(&json!(
+            "https://avatars.githubusercontent.com/u/1?s=30"
+        )));
+        assert!(!is_avatar(&json!("https://steamdb.info/patchnotes/1.png")));
+    }
+
+    #[test]
+    fn relative_links_resolve_and_keep_identity() {
+        assert_eq!(
+            resolve_url("https://git.example/o/r.rss", "/o/r/commit/1").as_deref(),
+            Some("https://git.example/o/r/commit/1")
+        );
+        assert_eq!(resolve_url("https://a/feed", "https://b/x"), None);
+        let before = json!({ "link": "/o/r/commit/1" });
+        let after =
+            json!({ "link": "https://git.example/o/r/commit/1", "sourceLink": "/o/r/commit/1" });
+        assert_eq!(
+            entry_identity(&before, false),
+            entry_identity(&after, false)
         );
     }
 }

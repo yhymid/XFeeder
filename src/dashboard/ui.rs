@@ -16,9 +16,9 @@ use axum::response::Response;
 use serde_json::{Map, Value, json};
 
 use super::{
-    Server, VERSION, network_runtime, public_metrics, read_activity, read_json, read_text,
-    replace_secret, reserved_secret, revision, runtime_channels, secret_status,
-    structured_activity, validation, worker_ready, write_private,
+    Server, network_runtime, public_metrics, read_activity, read_json, read_text, replace_secret,
+    reserved_secret, revision, runtime_channels, secret_status, structured_activity, validation,
+    worker_ready, write_private,
 };
 use crate::config;
 use crate::diag::sanitize_text;
@@ -225,11 +225,12 @@ fn layout(req: &Req, title: &str, body: &str, refresh: Option<u32>) -> String {
             );
         }
     }
+    // Every table sits in a framed box that scrolls sideways on narrow screens.
+    let body = body
+        .replace("<table>", "<div class=\"table\"><table>")
+        .replace("</table>", "</table></div>");
     let _ = write!(out, "<h1>{}</h1>{body}</main>", esc(title));
-    let _ = write!(
-        out,
-        "<footer>XFeeder v{VERSION} · Rust · no JavaScript</footer></body></html>"
-    );
+    out.push_str("</body></html>");
     if lang == super::i18n::Lang::Pl {
         return super::i18n::to_polish(&out);
     }
@@ -1207,21 +1208,7 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
         "<section><h2>Recent problems</h2>{}<p><a href=\"/activity\">All activity →</a></p></section>",
         activity_table(&problems_feed, &names)
     );
-    let refresh = req
-        .q("refresh")
-        .parse::<u32>()
-        .ok()
-        .filter(|s| (5..=3600).contains(s));
-    let _ = write!(
-        body,
-        "<p><small>{}</small></p>",
-        if refresh.is_some() {
-            "Auto-refresh is on. <a href=\"/\">Turn off</a>"
-        } else {
-            "<a href=\"/?refresh=15\">Refresh every 15 s</a>"
-        }
-    );
-    html(StatusCode::OK, layout(req, "Overview", &body, refresh))
+    html(StatusCode::OK, layout(req, "Overview", &body, None))
 }
 
 /// Sections the worker reports as not executed.

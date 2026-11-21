@@ -86,11 +86,6 @@ const EXACT: &[(&str, &str)] = &[
     ("Recent activity", "Ostatnia aktywność"),
     ("All activity →", "Cała aktywność →"),
     ("Turn off", "Wyłącz"),
-    ("Refresh every 15 s", "Odświeżaj co 15 s"),
-    (
-        "Auto-refresh is on.",
-        "Automatyczne odświeżanie jest włączone.",
-    ),
     ("Start", "Uruchom"),
     ("Stop", "Zatrzymaj"),
     ("Restart", "Restartuj"),
@@ -797,9 +792,6 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 "{} · XFeeder",
                 translate_text(&c[1]).unwrap_or_else(|| c[1].to_string())
             )
-        }),
-        rule(r"^XFeeder v(\S+) · Rust · no JavaScript$", |c| {
-            format!("XFeeder v{} · Rust · bez JavaScriptu", &c[1])
         }),
         rule(r"^(\d+) s ago$", |c| format!("{} s temu", &c[1])),
         rule(r"^(\d+) min ago$", |c| format!("{} min temu", &c[1])),

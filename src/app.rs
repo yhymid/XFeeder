@@ -41,6 +41,8 @@ struct Targets {
     webhook: String,
     thread: Option<String>,
     telegram: Option<config::Telegram>,
+    /// Channel `Ping` (Discord posts only).
+    ping: Option<crate::ping::Ping>,
     /// Destinations found unreachable during this channel run.
     unreachable: Mutex<Vec<Target>>,
 }
@@ -53,11 +55,17 @@ enum Sent {
 }
 
 impl Targets {
-    fn new(webhook: String, thread: Option<String>, telegram: Option<config::Telegram>) -> Self {
+    fn new(
+        webhook: String,
+        thread: Option<String>,
+        telegram: Option<config::Telegram>,
+        ping: Option<crate::ping::Ping>,
+    ) -> Self {
         Self {
             webhook,
             thread,
             telegram,
+            ping,
             unreachable: Mutex::new(Vec::new()),
         }
     }
@@ -383,6 +391,11 @@ impl App {
             targets.thread.as_deref(),
             &record.message_id,
             &merged,
+            targets
+                .ping
+                .as_ref()
+                .and_then(|p| p.mention(&merged, source))
+                .as_ref(),
             &self.cancel,
         )
         .await
@@ -447,8 +460,17 @@ impl App {
             return Ok(sent);
         }
         if self.dry_run {
+            let ping = match target {
+                Target::Webhook => targets
+                    .ping
+                    .as_ref()
+                    .and_then(|p| p.mention(entry, source))
+                    .map(|m| format!(" (ping {})", m.line))
+                    .unwrap_or_default(),
+                Target::Telegram => String::new(),
+            };
             println!(
-                "[Dry Run] {label}: {} -> {}: {}",
+                "[Dry Run] {label}: {} -> {}{ping}: {}",
                 sanitize_url(source),
                 target.kind(),
                 sanitize_text(&title)
@@ -465,6 +487,11 @@ impl App {
                     &targets.webhook,
                     targets.thread.as_deref(),
                     entry,
+                    targets
+                        .ping
+                        .as_ref()
+                        .and_then(|p| p.mention(entry, source))
+                        .as_ref(),
                     &self.cancel,
                 )
                 .await
@@ -897,6 +924,7 @@ impl App {
                 channel.discord_webhook(),
                 channel.discord_thread(),
                 channel.telegram.clone(),
+                channel.ping.clone(),
             );
             if targets.list().is_empty() {
                 crate::warn!(
@@ -933,6 +961,7 @@ impl App {
             channel.webhook.clone(),
             channel.thread.clone(),
             channel.telegram.clone(),
+            channel.ping.clone(),
         );
         let mut next_due: Option<u64> = None;
         let max_ms = channel.time_checker * 60_000;

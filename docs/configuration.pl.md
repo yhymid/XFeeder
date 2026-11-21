@@ -395,6 +395,7 @@ pozostałe ustawienia (np. `Webhook`) muszą przyjść z [`ChannelDefaults`](#3-
 | `RequestSend`  | liczba                 | `5`       | Ile najwyżej wpisów wysłać na jedno sprawdzenie i jeden feed. Reszta poczeka na kolejne sprawdzenie. |
 | `FirstRunSend` | liczba ≥ 0             | z `Settings.FirstRunSend`, inaczej `0` | Ile najnowszych wpisów wysłać, gdy feed jest widziany pierwszy raz. Pozostałe są tylko oznaczane jako widziane. |
 | `Filters`      | obiekt                 | –         | Filtr wpisów, patrz [2.3](#23-filters-filtrowanie-wpisów). |
+| `Ping`         | ID roli albo obiekt    | –         | Wzmianka roli, osób albo @everyone nad postem na Discordzie, patrz [2.4](#24-ping-wzmianki). |
 | `Telegram`     | obiekt                 | –         | Ustawienia Telegrama dla tego kanału, patrz [Telegram](#5-telegram). |
 | `Discord`      | obiekt                 | –         | Kanał Discorda jako **źródło** wpisów, patrz [rozdział 6](#6-auth-i-kanał-discorda-jako-źródło). |
 | `AdaptivePolling` | `false` / obiekt     | z `Settings` | Interwał na feed dla tego kanału, patrz [4](#4-settings-ustawienia-ogólne). |
@@ -464,6 +465,43 @@ Bez wpisów sponsorowanych i promocji, tylko z ostatnich 2 dni.
 "Filters": { "Include": ["/\\bv\\d+\\.\\d+/"], "Fields": ["title"], "CaseSensitive": true }
 ```
 Tylko wpisy z numerem wersji (np. `v1.2`) w tytule.
+
+### 2.4 `Ping`: wzmianki
+
+Wspomina rolę, osoby albo `@everyone` w linii nad postem na Discordzie, żeby ludzie
+dostali powiadomienie. Posty na Telegramie bez zmian.
+
+```json
+"Ping": "123456789012345678"
+```
+
+Krótka forma to ID roli (albo lista ID) i pinguje przy każdym poście kanału. Pełna forma
+ogranicza, które posty pingują:
+
+```json
+"Ping": {
+  "Roles": ["123456789012345678"],
+  "Users": [],
+  "Everyone": false,
+  "Feeds": ["/releases"],
+  "Include": ["/^v?\\d+\\.\\d+/"],
+  "Text": "🔔 Nowe wydanie"
+}
+```
+
+| Ustawienie | Co robi |
+|---|---|
+| `Roles`, `Users` | ID z Discorda (prawy przycisk → *Kopiuj ID* przy włączonym trybie dewelopera). Działa też `<@&ID>` / `<@ID>`. |
+| `Everyone` | `true` pinguje `@everyone`. Webhook potrzebuje uprawnienia *Wspominanie @everyone*. |
+| `Feeds` | Tylko wpisy z feedów, których adres zawiera jeden z tych tekstów. Pusto = wszystkie feedy. |
+| `Include` | Tylko wpisy pasujące do wzorca, jak w [`Filters.Include`](#23-filters-filtrowanie-wpisów) (działają też `Fields`, `CaseSensitive`). |
+| `Text` | Tekst przed wzmiankami. |
+
+Rola dostaje ping tylko wtedy, gdy jest *wzmiankowalna* (Ustawienia serwera → Role) albo
+webhook może wspominać wszystkich. Powiadamiają wyłącznie wzmianki ustawione tutaj:
+`@everyone`, `<@&…>` czy `<@…>` wpisane w treści feedu są pokazywane jako tekst i nigdy
+nie pingują. Edycje (`xfeeder rerender`, `SteamMerge`) nie pingują ponownie. `--dry-run`
+pokazuje `(ping …)` przy wpisach, które by pingowały.
 
 ## 3. `ChannelDefaults`: wspólne ustawienia kanałów
 

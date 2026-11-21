@@ -458,10 +458,26 @@ async fn webhook_call(
     ))
 }
 
+/// Put the `Ping` line above the post and set `allowed_mentions`: only the
+/// configured mentions may notify, and only when `notify` (new posts).
+fn with_mention(mut payload: Value, mention: Option<&crate::ping::Mention>, notify: bool) -> Value {
+    if let Some(mention) = mention
+        && let Some(components) = payload["components"].as_array_mut()
+    {
+        components.insert(0, json!({ "type": 10, "content": mention.line }));
+    }
+    payload["allowed_mentions"] = match mention {
+        Some(mention) if notify => mention.allowed.clone(),
+        _ => crate::ping::silent(),
+    };
+    payload
+}
+
 pub async fn send_webhook(
     webhook: &str,
     thread: Option<&str>,
     entry: &Value,
+    mention: Option<&crate::ping::Mention>,
     cancel: &CancellationToken,
 ) -> Result<Option<SentMessage>, SendError> {
     let url = webhook_url(webhook, thread, None)?;
@@ -474,6 +490,7 @@ pub async fn send_webhook(
             "Components payload is empty after sanitization.".into(),
         ));
     }
+    let payload = with_mention(payload, mention, true);
     let started = std::time::Instant::now();
     let response = webhook_call(&url, &payload, false, &label, cancel).await?;
     let body = serde_json::from_str::<Value>(&response.body).unwrap_or(Value::Null);
@@ -497,13 +514,18 @@ pub async fn edit_webhook(
     thread: Option<&str>,
     message_id: &str,
     entry: &Value,
+    mention: Option<&crate::ping::Mention>,
     cancel: &CancellationToken,
 ) -> Result<(), SendError> {
     let url = webhook_url(webhook, thread, Some(message_id))?;
     let (payload, label) = webhook_payload(entry);
     // The message already has the Components V2 flag; an edit sends only
-    // the new components.
-    let payload = json!({ "components": payload["components"] });
+    // the new components. Edits never ping.
+    let payload = with_mention(
+        json!({ "components": payload["components"] }),
+        mention,
+        false,
+    );
     let started = std::time::Instant::now();
     let response = webhook_call(&url, &payload, true, &label, cancel).await?;
     crate::info!(
@@ -985,6 +1007,30 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn mentions_only_from_ping_and_never_on_edits() {
+        let entry =
+            json!({ "title": "Ping <@&111111111111111111> @everyone", "link": "https://a/1" });
+        let (payload, _) = webhook_payload(&entry);
+        let plain = with_mention(payload.clone(), None, true);
+        assert_eq!(plain["allowed_mentions"], json!({ "parse": [] }));
+        assert_eq!(plain["components"].as_array().unwrap().len(), 1);
+        let mention = crate::ping::Mention {
+            line: "<@&222222222222222222>".into(),
+            allowed: json!({ "roles": ["222222222222222222"] }),
+        };
+        let sent = with_mention(payload.clone(), Some(&mention), true);
+        assert_eq!(
+            sent["components"][0],
+            json!({ "type": 10, "content": "<@&222222222222222222>" })
+        );
+        assert_eq!(sent["components"][1]["type"], json!(17));
+        assert_eq!(sent["allowed_mentions"], mention.allowed);
+        let edited = with_mention(payload, Some(&mention), false);
+        assert_eq!(edited["components"][0]["type"], json!(10));
+        assert_eq!(edited["allowed_mentions"], json!({ "parse": [] }));
+    }
 
     #[test]
     fn feed_payload_shape() {

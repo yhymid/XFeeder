@@ -1199,6 +1199,11 @@ async fn post_rerender(server: &Server, req: &Req<'_>) -> Response {
         channel.thread.as_deref(),
         &post.message_id,
         &post.entry,
+        channel
+            .ping
+            .as_ref()
+            .and_then(|p| p.mention(&post.entry, &post.source))
+            .as_ref(),
         &cancel,
     )
     .await

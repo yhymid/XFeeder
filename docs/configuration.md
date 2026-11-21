@@ -395,6 +395,7 @@ other settings (e.g. `Webhook`) must come from [`ChannelDefaults`](#3-channeldef
 | `RequestSend`  | number                 | `5`       | At most how many entries to send per check and per feed. The rest waits for the next check. |
 | `FirstRunSend` | number ≥ 0             | from `Settings.FirstRunSend`, else `0` | How many of the newest entries to send when a feed is seen for the first time. The rest are only marked as seen. |
 | `Filters`      | object                 | –         | Entry filter, see [2.3](#23-filters-filtering-entries). |
+| `Ping`         | role ID or object      | –         | Mention a role, users or @everyone above Discord posts, see [2.4](#24-ping-mentions). |
 | `Telegram`     | object                 | –         | Telegram settings for this channel, see [Telegram](#5-telegram). |
 | `Discord`      | object                 | –         | A Discord channel as the **source** of entries, see [section 6](#6-auth-and-a-discord-channel-as-a-source). |
 | `AdaptivePolling` | `false` / object    | from `Settings` | Per-feed interval for this channel, see [4](#4-settings-general-settings). |
@@ -464,6 +465,42 @@ No sponsored entries or promotions, only from the last 2 days.
 "Filters": { "Include": ["/\\bv\\d+\\.\\d+/"], "Fields": ["title"], "CaseSensitive": true }
 ```
 Only entries with a version number (e.g. `v1.2`) in the title.
+
+### 2.4 `Ping`: mentions
+
+Mentions a role, users or `@everyone` in a line above the Discord post, so people get a
+notification. Telegram posts are not affected.
+
+```json
+"Ping": "123456789012345678"
+```
+
+The short form is a role ID (or a list of them) and pings on every post of the channel.
+The full form limits which posts ping:
+
+```json
+"Ping": {
+  "Roles": ["123456789012345678"],
+  "Users": [],
+  "Everyone": false,
+  "Feeds": ["/releases"],
+  "Include": ["/^v?\\d+\\.\\d+/"],
+  "Text": "🔔 New release"
+}
+```
+
+| Setting | What it does |
+|---|---|
+| `Roles`, `Users` | Discord IDs (right click → *Copy ID* with Developer Mode on). `<@&ID>` / `<@ID>` also work. |
+| `Everyone` | `true` pings `@everyone`. The webhook needs the *Mention @everyone* permission. |
+| `Feeds` | Only entries of feeds whose URL contains one of these texts. Empty = all feeds. |
+| `Include` | Only entries matching a pattern, as in [`Filters.Include`](#23-filters-filtering-entries) (`Fields`, `CaseSensitive` work too). |
+| `Text` | Text before the mentions. |
+
+A role is pinged only when it is *mentionable* (Server settings → Roles) or the webhook may
+mention everyone. Only the mentions set here notify anyone: `@everyone`, `<@&…>` or
+`<@…>` written in a feed entry are shown as text and never ping. Edits (`xfeeder rerender`,
+`SteamMerge`) never ping again. `--dry-run` shows `(ping …)` next to entries that would ping.
 
 ## 3. `ChannelDefaults`: shared channel settings
 

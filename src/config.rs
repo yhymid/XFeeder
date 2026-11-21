@@ -808,6 +808,8 @@ pub struct Channel {
     pub first_run_send: usize,
     /// Entry filter (`Filters`), if configured.
     pub filter: Option<crate::filter::Filter>,
+    /// Mentions above Discord posts (`Ping`), if configured.
+    pub ping: Option<crate::ping::Ping>,
     /// Per-feed check interval (`AdaptivePolling`); `None` = every feed is
     /// checked every `TimeChecker` minutes.
     pub adaptive: Option<crate::adaptive::Adaptive>,
@@ -1139,6 +1141,7 @@ pub fn collect_channels(root: &Value) -> Vec<Channel> {
                 request_send: positive_floor(js::get(&raw, "RequestSend"), 5) as usize,
                 first_run_send: first_run_send(&raw, root),
                 filter: crate::filter::Filter::parse(js::get(&raw, "Filters")).0,
+                ping: crate::ping::Ping::parse(js::get(&raw, "Ping")).0,
                 adaptive: crate::adaptive::from_config(&raw, root),
                 discord: normalize_discord(js::get(&raw, "Discord"), &auth),
                 telegram: merge_telegram(js::get(root, "Telegram"), js::get(&raw, "Telegram")),
@@ -1205,6 +1208,9 @@ pub fn validate_channels(channels: &[Channel]) -> Vec<String> {
         for problem in crate::filter::Filter::parse(js::get(&channel.raw, "Filters")).1 {
             warnings.push(format!("[Config] {label}: {problem}"));
         }
+        for problem in crate::ping::Ping::parse(js::get(&channel.raw, "Ping")).1 {
+            warnings.push(format!("[Config] {label}: {problem}"));
+        }
         match seen.get(channel.cache_key.as_str()) {
             Some(other) => warnings.push(format!("[Config] {label}: cache key collision with {other}. Set explicit ID/CacheKey for one of them.")),
             None => {
@@ -1236,7 +1242,7 @@ pub fn unsupported_sections(root: &Value, channels: &[Channel]) -> Vec<String> {
     let mut inspect = |raw: &Value, label: &str| {
         for (key, value) in raw.as_object().into_iter().flatten() {
             if !CHANNEL_HINTS[..13].contains(&key.as_str())
-                && !matches!(key.as_str(), "Filters" | "AdaptivePolling")
+                && !matches!(key.as_str(), "Filters" | "AdaptivePolling" | "Ping")
                 && value.is_object()
             {
                 report(format!("{label}.{key}"));

@@ -141,6 +141,11 @@ pub async fn run(args: Vec<String>) -> ExitCode {
             channel.thread.as_deref(),
             &record.message_id,
             &entry,
+            channel
+                .ping
+                .as_ref()
+                .and_then(|p| p.mention(&entry, &record.source))
+                .as_ref(),
             &cancel,
         )
         .await

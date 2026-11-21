@@ -3,6 +3,19 @@
 Releases are cut by hand when enough has changed. Each release on GitHub uses the matching
 section below as its description.
 
+## Unreleased
+
+### Added
+- Channel `Ping`: mention a role, users or `@everyone` in a line above Discord posts. A role
+  ID pings on every post; the object form can limit it to some feeds (`Feeds`, e.g.
+  `/releases`) and to entries matching `Include` patterns, with an optional `Text`.
+  `--dry-run` shows which entries would ping; edits never ping again.
+
+### Fixed
+- A user mention (`<@ID>`) written in a feed entry could notify that user (Discord's
+  webhook default parses user mentions). Every webhook post now sends `allowed_mentions`,
+  so only the mentions configured in `Ping` notify.
+
 ## 3.0 - Rust Update (2026-11-21)
 
 XFeeder is written in Rust now: one binary (`xfeeder`, `xfeeder dashboard`), no Node.js,

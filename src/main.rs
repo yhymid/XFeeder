@@ -15,6 +15,7 @@ mod github_api;
 mod http;
 mod js;
 mod parsers;
+mod ping;
 mod preview;
 #[cfg(test)]
 mod profile_tests;

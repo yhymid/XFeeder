@@ -1303,6 +1303,29 @@ fn counter_label(name: &str) -> &str {
 }
 
 /// Events that are routine and hidden unless asked for.
+/// Readable name of an activity event (the raw name stays in the tooltip).
+fn event_label(event: &str) -> &str {
+    match event {
+        "feed.fetch.started" => "Feed check started",
+        "feed.fetch.completed" => "Feed checked",
+        "feed.not_modified" => "Feed unchanged (304)",
+        "feed.parse.completed" => "Entries read",
+        "feed.failed" => "Feed check failed",
+        "scrapling.used" => "Fetched through the browser",
+        "delivery.sent" => "Post sent",
+        "delivery.failed" => "Post failed",
+        "channel.started" => "Channel round started",
+        "channel.completed" => "Channel round finished",
+        "channel.failed" => "Channel round failed",
+        "worker.started" => "Worker started",
+        "worker.stopped" => "Worker stopped",
+        "config.loaded" => "Config loaded",
+        "config.reloaded" => "Config reloaded",
+        "retry.scheduled" => "Retry scheduled",
+        other => other,
+    }
+}
+
 const ROUTINE: [&str; 6] = [
     "feed.fetch.started",
     "feed.fetch.completed",
@@ -1334,11 +1357,12 @@ fn activity_table(activity: &Value, names: &HashMap<String, String>) -> String {
         let time = item["time"].as_str().unwrap_or("");
         let _ = write!(
             out,
-            "<tr class=\"{}\"><td title=\"{}\">{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td>{}</td></tr>",
+            "<tr class=\"{}\"><td title=\"{}\">{}</td><td title=\"{}\">{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td>{}</td></tr>",
             esc(item["status"].as_str().unwrap_or("")),
             esc(time),
             esc(&ago(time)),
             esc(item["event"].as_str().unwrap_or("")),
+            esc(event_label(item["event"].as_str().unwrap_or(""))),
             esc(item["status"].as_str().unwrap_or("")),
             esc(&name_of(names, item["channel"].as_str().unwrap_or(""))),
             esc(&name_of(names, item["source"].as_str().unwrap_or(""))),

@@ -1413,8 +1413,9 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
     let labels = channel_labels(server, &config);
     let _ = write!(
         body,
-        "{}<section><h2>Recent posts</h2>{}<p><a href=\"/posts\">All posts →</a></p></section>",
+        "{}{}<section><h2>Recent posts</h2>{}<p><a href=\"/posts\">All posts →</a></p></section>",
         failing_feeds_html(server),
+        charts_html(&recent_posts(server, 2000), &labels),
         posts_table(&recent_posts(server, 10), &labels)
     );
     let mut problems_feed = activity.clone();
@@ -1508,7 +1509,132 @@ fn counter_label(name: &str) -> &str {
     }
 }
 
-/// Events that are routine and hidden unless asked for.
+// ----------------------------------------------------------------- charts --
+
+/// Vertical bar chart as inline SVG (no script; `<title>` gives the hover
+/// text). `bars` are (label shown under the bar or "", hover text, value).
+fn bar_chart(bars: &[(String, String, u64)], label: &str) -> String {
+    let max = bars.iter().map(|b| b.2).max().unwrap_or(0).max(1);
+    let (w, h, top, bottom) = (bars.len().max(1) as f64 * 24.0, 120.0, 14.0, 18.0);
+    let mut out = format!(
+        "<svg class=\"chart\" viewBox=\"0 0 {w} {}\" preserveAspectRatio=\"none\" role=\"img\" aria-label=\"{}\">",
+        h + bottom,
+        esc(label)
+    );
+    let _ = write!(
+        out,
+        "<line class=\"axis\" x1=\"0\" x2=\"{w}\" y1=\"{h}\" y2=\"{h}\"/>"
+    );
+    for (i, (under, hover, value)) in bars.iter().enumerate() {
+        let x = i as f64 * 24.0 + 4.0;
+        let bar = if *value == 0 {
+            0.0
+        } else {
+            ((*value as f64 / max as f64) * (h - top)).max(2.0)
+        };
+        let _ = write!(
+            out,
+            "<g><title>{}</title><rect class=\"hit\" x=\"{}\" y=\"0\" width=\"24\" height=\"{h}\"/><rect class=\"bar\" x=\"{x}\" y=\"{}\" width=\"16\" height=\"{bar}\" rx=\"2\"/>",
+            esc(hover),
+            x - 4.0,
+            h - bar
+        );
+        if *value > 0 && bars.len() <= 31 {
+            let _ = write!(
+                out,
+                "<text class=\"value\" x=\"{}\" y=\"{}\">{value}</text>",
+                x + 8.0,
+                h - bar - 3.0
+            );
+        }
+        if !under.is_empty() {
+            let _ = write!(
+                out,
+                "<text class=\"label\" x=\"{}\" y=\"{}\">{}</text>",
+                x + 8.0,
+                h + 13.0,
+                esc(under)
+            );
+        }
+        out.push_str("</g>");
+    }
+    out.push_str("</svg>");
+    out
+}
+
+/// Horizontal bars: one row per name, widths relative to the largest.
+fn hbar_list(rows: &[(String, u64)]) -> String {
+    let max = rows.iter().map(|r| r.1).max().unwrap_or(0).max(1);
+    let mut out = String::from("<ul class=\"hbars\">");
+    for (name, value) in rows {
+        let _ = write!(
+            out,
+            "<li><span class=\"name\">{}</span><span class=\"track\"><span class=\"fill w{}\"></span></span><span class=\"num\">{value}</span></li>",
+            esc(name),
+            // Width in 5% steps via classes: the CSP forbids inline styles.
+            ((*value as f64 / max as f64) * 20.0).ceil().max(1.0) as u64 * 5,
+        );
+    }
+    out.push_str("</ul>");
+    out
+}
+
+/// Posts per day (30 days) and per channel (7 days) from sent.json.
+fn charts_html(posts: &[crate::sent::Record], labels: &HashMap<String, String>) -> String {
+    if posts.is_empty() {
+        return String::new();
+    }
+    let today = chrono::Local::now().date_naive();
+    let day_of = |ms: i64| {
+        chrono::DateTime::from_timestamp_millis(ms)
+            .map(|d| d.with_timezone(&chrono::Local).date_naive())
+    };
+    let mut days: Vec<(String, String, u64)> = (0..30)
+        .rev()
+        .map(|back| {
+            let day = today - chrono::Duration::days(back);
+            let count = posts
+                .iter()
+                .filter(|p| day_of(p.sent_at) == Some(day))
+                .count() as u64;
+            (
+                if back % 5 == 0 {
+                    day.format("%d.%m").to_string()
+                } else {
+                    String::new()
+                },
+                format!("{}: {count}", day.format("%Y-%m-%d")),
+                count,
+            )
+        })
+        .collect();
+    // Start at the first day with a post, so a new install is not mostly empty.
+    if let Some(first) = days.iter().position(|d| d.2 > 0) {
+        days.drain(..first.min(23));
+    }
+    let week_ago = chrono::Utc::now().timestamp_millis() - 7 * 86_400_000;
+    let mut per_channel: HashMap<String, u64> = HashMap::new();
+    for post in posts.iter().filter(|p| p.sent_at >= week_ago) {
+        let name = labels
+            .get(&post.channel)
+            .cloned()
+            .unwrap_or_else(|| post.channel.clone());
+        *per_channel.entry(name).or_default() += 1;
+    }
+    let mut channels: Vec<(String, u64)> = per_channel.into_iter().collect();
+    channels.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    format!(
+        "<div class=\"split charts\"><section><h2>Posts per day</h2><div class=\"panel\">{}</div></section>\
+         <section><h2>Posts per channel, last 7 days</h2><div class=\"panel\">{}</div></section></div>",
+        bar_chart(&days, "Posts per day"),
+        if channels.is_empty() {
+            "<p class=\"muted\">No posts in the last 7 days.</p>".to_string()
+        } else {
+            hbar_list(&channels)
+        }
+    )
+}
+
 /// Channel name of a post, linking to that channel's posts.
 fn post_channel(labels: &HashMap<String, String>, post: &crate::sent::Record) -> String {
     format!(
@@ -1568,6 +1694,7 @@ fn event_label(event: &str) -> &str {
     }
 }
 
+/// Events that are routine and hidden unless asked for.
 const ROUTINE: [&str; 6] = [
     "feed.fetch.started",
     "feed.fetch.completed",

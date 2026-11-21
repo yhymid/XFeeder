@@ -476,6 +476,15 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("Posts per day", "Posty dziennie"),
+    (
+        "Posts per channel, last 7 days",
+        "Posty na kanał, ostatnie 7 dni",
+    ),
+    (
+        "No posts in the last 7 days.",
+        "Brak postów w ostatnich 7 dniach.",
+    ),
     ("All feeds", "Wszystkie feedy"),
     ("Filter", "Filtruj"),
     ("Clear", "Wyczyść"),

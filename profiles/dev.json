@@ -3,7 +3,7 @@
   "description": "Code activity: GitHub commits (30 px avatars), GitHub user activity (HTML), Gitea (relative links), FMHY tracker",
   "feeds": [
     {
-      "url": "https://github.com/yhymid/XFeeder/commits/3.0-beta.atom",
+      "url": "https://github.com/yhymid/XFeeder/commits/Beta.atom",
       "sample": "tests/fixtures/profiles/dev/github-commits.atom"
     },
     {

@@ -1,5 +1,5 @@
 {
-  "https://github.com/yhymid/XFeeder/commits/3.0-beta.atom": {
+  "https://github.com/yhymid/XFeeder/commits/Beta.atom": {
     "parser": "parseAtom",
     "entries": 5,
     "items": [

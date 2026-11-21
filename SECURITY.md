@@ -1,5 +1,7 @@
 # Security policy
 
+**English** · [Polski](SECURITY.pl.md)
+
 ## Reporting
 
 Use GitHub's private vulnerability reporting for this repository, or contact

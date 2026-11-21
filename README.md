@@ -2,6 +2,8 @@
 
 # XFeeder
 
+**English** · [Polski](README.pl.md)
+
 **News, game updates, commits and videos delivered to Discord and Telegram the moment they are found.**
 
 ![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust)
@@ -40,8 +42,8 @@
   suggest what to change.
 - **Web dashboard** to edit channels and settings, with no JavaScript.
 
-**Sources:** RSS, Atom, JSON Feed, YouTube channels, GitHub commits, Steam and SteamDB news,
-any page that links its feed, Discord channels.
+**Sources:** RSS, Atom, JSON Feed, YouTube channels, GitHub (commits, issues, pull requests,
+releases, branches), Steam and SteamDB news, any page that links its feed, Discord channels.
 **Destinations:** Discord webhooks (channels and forum threads), Telegram (chats, channels,
 topics).
 
@@ -73,7 +75,7 @@ The smallest working `config.json`:
 
 | | |
 |---|---|
-| [Configuration guide](docs/configuration.md) | Easy → medium → hard (Cloudflare) setup, and every setting explained (Polish) |
+| [Configuration guide](docs/configuration.md) | Easy → medium → hard (Cloudflare) setup, and every setting explained |
 | [Deployment](docs/deployment.md) | Building on a server and running under systemd ([unit files](deploy/systemd)) |
 | [Scrapling](scrapling/README.md) | Installing the browser for sites that block bots |
 | [Architecture](docs/architecture.md) | How the code is organised |

@@ -1,5 +1,7 @@
 # Contributing
 
+**English** · [Polski](CONTRIBUTING.pl.md)
+
 ```sh
 cargo fmt
 cargo clippy --all-targets

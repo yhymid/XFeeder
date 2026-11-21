@@ -136,6 +136,12 @@ feed state are read as before, so an existing installation switches over in plac
   are not shown; a commit whose e-mail is not linked to a GitHub account shows the name
   from the e-mail (`codex`, `release`) instead of "Anonymous"; long texts end at a whole
   word with `…`.
+- Discord cards: the date is a Discord timestamp (`<t:…:f>`), shown in each reader's own
+  time zone and language (was US format in the server's zone); feeds without an author
+  (Steam, SteamDB, onet, boop) show the site (`🌐 steamdb.info`) instead of "Anonymous";
+  "Czytaj więcej »", "Read more" and "The post … appeared first on …" are removed;
+  YouTube Shorts use the vertical thumbnail (`oardefault`, 1080×1920) instead of a
+  letterboxed 16:9 one.
 
 ### Fixed
 - GitHub activity feeds (`github.com/<user>.atom`) showed one word per line (line

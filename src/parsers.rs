@@ -79,6 +79,24 @@ fn without_trailers(text: &str) -> String {
     js::trim(&kept.join("\n")).to_string()
 }
 
+/// Links back to the article ("Czytaj więcej »", "Read more", "The post …
+/// appeared first on …") are already the "Open" button.
+fn without_read_more(text: &str) -> String {
+    static TAIL: OnceLock<Regex> = OnceLock::new();
+    static POST: OnceLock<Regex> = OnceLock::new();
+    let text = re(
+        &POST,
+        r"(?im)^The post .{1,300} appeared first on .{1,120}\.?$",
+    )
+    .replace_all(text, "");
+    let text = re(
+        &TAIL,
+        r"(?i)\s*(?:czytaj (?:więcej|dalej|całość)|read more|continue reading|read the full (?:article|story))\s*(?:[»›→…]|\.\.\.|&raquo;)?\s*$",
+    )
+    .replace(text.trim_end(), "");
+    js::trim(&text).to_string()
+}
+
 /// Name for a commit whose e-mail is not linked to a GitHub account
 /// (`86289848+login@users.noreply.github.com` → `login`, `me@x.pl` → `me`).
 fn name_from_email(email: &str) -> Option<String> {
@@ -197,9 +215,27 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
                 )),
             );
         }
+        // YouTube Shorts are vertical: use the vertical thumbnail (checked
+        // before sending like every upgrade; regular videos keep 16:9).
+        if let (Some(link), Some(image)) = (
+            map.get("link").and_then(Value::as_str),
+            map.get("enclosure").and_then(Value::as_str),
+        ) && let Some(id) = link
+            .split_once("youtube.com/shorts/")
+            .map(|(_, rest)| rest.split(['?', '/', '#']).next().unwrap_or(""))
+            && id.len() == 11
+            && image.contains("ytimg.com/vi/")
+            && !image.ends_with("/oardefault.jpg")
+        {
+            let shorts = format!("https://i.ytimg.com/vi/{id}/oardefault.jpg");
+            if !map.contains_key("imageFallback") {
+                map.insert("imageFallback".into(), json!(image));
+            }
+            map.insert("enclosure".into(), json!(shorts));
+        }
         let title = map.get("title").map(js::to_string).unwrap_or_default();
         if let Some(text) = map.get("contentSnippet").and_then(Value::as_str) {
-            let trimmed = without_title(&without_trailers(text), &title);
+            let trimmed = without_read_more(&without_title(&without_trailers(text), &title));
             if trimmed != text {
                 map.insert("contentSnippet".into(), json!(trimmed));
             }
@@ -1348,6 +1384,41 @@ mod tests {
         assert!(
             cut.ends_with("word…") && cut.chars().count() <= 501,
             "{cut}"
+        );
+    }
+
+    #[test]
+    fn read_more_links_and_shorts_thumbnails() {
+        assert_eq!(
+            without_read_more("Oferta w Empiku. Czytaj więcej »"),
+            "Oferta w Empiku."
+        );
+        assert_eq!(
+            without_read_more("Text\nThe post X appeared first on Site."),
+            "Text"
+        );
+        assert_eq!(
+            without_read_more("To kosztuje więcej"),
+            "To kosztuje więcej"
+        );
+        let items = finish(
+            "https://www.youtube.com/feeds/videos.xml?channel_id=x",
+            vec![
+                json!({ "title": "s", "link": "https://www.youtube.com/shorts/txyNotYMZ_A", "enclosure": "https://i1.ytimg.com/vi/txyNotYMZ_A/hqdefault.jpg" }),
+                json!({ "title": "v", "link": "https://www.youtube.com/watch?v=GOUuN2Zivys", "enclosure": "https://i1.ytimg.com/vi/GOUuN2Zivys/hqdefault.jpg" }),
+            ],
+        );
+        assert_eq!(
+            items[0]["enclosure"],
+            "https://i.ytimg.com/vi/txyNotYMZ_A/oardefault.jpg"
+        );
+        assert_eq!(
+            items[0]["imageFallback"],
+            "https://i1.ytimg.com/vi/txyNotYMZ_A/hqdefault.jpg"
+        );
+        assert_eq!(
+            items[1]["enclosure"],
+            "https://i.ytimg.com/vi/GOUuN2Zivys/maxresdefault.jpg"
         );
     }
 }

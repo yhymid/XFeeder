@@ -453,12 +453,10 @@ pub fn parse_date_str(text: &str) -> Option<DateTime<Utc>> {
 
 /// `new Date(iso).toLocaleString("en-US")` in the server time zone (UTC on the
 /// VPS), e.g. `1/2/2024, 3:04:05 PM`.
-pub fn locale_en_us(value: &str) -> String {
-    let Some(dt) = parse_date_str(value) else {
-        return "Invalid Date".into();
-    };
-    let local = dt.with_timezone(&chrono::Local);
-    local.format("%-m/%-d/%Y, %-I:%M:%S %p").to_string()
+/// Discord timestamp markup: every reader sees the date in their own time
+/// zone and language. Empty when the date cannot be read.
+pub fn discord_time(value: &str) -> String {
+    parse_date_str(value).map_or_else(String::new, |dt| format!("<t:{}:f>", dt.timestamp()))
 }
 
 #[cfg(test)]
@@ -603,5 +601,11 @@ mod tests {
             parse_date(&json!("2026-11-19 12:58:18 UTC")).as_deref(),
             Some("2026-11-19T12:58:18.000Z")
         );
+    }
+
+    #[test]
+    fn discord_timestamps() {
+        assert_eq!(discord_time("2026-11-19T12:58:18.000Z"), "<t:1795093098:f>");
+        assert_eq!(discord_time("nonsense"), "");
     }
 }

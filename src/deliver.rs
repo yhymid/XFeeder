@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config::Telegram;
 use crate::http::{self, HttpError};
 use crate::js::{self, get, len16, prefix16, truthy};
-use crate::text::locale_en_us;
+use crate::text::discord_time;
 
 const COMPONENTS_V2: u64 = 1 << 15;
 const MAX_TEXT: usize = 1800;
@@ -177,7 +177,7 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
     {
         let username = js::or(&[get(entry, "author"), &json!("User")]).clone();
         let timestamp = if truthy(get(entry, "isoDate")) {
-            locale_en_us(&js::to_string(get(entry, "isoDate")))
+            discord_time(&js::to_string(get(entry, "isoDate")))
         } else {
             String::new()
         };
@@ -217,7 +217,7 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         ])
         .clone();
         let timestamp = if truthy(get(entry, "timestamp")) {
-            locale_en_us(&js::to_string(get(entry, "timestamp")))
+            discord_time(&js::to_string(get(entry, "timestamp")))
         } else {
             String::new()
         };
@@ -255,16 +255,26 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
                 js::or(&[title, &json!("Media")]).clone(),
             )]);
         }
-        if truthy(get(entry, "author")) || truthy(get(entry, "isoDate")) {
-            let ts = if truthy(get(entry, "isoDate")) {
-                locale_en_us(&js::to_string(get(entry, "isoDate")))
-            } else {
-                String::new()
-            };
-            c.text(format!(
-                "👤 {} • 🕒 {ts}",
-                js::to_string(js::or(&[get(entry, "author"), &json!("Anonymous")]))
-            ));
+        // Who wrote it, or else which site it is from (feeds like Steam,
+        // SteamDB and onet name no author), and when.
+        let who = if truthy(get(entry, "author")) {
+            Some(format!("👤 {}", js::to_string(get(entry, "author"))))
+        } else {
+            link.as_str()
+                .and_then(|l| url::Url::parse(l).ok())
+                .and_then(|u| {
+                    u.host_str()
+                        .map(|h| h.trim_start_matches("www.").to_string())
+                })
+                .map(|host| format!("🌐 {host}"))
+        };
+        let when = truthy(get(entry, "isoDate"))
+            .then(|| discord_time(&js::to_string(get(entry, "isoDate"))))
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("🕒 {t}"));
+        let meta: Vec<String> = [who, when].into_iter().flatten().collect();
+        if !meta.is_empty() {
+            c.text(meta.join(" • "));
         }
         c.button("Open", link);
         label = js::to_string(js::or(&[title, link, &json!("(no title)")]));
@@ -890,5 +900,18 @@ mod tests {
             "no big gallery image"
         );
         assert!(telegram_photo(&entry).is_none());
+    }
+
+    #[test]
+    fn meta_line_names_the_site_when_there_is_no_author() {
+        let entry = json!({ "title": "CS2 update", "link": "https://steamdb.info/patchnotes/1/", "isoDate": "2026-11-19T12:58:18.000Z",
+                            "enclosure": "https://steamdb.info/patchnotes/1.png" });
+        let (payload, _) = webhook_payload(&entry);
+        let text = payload.to_string();
+        assert!(
+            text.contains("🌐 steamdb.info • 🕒 <t:1795093098:f>"),
+            "{text}"
+        );
+        assert!(!text.contains("Anonymous"));
     }
 }

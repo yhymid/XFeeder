@@ -1,7 +1,9 @@
 [Unit]
 Description=XFeeder dashboard
-After=network-online.target
+# Starts, stops and restarts together with the worker.
+After=network-online.target xfeeder.service
 Wants=network-online.target
+PartOf=xfeeder.service
 
 [Service]
 Type=simple
@@ -21,4 +23,4 @@ Environment=XFEEDER_DASHBOARD_PORT=3000
 EnvironmentFile=-/etc/xfeeder/dashboard.env
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=xfeeder.service

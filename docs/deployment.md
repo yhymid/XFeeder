@@ -53,8 +53,13 @@ SSH_KEY=~/.ssh/my_key scripts/dashboard-tunnel.sh user@server
 The tunnel runs in the foreground; closing it leaves nothing running. The
 dashboard reads `config.json` and `.env` of the data directory, so run it as
 the same user as the worker. It sees a worker started by systemd and shows the
-`systemctl` command instead of start/stop buttons. After updating the binary,
-restart both services.
+`systemctl` command instead of start/stop buttons.
+
+The dashboard unit is tied to the worker (`PartOf=` and
+`WantedBy=xfeeder.service`): enable it once with
+`sudo systemctl enable xfeeder-dashboard`, and from then on it starts at boot,
+stops and restarts together with `xfeeder`. After updating the binary,
+`sudo systemctl restart xfeeder` restarts both.
 
 ## Checks before going live
 

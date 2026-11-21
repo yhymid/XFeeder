@@ -52,8 +52,13 @@ SSH_KEY=~/.ssh/moj_klucz scripts/dashboard-tunnel.sh user@serwer
 Tunel działa na pierwszym planie; po zamknięciu nic nie zostaje uruchomione.
 Dashboard czyta `config.json` i `.env` z katalogu danych, więc uruchamiaj go
 jako ten sam użytkownik co worker. Widzi workera uruchomionego przez systemd i
-zamiast przycisków start/stop pokazuje polecenie `systemctl`. Po aktualizacji
-pliku binarnego zrestartuj obie usługi.
+zamiast przycisków start/stop pokazuje polecenie `systemctl`.
+
+Usługa dashboardu jest przypięta do workera (`PartOf=` i
+`WantedBy=xfeeder.service`): włącz ją raz przez
+`sudo systemctl enable xfeeder-dashboard`, a od tej pory startuje przy starcie
+systemu oraz zatrzymuje się i restartuje razem z `xfeeder`. Po aktualizacji
+pliku binarnego wystarczy `sudo systemctl restart xfeeder`.
 
 ## Sprawdzenie przed startem
 

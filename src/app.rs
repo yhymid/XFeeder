@@ -312,6 +312,71 @@ impl App {
         crate::deliver::working_image(entry, &self.cancel).await.0
     }
 
+    /// `Settings.SteamMerge`: edit the earlier Steam/SteamDB post of this
+    /// update instead of posting again. `None` = post normally.
+    async fn merge_steam(
+        &self,
+        channel_key: &str,
+        label: &str,
+        source: &str,
+        targets: &Targets,
+        entry: &Value,
+    ) -> Result<Option<Sent>, Stop> {
+        let Some(merge) = crate::steam_merge::from_config(&self.config().root) else {
+            return Ok(None);
+        };
+        let now = chrono::Utc::now().timestamp_millis();
+        let Some((record, merged)) =
+            crate::steam_merge::find(&crate::sent::all(), channel_key, source, entry, now, &merge)
+        else {
+            return Ok(None);
+        };
+        let title = crate::js::to_string_or_empty(crate::js::get(entry, "title"));
+        if self.dry_run {
+            println!(
+                "[Dry Run] {label}: {} -> webhook (merged into message {}): {}",
+                sanitize_url(source),
+                record.message_id,
+                sanitize_text(&title)
+            );
+            return Ok(Some(Sent::Yes));
+        }
+        match deliver::edit_webhook(
+            &targets.webhook,
+            targets.thread.as_deref(),
+            &record.message_id,
+            &merged,
+            &self.cancel,
+        )
+        .await
+        {
+            Ok(()) => {
+                crate::sent::update_entry(&record.message_id, &merged);
+                crate::info!(
+                    "Channel",
+                    "{label}: {} merged into the earlier post {} instead of a new message",
+                    sanitize_text(&title),
+                    record.message_id
+                );
+                expert(
+                    "delivery.merged",
+                    json!({ "channel": label, "source": sanitize_url(source), "messageId": record.message_id }),
+                );
+                Ok(Some(Sent::Yes))
+            }
+            Err(SendError::Cancelled) => Err(Stop::Cancelled),
+            Err(_) => {
+                crate::warn!(
+                    "Channel",
+                    "{label}: could not merge {} into post {}; posting it separately",
+                    sanitize_text(&title),
+                    record.message_id
+                );
+                Ok(None)
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn deliver(
         &self,
@@ -337,6 +402,13 @@ impl App {
             "delivery.begin",
             json!({ "channel": label, "source": source, "target": target.kind(), "dryRun": self.dry_run }),
         );
+        if target == Target::Webhook
+            && let Some(sent) = self
+                .merge_steam(channel_key, label, source, targets, entry)
+                .await?
+        {
+            return Ok(sent);
+        }
         if self.dry_run {
             println!(
                 "[Dry Run] {label}: {} -> {}: {}",

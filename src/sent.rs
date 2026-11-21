@@ -137,8 +137,6 @@ pub fn all() -> Vec<Record> {
 }
 
 /// Store the entry a message now shows (after an edit).
-// Used by Steam + SteamDB merging (next change).
-#[allow(dead_code)]
 pub fn update_entry(message_id: &str, entry: &Value) {
     let mut guard = STORE.lock().expect("sent lock");
     let Some(store) = guard.as_mut() else { return };

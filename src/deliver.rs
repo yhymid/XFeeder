@@ -127,6 +127,22 @@ impl Container {
             _ => self.0.extend(texts),
         }
     }
+    /// Link buttons side by side in one row.
+    fn buttons(&mut self, buttons: &[(&str, &Value)]) {
+        let row: Vec<Value> = buttons
+            .iter()
+            .filter_map(|(label, url)| {
+                let url = http_url(url)?;
+                let label = safe_text(&json!(label), MAX_BUTTON);
+                (!label.is_empty())
+                    .then(|| json!({ "type": 2, "style": 5, "label": label, "url": url }))
+            })
+            .collect();
+        if !row.is_empty() {
+            self.0.push(json!({ "type": 1, "components": row }));
+        }
+    }
+
     fn button(&mut self, label: &str, url: &Value) {
         let Some(url) = http_url(url) else { return };
         let label = safe_text(&json!(label), MAX_BUTTON);
@@ -278,7 +294,17 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         if !meta.is_empty() {
             c.text(meta.join(" • "));
         }
-        c.button("Open", link);
+        // Steam announcement merged with its SteamDB build (`SteamMerge`).
+        let merged = get(entry, "merged");
+        if truthy(get(merged, "link")) {
+            c.text(format!(
+                "🛠️ {}",
+                js::to_string(js::or(&[get(merged, "title"), &json!("SteamDB build")]))
+            ));
+            c.buttons(&[("Open", link), ("SteamDB", get(merged, "link"))]);
+        } else {
+            c.button("Open", link);
+        }
         label = js::to_string(js::or(&[title, link, &json!("(no title)")]));
     }
     (
@@ -1048,5 +1074,35 @@ mod webhook_url_tests {
             "https://discord.com/api/webhooks/1/tok/messages/99?x=1&with_components=true"
         );
         assert!(webhook_url(hook, None, Some("../x")).is_err());
+    }
+
+    #[test]
+    fn merged_steam_post_has_build_line_and_two_buttons() {
+        let announcement = serde_json::json!({
+            "title": "Counter-Strike 2 Update",
+            "link": "https://store.steampowered.com/news/app/730/view/1",
+            "contentSnippet": "[ MAPS ]",
+            "enclosure": "https://steamdb.info/patchnotes/2.png",
+        });
+        let merged = crate::steam_merge::combine(
+            &announcement,
+            &serde_json::json!({
+                "title": "Counter-Strike 2 update for 20 November 2026",
+                "link": "https://steamdb.info/patchnotes/2/?utm_source=rss",
+            }),
+        );
+        let (payload, _) = super::webhook_payload(&merged);
+        let text = payload.to_string();
+        assert!(text.contains("🛠️ Counter-Strike 2 update for 20 November 2026"));
+        let rows: Vec<&serde_json::Value> = payload["components"][0]["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["type"] == 1)
+            .collect();
+        assert_eq!(rows.len(), 1);
+        let buttons = rows[0]["components"].as_array().unwrap();
+        assert_eq!(buttons.len(), 2);
+        assert_eq!(buttons[1]["url"], "https://steamdb.info/patchnotes/2/");
     }
 }

@@ -22,6 +22,7 @@ mod scrapling;
 mod sent;
 mod solver;
 mod state;
+mod steam_merge;
 mod telemetry;
 mod text;
 mod xmltree;

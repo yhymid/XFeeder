@@ -10,6 +10,12 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- `Settings.SteamMerge` (off by default): one Discord post per game update. Whichever of
+  the SteamDB build and the Steam announcement arrives first is posted at once; the other,
+  within `WindowHours` (12) for the same app in the same channel, edits that post (announcement
+  title, notes and picture, a build line and a SteamDB button) instead of posting again.
+  Builds without an announcement stay separate; only update-like announcements join (not
+  events or sales); a failed edit falls back to a normal post.
 - `xfeeder rerender`: rebuilds Discord posts already sent in the current layout by editing
   them through their webhook (dry listing without `--apply`; `--channel`, `--hours`,
   `--limit`). Posts are known from `sent.json` (message id + entry, no webhook URLs, newest

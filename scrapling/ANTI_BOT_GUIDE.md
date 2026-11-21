@@ -1,20 +1,25 @@
-# XFeeder + Scrapling Anti-Bot Guide
+# XFeeder + Scrapling: anti-bot guide
 
-Ten dokument opisuje praktyczne wdrozenie Anti-Bot w XFeederze po integracji Scrapling.
+**English** · [Polski](ANTI_BOT_GUIDE.pl.md)
 
-## 1) Co robi pipeline XFeedera
+A practical anti-bot setup for XFeeder with Scrapling.
 
-Sciezka `src/feed.rs` dziala etapowo:
+## 1) What the XFeeder pipeline does
 
-1. Klasyczny HTTP (`getWithFallback`).
-2. Analiza odpowiedzi (status + naglowki + body + title + rozmiar body).
-3. Jesli sygnaly wskazuja blokade: eskalacja trybow Scrapling (`ModeOrder`) z adaptacyjnym priorytetem `stealthy-fetch` dla sygnalow Cloudflare/WAF, walidacja kazdej proby i zatrzymanie na pierwszym realnym sukcesie.
+`src/feed.rs` works in stages:
 
-Wazne: walidacja nie ufa samemu `status=200`. To kluczowe przy stronach challenge/soft-block.
+1. Plain HTTP (GET with retries for transient failures).
+2. Response analysis (status, headers, body, title and body size).
+3. When the signals point to a block: Scrapling modes in turn (`ModeOrder`), with
+   `stealthy-fetch` first on Cloudflare/WAF signals; every attempt is checked and the
+   pipeline stops at the first real success.
 
-## 2) Logika Anti-Bot (aktualna)
+Important: the check does not trust `status=200` alone. That is essential for challenge
+pages and soft blocks.
 
-Konfiguracja `Scrapling.AntiBot`:
+## 2) Anti-bot logic
+
+`Scrapling.AntiBot` fields:
 
 - `Enabled`
 - `LogDecisions`
@@ -29,82 +34,83 @@ Konfiguracja `Scrapling.AntiBot`:
 - `TreatCloudflareAsSignal`
 - `MaxAttempts`
 
-Detekcja w `src/scrapling.rs`:
+Detection in `src/scrapling.rs` (reasons in the decision log):
 
-- sygnaly "mocne": `statusBlocked`, `headerBlocked`, `bodyBlocked`, `titleBlocked`
-- sygnaly "slabe": `cloudflare` marker i `bodyTooSmall`
-- wynik: `score` (0-100) i `blocked` na bazie sygnalow + progu `MinConfidence`
+- "strong" signals: `status:<code>`, `header:antibot:<headers>`, `body:challenge`, `title:challenge`
+- "weak" signals: `header:cloudflare` and `body:small:<bytes>`
+- result: `score` (0–100) and `blocked` from the signals and the `MinConfidence` threshold
 
-To ogranicza false-positive dla normalnych stron hostowanych za Cloudflare (same naglowki Cloudflare nie sa juz traktowane jako twardy blok).
+This limits false positives for ordinary sites behind Cloudflare (Cloudflare headers
+alone are not treated as a hard block).
 
-## 3) Dlaczego tak (dowody z upstream)
+## 3) Why (Scrapling reports)
 
-Problemy raportowane w Scrapling:
+- Issue #46/#47: the challenge passes but the page is not ready → `waitSelector` needed.
+- Issue #100: embedded Turnstile edge case.
+- Issue #126: page-pool problems under high concurrency.
+- Issue #191: success at first, then repeated Cloudflare blocks (session/proxy stability).
+- Issue #261: silent failures such as `HTTP 200` + fake 404 or an almost empty body.
+- Discussion #73 (DataDome): detectable despite stealth.
+- Discussion #266: basic versus enterprise Cloudflare.
 
-- Issue #46/#47: challenge przechodzi, ale strona nie jest gotowa -> potrzebny `wait_selector`.
-- Issue #100: edge-case embedded Turnstile.
-- Issue #126: problemy page-pool przy duzej rownoleglosci.
-- Issue #191: sukces poczatkowy, potem kolejne blokady Cloudflare (stabilnosc sesji/proxy).
-- Issue #261: ciche porazki typu `HTTP 200` + fake 404 / prawie puste body.
-- Discussion #73 (DataDome): wykrywalnosc mimo stealth.
-- Discussion #266: roznica miedzy basic Cloudflare i enterprise Cloudflare.
+What this means for XFeeder:
 
-Wniosek praktyczny dla XFeedera:
+- do not trust the HTTP code alone,
+- always check the shape of the content,
+- treat anti-bot per domain (not one setting for everything).
 
-- nie ufac samemu kodowi HTTP,
-- zawsze walidowac content shape,
-- traktowac anti-bot jako flow per-domena (nie one-size-fits-all).
+## 4) Starting profiles
 
-## 4) Profile startowe
-
-### A) Cloudflare basic
+### A) Basic Cloudflare
 
 - `ModeOrder`: `["fetch", "stealthy-fetch"]`
-- `MaxAttempts`: `2` lub `3`
+- `MaxAttempts`: `2` or `3`
 - `solveCloudflare: true`
 - `timeoutMs >= 60000`
-- `waitSelector` na element docelowy
+- `waitSelector` on the target element
 
-### B) Embedded/niestandardowy Turnstile
+### B) Embedded/custom Turnstile
 
 - `ModeOrder`: `["stealthy-fetch"]`
 - `timeoutMs`: `90000-120000`
-- `waitSelector` obowiazkowo
-- `MinConfidence`: podniesc (np. `50`) by odfiltrowac pseudo-sukcesy
+- `waitSelector` required
+- `MinConfidence`: raise it (e.g. `50`) to filter out false successes
 
-### C) Ciezsze WAF (DataDome/Akamai)
+### C) Heavier WAFs (DataDome/Akamai)
 
 - `ModeOrder`: `["fetch", "stealthy-fetch"]`
 - `dnsOverHttps: true`, `blockAds: true`
-- dobre proxy (residential/mobile), rotacja (`proxyRotator`) i ograniczenie rate
-- per-url tuning sygnatur (`BodySignatures`, `TitleSignatures`)
+- good proxies (residential/mobile), rotation (`proxyRotator`) and a lower rate
+- per-URL signature tuning (`BodySignatures`, `TitleSignatures`)
 
-## 5) Runtime i opcje Scrapling
+## 5) A faster alternative
 
-- `runtimeMode: "cli"` -> 1:1 zgodnosc z `scrapling extract ...`.
-- `runtimeMode: "shell"` -> rozszerzone opcje API fetcherow (np. `proxyRotator`, `maxPages`, dodatkowe mapowania snake_case/camelCase).
+For basic Cloudflare, `Scrapling.ReuseClearance: true` (temporary) keeps the cookie after
+the browser's first pass, and later checks use plain HTTP (8–11 ms instead of ~25 s on
+boop.pl). See the [README](README.md).
 
-Dla domen trudnych anti-bot preferuj `shell` + `stealthy-fetch` + per-url config.
+## 6) Diagnostics in production
 
-## 6) Diagnostyka w produkcji
-
-Wlacz:
+Turn on:
 
 - `Scrapling.AntiBot.LogDecisions = true`
 
-Obserwuj:
+Watch:
 
-- `score` i `reasons` z decyzji anti-bot,
-- czy odpowiedz ma realny content (title, body length, expected selectors),
-- czy blokady rosna wraz z czasem (sygnal stalego fingerprintu/IP),
-- czy retry/fallback nie powoduje zbyt duzego kosztu i opoznienia.
+- `score` and the reasons of anti-bot decisions,
+- whether the response has real content (title, length, expected elements),
+- whether blocks grow over time (a sign of a fixed browser fingerprint/IP),
+- whether retries and fallbacks cost too much time.
 
-## 7) Ograniczenia
+`xfeeder preview <URL> --bench 5` shows whether a feed went through Scrapling and how
+long it took.
 
-Anti-Bot nie gwarantuje 100% bypassu, szczegolnie dla enterprise WAF.
-Czesto potrzeba:
+## 7) Limits
 
-- lepszej klasy proxy,
-- wolniejszego tempa,
-- oddzielnych profili per domena,
-- czasem zewnetrznego stacku anty-bot.
+Anti-bot handling does not guarantee 100 % success, especially with enterprise WAFs.
+Often you need:
+
+- a better class of proxy,
+- a slower rate,
+- separate profiles per domain,
+- sometimes an external anti-bot tool (e.g. `Solver` with FlareSolverr).

@@ -1,0 +1,22 @@
+{
+  "name": "games",
+  "description": "Game updates: Steam store news (HTML patch notes, often no image), Steam group, SteamDB builds, YouTube",
+  "feeds": [
+    {
+      "url": "https://store.steampowered.com/feeds/news/app/730",
+      "sample": "tests/fixtures/profiles/games/steam-news-730.xml"
+    },
+    {
+      "url": "https://store.steampowered.com/feeds/news/group/39049601",
+      "sample": "tests/fixtures/profiles/games/steam-group.xml"
+    },
+    {
+      "url": "https://steamdb.info/api/PatchnotesRSS/?appid=730",
+      "sample": "tests/fixtures/profiles/games/steamdb-730.xml"
+    },
+    {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7WEPIfJ1zs8cClnBWfQHoA",
+      "sample": "tests/fixtures/profiles/games/youtube.xml"
+    }
+  ]
+}

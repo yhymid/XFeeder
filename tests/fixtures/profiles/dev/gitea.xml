@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Feed of &#34;MARMAK/mirror&#34;</title>
+    <link>https://git.marmak.net.pl/MARMAK/mirror</link>
+    <description>MARMAK Mirror</description>
+    <pubDate>Fri, 20 Nov 2026 23:50:30 +0100</pubDate>
+    <item>
+      <title>Kierownik223 pushed to &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/src/branch/main&#34;&gt;main&lt;/a&gt; at &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror&#34;&gt;MARMAK/mirror&lt;/a&gt;</title>
+      <link>/MARMAK/mirror/compare/a2f43f5deb35af19a3adfacb2415a72041232f99...a62b73460bf5e7ce046609acb504a570a82cd9de</link>
+      <description>&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/a62b73460bf5e7ce046609acb504a570a82cd9de&#34;&gt;a62b73460bf5e7ce046609acb504a570a82cd9de&lt;/a&gt;&#xA;Add APPX publisher parsing (X.509)&#xA;&#xA;&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/8f65309c07a30c57e1621de3295f8f6e686320c7&#34;&gt;8f65309c07a30c57e1621de3295f8f6e686320c7&lt;/a&gt;&#xA;Add better processor names to APPX packages</description>
+      <content:encoded><![CDATA[<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/a62b73460bf5e7ce046609acb504a570a82cd9de" rel="nofollow">a62b73460bf5e7ce046609acb504a570a82cd9de</a>
+Add APPX publisher parsing (X.509)
+
+<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/8f65309c07a30c57e1621de3295f8f6e686320c7" rel="nofollow">8f65309c07a30c57e1621de3295f8f6e686320c7</a>
+Add better processor names to APPX packages]]></content:encoded>
+      <author>Kierownik223</author>
+      <guid isPermaLink="false">884: /MARMAK/mirror/compare/a2f43f5deb35af19a3adfacb2415a72041232f99...a62b73460bf5e7ce046609acb504a570a82cd9de</guid>
+      <pubDate>Thu, 29 Oct 2026 15:04:59 +0100</pubDate>
+    </item>
+    <item>
+      <title>Kierownik223 pushed to &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/src/branch/main&#34;&gt;main&lt;/a&gt; at &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror&#34;&gt;MARMAK/mirror&lt;/a&gt;</title>
+      <link>https://git.marmak.net.pl/MARMAK/mirror/commit/a2f43f5deb35af19a3adfacb2415a72041232f99</link>
+      <description>&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/a2f43f5deb35af19a3adfacb2415a72041232f99&#34;&gt;a2f43f5deb35af19a3adfacb2415a72041232f99&lt;/a&gt;&#xA;Add CE processor type parser</description>
+      <content:encoded><![CDATA[<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/a2f43f5deb35af19a3adfacb2415a72041232f99" rel="nofollow">a2f43f5deb35af19a3adfacb2415a72041232f99</a>
+Add CE processor type parser]]></content:encoded>
+      <author>Kierownik223</author>
+      <guid isPermaLink="false">881: https://git.marmak.net.pl/MARMAK/mirror/commit/a2f43f5deb35af19a3adfacb2415a72041232f99</guid>
+      <pubDate>Thu, 29 Oct 2026 10:42:22 +0100</pubDate>
+    </item>
+    <item>
+      <title>Kierownik223 pushed to &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/src/branch/main&#34;&gt;main&lt;/a&gt; at &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror&#34;&gt;MARMAK/mirror&lt;/a&gt;</title>
+      <link>/MARMAK/mirror/compare/ed77b7f8e6e0e894385766b8922ffe821478d75c...3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6</link>
+      <description>&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6&#34;&gt;3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6&lt;/a&gt;&#xA;Release 1.10.0&#xA;&#xA;&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/bfb0fd1ccd6216ea980551e6c3aefa70c1caa693&#34;&gt;bfb0fd1ccd6216ea980551e6c3aefa70c1caa693&lt;/a&gt;&#xA;Run &lt;code class=&#34;inline-code-block&#34;&gt;cargo fmt&lt;/code&gt;&#xA;&#xA;&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/57077395523eb85d94572634f19598b03bcbcdc0&#34;&gt;57077395523eb85d94572634f19598b03bcbcdc0&lt;/a&gt;&#xA;Move additional properties logic to &lt;code class=&#34;inline-code-block&#34;&gt;MirrorFile.rs&lt;/code&gt;</description>
+      <content:encoded><![CDATA[<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6" rel="nofollow">3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6</a>
+Release 1.10.0
+
+<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/bfb0fd1ccd6216ea980551e6c3aefa70c1caa693" rel="nofollow">bfb0fd1ccd6216ea980551e6c3aefa70c1caa693</a>
+Run <code>cargo fmt</code>
+
+<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/57077395523eb85d94572634f19598b03bcbcdc0" rel="nofollow">57077395523eb85d94572634f19598b03bcbcdc0</a>
+Move additional properties logic to <code>MirrorFile.rs</code>]]></content:encoded>
+      <author>Kierownik223</author>
+      <guid isPermaLink="false">878: /MARMAK/mirror/compare/ed77b7f8e6e0e894385766b8922ffe821478d75c...3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6</guid>
+      <pubDate>Thu, 29 Oct 2026 10:19:42 +0100</pubDate>
+    </item>
+    <item>
+      <title>Kierownik223 pushed to &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/src/branch/main&#34;&gt;main&lt;/a&gt; at &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror&#34;&gt;MARMAK/mirror&lt;/a&gt;</title>
+      <link>/MARMAK/mirror/compare/6b74e7cb6b75673452be0357b3c9c47c7efb10b5...ed77b7f8e6e0e894385766b8922ffe821478d75c</link>
+      <description>&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/ed77b7f8e6e0e894385766b8922ffe821478d75c&#34;&gt;ed77b7f8e6e0e894385766b8922ffe821478d75c&lt;/a&gt;&#xA;Unify detail keys for future API expansion&#xA;&#xA;&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/f85dc7b42eba061ca86ac756046d7f532b839a2a&#34;&gt;f85dc7b42eba061ca86ac756046d7f532b839a2a&lt;/a&gt;&#xA;Streamline details page layout&#xA;&#xA;&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/484a6cf1a7ee3db391a8c86f7e016a4ee26d483d&#34;&gt;484a6cf1a7ee3db391a8c86f7e016a4ee26d483d&lt;/a&gt;&#xA;Add APPX manifest parser&#xA;&#xA;&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/d16dc097e20dbafb08b97fca7f2b90f02b6ba635&#34;&gt;d16dc097e20dbafb08b97fca7f2b90f02b6ba635&lt;/a&gt;&#xA;Partially update whitespacing on plain HTML mode&#xA;&#xA;&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/4cd0ed90994276204ca053eaba1b72d637e039cb&#34;&gt;4cd0ed90994276204ca053eaba1b72d637e039cb&lt;/a&gt;&#xA;Fix whitespacing on nav</description>
+      <content:encoded><![CDATA[<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/ed77b7f8e6e0e894385766b8922ffe821478d75c" rel="nofollow">ed77b7f8e6e0e894385766b8922ffe821478d75c</a>
+Unify detail keys for future API expansion
+
+<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/f85dc7b42eba061ca86ac756046d7f532b839a2a" rel="nofollow">f85dc7b42eba061ca86ac756046d7f532b839a2a</a>
+Streamline details page layout
+
+<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/484a6cf1a7ee3db391a8c86f7e016a4ee26d483d" rel="nofollow">484a6cf1a7ee3db391a8c86f7e016a4ee26d483d</a>
+Add APPX manifest parser
+
+<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/d16dc097e20dbafb08b97fca7f2b90f02b6ba635" rel="nofollow">d16dc097e20dbafb08b97fca7f2b90f02b6ba635</a>
+Partially update whitespacing on plain HTML mode
+
+<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/4cd0ed90994276204ca053eaba1b72d637e039cb" rel="nofollow">4cd0ed90994276204ca053eaba1b72d637e039cb</a>
+Fix whitespacing on nav]]></content:encoded>
+      <author>Kierownik223</author>
+      <guid isPermaLink="false">875: /MARMAK/mirror/compare/6b74e7cb6b75673452be0357b3c9c47c7efb10b5...ed77b7f8e6e0e894385766b8922ffe821478d75c</guid>
+      <pubDate>Thu, 29 Oct 2026 10:12:57 +0100</pubDate>
+    </item>
+    <item>
+      <title>Kierownik223 pushed to &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/src/branch/main&#34;&gt;main&lt;/a&gt; at &lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror&#34;&gt;MARMAK/mirror&lt;/a&gt;</title>
+      <link>https://git.marmak.net.pl/MARMAK/mirror/commit/6b74e7cb6b75673452be0357b3c9c47c7efb10b5</link>
+      <description>&lt;a href=&#34;https://git.marmak.net.pl/MARMAK/mirror/commit/6b74e7cb6b75673452be0357b3c9c47c7efb10b5&#34;&gt;6b74e7cb6b75673452be0357b3c9c47c7efb10b5&lt;/a&gt;&#xA;Add experimental XAP manifest parser</description>
+      <content:encoded><![CDATA[<a href="https://git.marmak.net.pl/MARMAK/mirror/commit/6b74e7cb6b75673452be0357b3c9c47c7efb10b5" rel="nofollow">6b74e7cb6b75673452be0357b3c9c47c7efb10b5</a>
+Add experimental XAP manifest parser]]></content:encoded>
+      <author>Kierownik223</author>
+      <guid isPermaLink="false">872: https://git.marmak.net.pl/MARMAK/mirror/commit/6b74e7cb6b75673452be0357b3c9c47c7efb10b5</guid>
+      <pubDate>Fri, 23 Oct 2026 09:19:26 +0200</pubDate>
+    </item>
+  </channel>
+</rss>

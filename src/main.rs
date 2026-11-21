@@ -13,6 +13,8 @@ mod http;
 mod js;
 mod parsers;
 mod preview;
+#[cfg(test)]
+mod profile_tests;
 mod scrapling;
 mod solver;
 mod state;

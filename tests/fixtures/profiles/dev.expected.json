@@ -1,0 +1,204 @@
+{
+  "https://github.com/yhymid/XFeeder/commits/3.0-beta.atom": {
+    "parser": "parseAtom",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Add `xfeeder preview` with per-stage timings and --bench",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/commit/358faac504dbdaeba0aa253d00b97f16befd4504",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-21T01:41:34.000Z",
+        "text": "`xfeeder preview <URL>... [--profile NAME] [--items N] [--bench N] [--json]`\nruns a feed through the worker's own path (HTTP client, Scrapling,\nsolver and proxy",
+        "identity": "https://github.com/yhymid/XFeeder/commit/358faac504dbdaeba0aa253d00b97f16befd4504"
+      },
+      {
+        "title": "Discord timestamps, site name instead of Anonymous, vertical Shorts",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/commit/dd2049ada5483cdebfdfc11d13fbb49fefb568ba",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-21T00:42:08.000Z",
+        "text": "From a review of the tracking threads (YouTube, Valve, Facepunch,\nSteam, Blogs):\n- dates use Discord's <t:unix:f> markup, so every reader sees their own\ntime zo",
+        "identity": "https://github.com/yhymid/XFeeder/commit/dd2049ada5483cdebfdfc11d13fbb49fefb568ba"
+      },
+      {
+        "title": "Fix GitHub activity and commit cards seen in the changelog channel",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/commit/223d37f669af0008348a4311f591bd0d87e8f23a",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-20T23:42:44.000Z",
+        "text": "- HTML source line breaks are spaces outside <pre>; GitHub's activity\nfeed came out one word per line. A lone commit id bullet joins the\ncommit message (\"• 7f3a",
+        "identity": "https://github.com/yhymid/XFeeder/commit/223d37f669af0008348a4311f591bd0d87e8f23a"
+      },
+      {
+        "title": "Sharper images and readable text for every production source",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/commit/7c86e79ee1928e37d7a6609992720839b883a25d",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-20T22:59:53.000Z",
+        "text": "Each production source was checked for how it builds its posts:\n- GitHub commit avatars (30 px) are requested at 460 px and shown as a\nSection thumbnail next to",
+        "identity": "https://github.com/yhymid/XFeeder/commit/7c86e79ee1928e37d7a6609992720839b883a25d"
+      },
+      {
+        "title": "Redesign README around the Discord showcase",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/commit/f6d1b71fed160720cc1cfb240bb4ffe0b2ac2440",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-20T22:27:41.000Z",
+        "text": "The README now shows the whole project at a glance: tagline and badges,\nthe six Discord screenshots from the docs/readme-showcase branch, a\nshort \"Why XFeeder\" ",
+        "identity": "https://github.com/yhymid/XFeeder/commit/f6d1b71fed160720cc1cfb240bb4ffe0b2ac2440"
+      }
+    ]
+  },
+  "https://github.com/yhymid.atom": {
+    "parser": "parseAtom",
+    "entries": 5,
+    "items": [
+      {
+        "title": "yhymid pushed XFeeder",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/compare/2c1a9005b1...7f3a0376c7",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-19T12:58:18.000Z",
+        "text": "yhymid pushed to docs/readme-showcase in yhymid/XFeeder · November 19, 2026 12:58\n1 commit to docs/readme-showcase\n• 7f3a037 docs: crop showcase screenshots to ",
+        "identity": "https://github.com/yhymid/XFeeder/compare/2c1a9005b1...7f3a0376c7"
+      },
+      {
+        "title": "yhymid created a branch",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/compare/0000000000...fe441039dc",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-16T20:01:42.000Z",
+        "text": "yhymid created a branch in yhymid/XFeeder · November 16, 2026 20:01\nrefs/heads/rust-rewrite in yhymid/XFeeder\nUpdated Nov 16",
+        "identity": "https://github.com/yhymid/XFeeder/compare/0000000000...fe441039dc"
+      },
+      {
+        "title": "yhymid pushed XFeeder",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/compare/3d3c444bc3...395cafeff5",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-17T03:05:33.000Z",
+        "text": "yhymid pushed to rust-rewrite in yhymid/XFeeder · November 17, 2026 03:05\n1 commit to rust-rewrite\n• 395cafe Log Discord message and channel id for each webhook",
+        "identity": "https://github.com/yhymid/XFeeder/compare/3d3c444bc3...395cafeff5"
+      },
+      {
+        "title": "yhymid pushed Operator",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/Operator/compare/bac6b43c7d...a971a4c01a",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-17T05:44:43.000Z",
+        "text": "yhymid pushed to discord in yhymid/Operator · November 17, 2026 05:44\n2 commits to discord\n• 218b5b9 common: always-on diagnostics recorder\n• a971a4c Measure Di",
+        "identity": "https://github.com/yhymid/Operator/compare/bac6b43c7d...a971a4c01a"
+      },
+      {
+        "title": "yhymid deleted",
+        "author": "yhymid",
+        "link": "https://github.com/yhymid/XFeeder/compare/fe441039dc...0000000000",
+        "enclosure": "https://avatars.githubusercontent.com/u/86289848?v=4&s=460",
+        "imageFallback": "https://avatars.githubusercontent.com/u/86289848?s=30&v=4",
+        "isoDate": "2026-11-17T04:15:25.000Z",
+        "text": "yhymid deleted branch refs/heads/3.0-alpha in yhymid/XFeeder · November 17, 2026 04:15\nyhymid/XFeeder\nUpdated Nov 17",
+        "identity": "https://github.com/yhymid/XFeeder/compare/fe441039dc...0000000000"
+      }
+    ]
+  },
+  "https://git.marmak.net.pl/MARMAK/mirror.rss": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Kierownik223 pushed to main at MARMAK/mirror",
+        "author": "Kierownik223",
+        "link": "https://git.marmak.net.pl/MARMAK/mirror/compare/a2f43f5deb35af19a3adfacb2415a72041232f99...a62b73460bf5e7ce046609acb504a570a82cd9de",
+        "sourceLink": "/MARMAK/mirror/compare/a2f43f5deb35af19a3adfacb2415a72041232f99...a62b73460bf5e7ce046609acb504a570a82cd9de",
+        "isoDate": "2026-10-29T14:04:59.000Z",
+        "text": "a62b73460bf5e7ce046609acb504a570a82cd9de Add APPX publisher parsing (X.509) 8f65309c07a30c57e1621de3295f8f6e686320c7 Add better processor names to APPX packages",
+        "identity": "/MARMAK/mirror/compare/a2f43f5deb35af19a3adfacb2415a72041232f99...a62b73460bf5e7ce046609acb504a570a82cd9de"
+      },
+      {
+        "title": "Kierownik223 pushed to main at MARMAK/mirror",
+        "author": "Kierownik223",
+        "link": "https://git.marmak.net.pl/MARMAK/mirror/commit/a2f43f5deb35af19a3adfacb2415a72041232f99",
+        "isoDate": "2026-10-29T09:42:22.000Z",
+        "text": "a2f43f5deb35af19a3adfacb2415a72041232f99 Add CE processor type parser",
+        "identity": "https://git.marmak.net.pl/MARMAK/mirror/commit/a2f43f5deb35af19a3adfacb2415a72041232f99"
+      },
+      {
+        "title": "Kierownik223 pushed to main at MARMAK/mirror",
+        "author": "Kierownik223",
+        "link": "https://git.marmak.net.pl/MARMAK/mirror/compare/ed77b7f8e6e0e894385766b8922ffe821478d75c...3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6",
+        "sourceLink": "/MARMAK/mirror/compare/ed77b7f8e6e0e894385766b8922ffe821478d75c...3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6",
+        "isoDate": "2026-10-29T09:19:42.000Z",
+        "text": "3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6 Release 1.10.0 bfb0fd1ccd6216ea980551e6c3aefa70c1caa693 Run cargo fmt 57077395523eb85d94572634f19598b03bcbcdc0 Move add",
+        "identity": "/MARMAK/mirror/compare/ed77b7f8e6e0e894385766b8922ffe821478d75c...3c3a30bd9ad9970c9fe86a7cf1fe9bdc6e6f02b6"
+      },
+      {
+        "title": "Kierownik223 pushed to main at MARMAK/mirror",
+        "author": "Kierownik223",
+        "link": "https://git.marmak.net.pl/MARMAK/mirror/compare/6b74e7cb6b75673452be0357b3c9c47c7efb10b5...ed77b7f8e6e0e894385766b8922ffe821478d75c",
+        "sourceLink": "/MARMAK/mirror/compare/6b74e7cb6b75673452be0357b3c9c47c7efb10b5...ed77b7f8e6e0e894385766b8922ffe821478d75c",
+        "isoDate": "2026-10-29T09:12:57.000Z",
+        "text": "ed77b7f8e6e0e894385766b8922ffe821478d75c Unify detail keys for future API expansion f85dc7b42eba061ca86ac756046d7f532b839a2a Streamline details page layout 484a",
+        "identity": "/MARMAK/mirror/compare/6b74e7cb6b75673452be0357b3c9c47c7efb10b5...ed77b7f8e6e0e894385766b8922ffe821478d75c"
+      },
+      {
+        "title": "Kierownik223 pushed to main at MARMAK/mirror",
+        "author": "Kierownik223",
+        "link": "https://git.marmak.net.pl/MARMAK/mirror/commit/6b74e7cb6b75673452be0357b3c9c47c7efb10b5",
+        "isoDate": "2026-10-23T07:19:26.000Z",
+        "text": "6b74e7cb6b75673452be0357b3c9c47c7efb10b5 Add experimental XAP manifest parser",
+        "identity": "https://git.marmak.net.pl/MARMAK/mirror/commit/6b74e7cb6b75673452be0357b3c9c47c7efb10b5"
+      }
+    ]
+  },
+  "https://fmhy-tracker.pages.dev/feed.xml": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "2 updated",
+        "link": "https://github.com/fmhy/edit/commit/991c9a0d248f8ab56e21601399c23335a061b6e6",
+        "isoDate": "2026-11-20T18:58:53.000Z",
+        "text": "Commit: updated pages\nSHA: 991c9a0d\nUpdated Links (2)\n• [audio] ⭐ ArtistGrid / GitHub or unmusic - Unreleased\nBefore: ⭐ ArtistGrid / GitHub, unreleased.world or",
+        "identity": "https://github.com/fmhy/edit/commit/991c9a0d248f8ab56e21601399c23335a061b6e6"
+      },
+      {
+        "title": "1 updated",
+        "link": "https://github.com/fmhy/edit/commit/d9c94ffc873c3fa2a5b6836cc6701bbe7e0d524f",
+        "isoDate": "2026-11-20T16:29:42.000Z",
+        "text": "Commit: removed site\nSHA: d9c94ffc\nUpdated Links (1)\n• [privacy] neodevhost or black-mirror - Blocklists & Aggregated Feeds\nBefore: neodevhost, StevenBlack Host",
+        "identity": "https://github.com/fmhy/edit/commit/d9c94ffc873c3fa2a5b6836cc6701bbe7e0d524f"
+      },
+      {
+        "title": "7 added, 7 updated, 1 removed",
+        "link": "https://github.com/fmhy/edit/commit/856fdb72c21bc1a431edc23659573ace4d5163cc",
+        "isoDate": "2026-11-20T15:38:29.000Z",
+        "text": "Commit: updated 10 pages\nSHA: 856fdb72\nAdded Links (7)\n• [file-tools] Hydra - Multi-Connection / Windows, macOS, Linux / GitHub\n• [gaming] Sakura Shop - ROMs / ",
+        "identity": "https://github.com/fmhy/edit/commit/856fdb72c21bc1a431edc23659573ace4d5163cc"
+      },
+      {
+        "title": "17 added, 26 updated, 15 removed",
+        "link": "https://github.com/fmhy/edit/commit/edec9cd231035591c5d68965a221ab8872fc368c",
+        "isoDate": "2026-11-20T12:54:57.000Z",
+        "text": "Commit: updated 19 pages\nSHA: edec9cd2\nAdded Links (17)\n• [audio] unreleased.world - Unreleased\n• [educational] 🌐 CubingAtlas - Speedcubing Learning Resources\n•",
+        "identity": "https://github.com/fmhy/edit/commit/edec9cd231035591c5d68965a221ab8872fc368c"
+      },
+      {
+        "title": "No changes",
+        "link": "https://github.com/fmhy/edit/commit/6645e766cfc641f97bd93ec72f0d9ad7a9dc440b",
+        "isoDate": "2026-11-20T08:49:58.000Z",
+        "text": "Commit: Style Join Server as a brand pill button with subtle hover (#7355) Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.co",
+        "identity": "https://github.com/fmhy/edit/commit/6645e766cfc641f97bd93ec72f0d9ad7a9dc440b"
+      }
+    ]
+  }
+}

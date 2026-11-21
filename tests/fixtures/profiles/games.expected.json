@@ -1,0 +1,196 @@
+{
+  "https://store.steampowered.com/feeds/news/app/730": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Counter-Strike 2 Update",
+        "link": "https://store.steampowered.com/news/app/730/view/694278269818634559",
+        "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "isoDate": "2026-11-19T00:57:59.000Z",
+        "text": "[ MAPS ]\nCobblestone\n• Fixed some walkable ledges in long A\n• Fixed map issue that was loading an empty skybox\n• Fixed an audio blocker issue by mid/A\n• Added a",
+        "identity": "https://store.steampowered.com/news/app/730/view/694278269818634559"
+      },
+      {
+        "title": "Counter-Strike 2 Update",
+        "link": "https://store.steampowered.com/news/app/730/view/687522235410286587",
+        "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "isoDate": "2026-11-17T23:40:07.000Z",
+        "text": "[ SINGAPORE 2026 MAJOR ]\n• The PGL Singapore 2026 Major Hub is now available. Visit the hub to purchase tournament items, play the Pick'Em Challenge, and more.\n",
+        "identity": "https://store.steampowered.com/news/app/730/view/687522235410286587"
+      },
+      {
+        "title": "The Cobbled Road to Singapore",
+        "link": "https://store.steampowered.com/news/app/730/view/687522235410285288",
+        "enclosure": "https://clan.fastly.steamstatic.com/images/3381077/24b2ead3e4942caf11d959f325f0ee3a36e0872a.png",
+        "isoDate": "2026-11-17T23:38:40.000Z",
+        "text": "Today's update features the return of a legendary map. Welcome back, Cobblestone!\nCobblestone veterans will feel at home in familiar locations like drop, chicke",
+        "identity": "https://store.steampowered.com/news/app/730/view/687522235410285288"
+      },
+      {
+        "title": "Counter-Strike 2 Update",
+        "link": "https://store.steampowered.com/news/app/730/view/687522235410284761",
+        "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "isoDate": "2026-11-11T23:03:20.000Z",
+        "text": "[ ANIMATION ]\n• Fixed some cases of popping and glitching when switching weapons and reloading at extreme angles\n[ MISC ]\n• Fixed bot pathing issue in Retakes g",
+        "identity": "https://store.steampowered.com/news/app/730/view/687522235410284761"
+      },
+      {
+        "title": "Counter-Strike 2 Update",
+        "link": "https://store.steampowered.com/news/app/730/view/694277000588690211",
+        "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "isoDate": "2026-11-05T00:54:07.000Z",
+        "text": "[ GAMEPLAY ]\n• Bomb defusal in Retakes mode will now instantly finish when there is sufficient time remaining in the round and no active utility remains to prev",
+        "identity": "https://store.steampowered.com/news/app/730/view/694277000588690211"
+      }
+    ]
+  },
+  "https://store.steampowered.com/feeds/news/group/39049601": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Most-played demos of Steam Next Fest: October 2026 Edition",
+        "link": "https://store.steampowered.com/news/group/39049601/view/713414124781961848",
+        "enclosure": "https://clan.fastly.steamstatic.com/images/39049601/e9958efd92776a01b08d19e70fe26d30a7196fb1.jpg",
+        "isoDate": "2026-10-26T16:41:22.000Z",
+        "text": "These are the 50 games with the most-played demos during the week of Steam Next Fest: October 2026 Edition.",
+        "identity": "https://store.steampowered.com/news/group/39049601/view/713414124781961848"
+      },
+      {
+        "title": "Next Fest October 2026 - LIVE NOW",
+        "link": "https://store.steampowered.com/news/group/39049601/view/713414759190366803",
+        "enclosure": "https://clan.fastly.steamstatic.com/images/39049601/277d4d10b3665d199e4cfcca509c6e068609a407.jpg",
+        "isoDate": "2026-10-19T16:47:55.000Z",
+        "text": "Steam Next Fest is a week-long celebration featuring hundreds of FREE playable demos as well as developer livestreams and chats. Players try out upcoming games ",
+        "identity": "https://store.steampowered.com/news/group/39049601/view/713414759190366803"
+      },
+      {
+        "title": "Steam Next Fest: October 2026 Edition - Coming Soon",
+        "link": "https://store.steampowered.com/news/group/39049601/view/678501715215913790",
+        "enclosure": "https://clan.fastly.steamstatic.com/images/39049601/2d38a58b6aeb34af1ff6ee0d2ff92b117e72dbc4.jpg",
+        "isoDate": "2026-08-04T17:48:07.000Z",
+        "text": "Announcing the next edition of Steam Next Fest, a week-long celebration of upcoming games. Save the date for the October 2026 edition, headed to Steam October 1",
+        "identity": "https://store.steampowered.com/news/group/39049601/view/678501715215913790"
+      },
+      {
+        "title": "Autumn Sale 2026 Featured Deep Discounts",
+        "link": "https://store.steampowered.com/news/group/39049601/view/693143486970465477",
+        "enclosure": "https://clan.fastly.steamstatic.com/images/39049601/9072ef2d6adc20d7a85a1cdf824226ac75f2204c.jpg",
+        "isoDate": "2026-10-01T16:43:49.000Z",
+        "text": "Especially great deals on some of the all-time greats",
+        "identity": "https://store.steampowered.com/news/group/39049601/view/693143486970465477"
+      },
+      {
+        "title": "Next Fest October 2026 - Developer Preview",
+        "link": "https://store.steampowered.com/news/group/39049601/view/681887658746577873",
+        "enclosure": "https://clan.fastly.steamstatic.com/images/39049601/277d4d10b3665d199e4cfcca509c6e068609a407.jpg",
+        "isoDate": "2026-09-30T15:53:41.000Z",
+        "text": "Steam Next Fest is a week-long celebration featuring hundreds of FREE playable demos as well as developer livestreams and chats. Players try out upcoming games ",
+        "identity": "https://store.steampowered.com/news/group/39049601/view/681887658746577873"
+      }
+    ]
+  },
+  "https://steamdb.info/api/PatchnotesRSS/?appid=730": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Counter-Strike 2 update for 20 November 2026",
+        "link": "https://steamdb.info/patchnotes/26798866/?utm_source=rss&utm_medium=rss&utm_campaign=Patchnotes",
+        "enclosure": "https://steamdb.info/patchnotes/26798866.png?_=1795136253",
+        "isoDate": "2026-11-20T00:57:33.000Z",
+        "text": "SteamDB Build 26798866",
+        "identity": "https://steamdb.info/patchnotes/26798866/"
+      },
+      {
+        "title": "Counter-Strike 2 update for 19 November 2026",
+        "link": "https://steamdb.info/patchnotes/26772654/?utm_source=rss&utm_medium=rss&utm_campaign=Patchnotes",
+        "enclosure": "https://steamdb.info/patchnotes/26772654.png?_=1795049943",
+        "isoDate": "2026-11-19T00:52:12.000Z",
+        "text": "Counter-Strike 2 Update (SteamDB Build 26772654)",
+        "identity": "https://steamdb.info/patchnotes/26772654/"
+      },
+      {
+        "title": "Counter-Strike 2 update for 18 November 2026",
+        "link": "https://steamdb.info/patchnotes/26748068/?utm_source=rss&utm_medium=rss&utm_campaign=Patchnotes",
+        "enclosure": "https://steamdb.info/patchnotes/26748068.png?_=1794974020",
+        "isoDate": "2026-11-18T03:53:40.000Z",
+        "text": "SteamDB Build 26748068",
+        "identity": "https://steamdb.info/patchnotes/26748068/"
+      },
+      {
+        "title": "Counter-Strike 2 update for 18 November 2026",
+        "link": "https://steamdb.info/patchnotes/26747005/?utm_source=rss&utm_medium=rss&utm_campaign=Patchnotes",
+        "enclosure": "https://steamdb.info/patchnotes/26747005.png?_=1794968914",
+        "isoDate": "2026-11-18T02:28:34.000Z",
+        "text": "SteamDB Build 26747005",
+        "identity": "https://steamdb.info/patchnotes/26747005/"
+      },
+      {
+        "title": "Counter-Strike 2 update for 17 November 2026",
+        "link": "https://steamdb.info/patchnotes/26738309/?utm_source=rss&utm_medium=rss&utm_campaign=Patchnotes",
+        "enclosure": "https://steamdb.info/patchnotes/26738309.png?_=1794959352",
+        "isoDate": "2026-11-17T23:37:55.000Z",
+        "text": "The Cobbled Road to Singapore (SteamDB Build 26738309)",
+        "identity": "https://steamdb.info/patchnotes/26738309/"
+      }
+    ]
+  },
+  "https://www.youtube.com/feeds/videos.xml?channel_id=UC7WEPIfJ1zs8cClnBWfQHoA": {
+    "parser": "parseYouTube",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Cheater with big head",
+        "author": "Yhym's",
+        "link": "https://www.youtube.com/watch?v=GOUuN2Zivys",
+        "enclosure": "https://i.ytimg.com/vi/GOUuN2Zivys/maxresdefault.jpg",
+        "imageFallback": "https://i4.ytimg.com/vi/GOUuN2Zivys/hqdefault.jpg",
+        "isoDate": "2026-10-29T02:24:20.000Z",
+        "text": "",
+        "identity": "https://www.youtube.com/watch?v=GOUuN2Zivys"
+      },
+      {
+        "title": "CS2: Big Heads Update + Cliped Spinbot on casual",
+        "author": "Yhym's",
+        "link": "https://www.youtube.com/watch?v=2rwswjwPNsU",
+        "enclosure": "https://i.ytimg.com/vi/2rwswjwPNsU/maxresdefault.jpg",
+        "imageFallback": "https://i3.ytimg.com/vi/2rwswjwPNsU/hqdefault.jpg",
+        "isoDate": "2026-10-29T02:17:24.000Z",
+        "text": "Lets see what happyn in cs2.... uh ye i have small head because was cheater in match\nThis video was edited on YouTube Studio",
+        "identity": "https://www.youtube.com/watch?v=2rwswjwPNsU"
+      },
+      {
+        "title": "October 23, 2026",
+        "author": "Yhym's",
+        "link": "https://www.youtube.com/shorts/zWfeno9fOtM",
+        "enclosure": "https://i.ytimg.com/vi/zWfeno9fOtM/oardefault.jpg",
+        "imageFallback": "https://i3.ytimg.com/vi/zWfeno9fOtM/hqdefault.jpg",
+        "isoDate": "2026-10-24T01:50:36.000Z",
+        "text": "",
+        "identity": "https://www.youtube.com/shorts/zWfeno9fOtM"
+      },
+      {
+        "title": "October 23, 2026",
+        "author": "Yhym's",
+        "link": "https://www.youtube.com/shorts/3t-sMhEvF4k",
+        "enclosure": "https://i.ytimg.com/vi/3t-sMhEvF4k/oardefault.jpg",
+        "imageFallback": "https://i4.ytimg.com/vi/3t-sMhEvF4k/hqdefault.jpg",
+        "isoDate": "2026-10-24T01:50:33.000Z",
+        "text": "",
+        "identity": "https://www.youtube.com/shorts/3t-sMhEvF4k"
+      },
+      {
+        "title": "October 23, 2026",
+        "author": "Yhym's",
+        "link": "https://www.youtube.com/shorts/7clBIPMbU74",
+        "enclosure": "https://i.ytimg.com/vi/7clBIPMbU74/oardefault.jpg",
+        "imageFallback": "https://i4.ytimg.com/vi/7clBIPMbU74/hqdefault.jpg",
+        "isoDate": "2026-10-24T01:50:33.000Z",
+        "text": "",
+        "identity": "https://www.youtube.com/shorts/7clBIPMbU74"
+      }
+    ]
+  }
+}

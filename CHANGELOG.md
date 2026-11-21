@@ -10,6 +10,10 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- Feed profiles `news`, `games` and `dev` (`profiles/`): real production feeds with saved
+  samples. `cargo test` parses every sample and compares the result field by field with
+  the saved expectations, so a fix for one site cannot silently change another;
+  `xfeeder preview --profile NAME` checks the same feeds live.
 - `xfeeder preview <URL>…`: shows what XFeeder reads from a feed (title, author, date,
   image, link, text, hints such as "image: 3/10 entries") and how long download, parsing
   and the image check take, through the same path as the worker (Scrapling, solver,

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+  <id>tag:github.com,2008:/yhymid/XFeeder/commits/3.0-beta</id>
+  <link type="text/html" rel="alternate" href="https://github.com/yhymid/XFeeder/commits/3.0-beta"/>
+  <link type="application/atom+xml" rel="self" href="https://github.com/yhymid/XFeeder/commits/3.0-beta.atom"/>
+  <title>Recent Commits to XFeeder:3.0-beta</title>
+  <updated>2026-11-21T01:41:34Z</updated>
+  <entry>
+    <id>tag:github.com,2008:Grit::Commit/358faac504dbdaeba0aa253d00b97f16befd4504</id>
+    <link type="text/html" rel="alternate" href="https://github.com/yhymid/XFeeder/commit/358faac504dbdaeba0aa253d00b97f16befd4504"/>
+    <title>
+        Add `xfeeder preview` with per-stage timings and --bench
+    </title>
+    <updated>2026-11-21T01:41:34Z</updated>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/86289848?s=30&amp;v=4"/>
+    <author>
+      <name>yhymid</name>
+      <uri>https://github.com/yhymid</uri>
+    </author>
+    <content type="html">
+      &lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;Add `xfeeder preview` with per-stage timings and --bench
+
+`xfeeder preview &amp;lt;URL&amp;gt;... [--profile NAME] [--items N] [--bench N] [--json]`
+runs a feed through the worker&amp;#39;s own path (HTTP client, Scrapling,
+solver and proxy from config.json, parsers, parsers::finish, the image
+check before sending) with an empty, never-saved history, and prints
+the entries, hints (&amp;quot;image: 3/10 entries&amp;quot;, &amp;quot;larger image used for …&amp;quot;)
+and how long download, first byte, parsing and the image check took.
+--bench N repeats the fetch and prints min/median/p95/max per stage.
+
+Timings come from an in-process capture of the pipeline&amp;#39;s own events
+(diag::capture_*), so the numbers match what the worker records. The
+image check moved to deliver::working_image so preview and worker use
+the same code.
+
+Co-Authored-By: Claude Opus 5.5 &amp;lt;noreply@anthropic.com&amp;gt;&lt;/pre&gt;
+    </content>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Grit::Commit/dd2049ada5483cdebfdfc11d13fbb49fefb568ba</id>
+    <link type="text/html" rel="alternate" href="https://github.com/yhymid/XFeeder/commit/dd2049ada5483cdebfdfc11d13fbb49fefb568ba"/>
+    <title>
+        Discord timestamps, site name instead of Anonymous, vertical Shorts
+    </title>
+    <updated>2026-11-21T00:42:08Z</updated>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/86289848?s=30&amp;v=4"/>
+    <author>
+      <name>yhymid</name>
+      <uri>https://github.com/yhymid</uri>
+    </author>
+    <content type="html">
+      &lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;Discord timestamps, site name instead of Anonymous, vertical Shorts
+
+From a review of the tracking threads (YouTube, Valve, Facepunch,
+Steam, Blogs):
+- dates use Discord&amp;#39;s &amp;lt;t:unix:f&amp;gt; markup, so every reader sees their own
+  time zone and language (was a fixed US-format string);
+- feeds without an author show the site host instead of &amp;quot;Anonymous&amp;quot;;
+- &amp;quot;Czytaj więcej »&amp;quot;, &amp;quot;Read more&amp;quot; and WordPress &amp;quot;The post … appeared
+  first on …&amp;quot; endings are removed;
+- YouTube Shorts get the vertical oardefault thumbnail (1080x1920),
+  checked before sending like the other image upgrades.
+
+Co-Authored-By: Claude Opus 5.5 &amp;lt;noreply@anthropic.com&amp;gt;&lt;/pre&gt;
+    </content>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Grit::Commit/223d37f669af0008348a4311f591bd0d87e8f23a</id>
+    <link type="text/html" rel="alternate" href="https://github.com/yhymid/XFeeder/commit/223d37f669af0008348a4311f591bd0d87e8f23a"/>
+    <title>
+        Fix GitHub activity and commit cards seen in the changelog channel
+    </title>
+    <updated>2026-11-20T23:42:44Z</updated>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/86289848?s=30&amp;v=4"/>
+    <author>
+      <name>yhymid</name>
+      <uri>https://github.com/yhymid</uri>
+    </author>
+    <content type="html">
+      &lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;Fix GitHub activity and commit cards seen in the changelog channel
+
+- HTML source line breaks are spaces outside &amp;lt;pre&amp;gt;; GitHub&amp;#39;s activity
+  feed came out one word per line. A lone commit id bullet joins the
+  commit message (&amp;quot;• 7f3a037 docs: crop…&amp;quot;).
+- Dates like &amp;quot;2026-11-19 12:58:18 UTC&amp;quot; (activity feed) are parsed.
+- Commit trailers (Co-Authored-By, Signed-off-by, Claude-Session, …)
+  are dropped from the text.
+- Commits by e-mails not linked to GitHub get the name from the e-mail
+  instead of &amp;quot;Anonymous&amp;quot;.
+- Long texts end at a whole word with &amp;quot;…&amp;quot;.
+
+Delivery identities unchanged on all 275 sampled entries.
+
+Co-Authored-By: Claude Opus 5.5 &amp;lt;noreply@anthropic.com&amp;gt;&lt;/pre&gt;
+    </content>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Grit::Commit/7c86e79ee1928e37d7a6609992720839b883a25d</id>
+    <link type="text/html" rel="alternate" href="https://github.com/yhymid/XFeeder/commit/7c86e79ee1928e37d7a6609992720839b883a25d"/>
+    <title>
+        Sharper images and readable text for every production source
+    </title>
+    <updated>2026-11-20T22:59:53Z</updated>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/86289848?s=30&amp;v=4"/>
+    <author>
+      <name>yhymid</name>
+      <uri>https://github.com/yhymid</uri>
+    </author>
+    <content type="html">
+      &lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;Sharper images and readable text for every production source
+
+Each production source was checked for how it builds its posts:
+- GitHub commit avatars (30 px) are requested at 460 px and shown as a
+  Section thumbnail next to the text instead of a large blurry image;
+- WordPress thumbnails (lowcygier.pl, -224x224) use the original upload;
+- YouTube hqdefault (480x360, letterboxed) becomes maxresdefault;
+- Steam store news without a picture get the game&amp;#39;s header image.
+A larger image is checked with a 1 KB ranged request before sending and
+falls back to the feed&amp;#39;s own image when missing.
+
+Text keeps paragraphs and list items, drops invisible characters and
+Steam&amp;#39;s \[ \] escapes, and no longer repeats the title. Relative links
+(Gitea) become absolute; the original link stays the delivery identity
+(sourceLink), so nothing is sent again - checked on all 220 entries of
+the 12 production sources.
+
+Co-Authored-By: Claude Opus 5.5 &amp;lt;noreply@anthropic.com&amp;gt;&lt;/pre&gt;
+    </content>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Grit::Commit/f6d1b71fed160720cc1cfb240bb4ffe0b2ac2440</id>
+    <link type="text/html" rel="alternate" href="https://github.com/yhymid/XFeeder/commit/f6d1b71fed160720cc1cfb240bb4ffe0b2ac2440"/>
+    <title>
+        Redesign README around the Discord showcase
+    </title>
+    <updated>2026-11-20T22:27:41Z</updated>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/86289848?s=30&amp;v=4"/>
+    <author>
+      <name>yhymid</name>
+      <uri>https://github.com/yhymid</uri>
+    </author>
+    <content type="html">
+      &lt;pre style=&#39;white-space:pre-wrap;width:81ex&#39;&gt;Redesign README around the Discord showcase
+
+The README now shows the whole project at a glance: tagline and badges,
+the six Discord screenshots from the docs/readme-showcase branch, a
+short &amp;quot;Why XFeeder&amp;quot; list, supported sources and destinations, a quick
+start with the smallest config, and a documentation table.
+
+Detailed settings, command line options and dashboard usage moved to
+docs/configuration.md (new section 11 &amp;quot;Polecenia i zmienne
+środowiskowe&amp;quot;).
+
+Co-Authored-By: Claude Opus 5.5 &amp;lt;noreply@anthropic.com&amp;gt;&lt;/pre&gt;
+    </content>
+  </entry>
+</feed>

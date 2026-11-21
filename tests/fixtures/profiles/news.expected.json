@@ -1,0 +1,202 @@
+{
+  "https://wiadomosci.onet.pl/.feed": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Rosja odgraża się Holandii. W tle ataki armii ukraińskiej na Most Krymski",
+        "link": "https://wiadomosci.onet.pl/swiat/rosja-odgraza-sie-holandii-w-tle-ataki-armii-ukrainskiej-na-most-krymski/hy1x28v",
+        "enclosure": "https://cdn.wiadomosci.onet.pl/1/1bqk9lBaHR0cHM6Ly9vY2RuLmV1L3B1bHNjbXMvTURBXy81MmE5NTk4MDUxNWUzOTQ3ZGQ4Zjg3MTk0MDA2MDAzYS5qcGeSlQMAAM0Hys0EYpMFzQlgzQZA3gACoTAHoTEE",
+        "isoDate": "2026-11-20T22:01:55.000Z",
+        "text": "Rosyjska ambasada w Hadze wezwała w piątek władze Holandii do wyjaśnienia udziału pracowników firmy zbrojeniowej Destinus \"w przeprowadzaniu ataków terrorystycz",
+        "identity": "https://wiadomosci.onet.pl/swiat/rosja-odgraza-sie-holandii-w-tle-ataki-armii-ukrainskiej-na-most-krymski/hy1x28v"
+      },
+      {
+        "title": "Niespodzianka w nowym sondażu. Jeden z koalicjantów wraca nad próg",
+        "link": "https://wiadomosci.onet.pl/kraj/nowy-sondaz-wyborczy-jeden-z-koalicjantow-wraca-nad-prog/vwyk4k1",
+        "enclosure": "https://cdn.wiadomosci.onet.pl/1/pmlk9lBaHR0cHM6Ly9vY2RuLmV1L3B1bHNjbXMvTURBXy9iYmYyNmQxMTk2MjEyOTRkZDQ5YTdlNjE3ZjdjNWE1Ni5qcGeSlQMAAM0GQM0DhJMFzQlgzQZA3gACoTAHoTEE",
+        "isoDate": "2026-11-20T21:00:11.000Z",
+        "text": "W najnowszym sondażu Instytutu Badań Pollster dla \"Super Expressu\" do Sejmu wchodzi Polskie Stronnictwo Ludowe, które od dawna znajdowało się w kolejnych badani",
+        "identity": "https://wiadomosci.onet.pl/kraj/nowy-sondaz-wyborczy-jeden-z-koalicjantow-wraca-nad-prog/vwyk4k1"
+      },
+      {
+        "title": "Zbigniew Ziobro spotkał się z amerykańskim działaczem. Do sieci trafiło zdjęcie. \"Polski bohater\"",
+        "link": "https://wiadomosci.onet.pl/swiat/nowe-zdjecie-zbigniewa-ziobry-z-usa-polski-bohater-ktorego-tusk-chce-wsadzic/58cp554",
+        "enclosure": "https://cdn.wiadomosci.onet.pl/1/YJsk9lBaHR0cHM6Ly9vY2RuLmV1L3B1bHNjbXMvTURBXy9mOWE4N2JjZjEwZGVkOTBjOTNiNDYzNDI1YTQ4ZWFjMi5wbmeSlQMAAM0HgM0EOJMFzQlgzQZA3gACoTAHoTEE",
+        "isoDate": "2026-11-20T20:49:38.000Z",
+        "text": "Zbigniew Ziobro i jego żona Patrycja Kotecka przebywają w USA, gdzie spotkali się z aktywistą Brianem Brownem. Amerykanin opublikował zdjęcie z polskim polityki",
+        "identity": "https://wiadomosci.onet.pl/swiat/nowe-zdjecie-zbigniewa-ziobry-z-usa-polski-bohater-ktorego-tusk-chce-wsadzic/58cp554"
+      },
+      {
+        "title": "Szczyt UE–Wielka Brytania. Oto najwięksi zwycięzcy i przegrani [ANALIZA]",
+        "link": "https://wiadomosci.onet.pl/politico/szczyt-ue-wielka-brytania-oto-najwieksi-zwyciezcy-i-przegrani-analiza/y5jy8k2",
+        "enclosure": "https://cdn.wiadomosci.onet.pl/1/YDYk9lBaHR0cHM6Ly9vY2RuLmV1L3B1bHNjbXMvTURBXy83NjM2NGU1ZWZlYmM3ZmNjZWUzN2ExNTU0ODFhMmQ2ZC5qcGeSlQNezQEPzRBSzQkvkwXNCWDNBkDeAAKhMAehMQQ",
+        "isoDate": "2026-11-20T20:44:21.000Z",
+        "text": "W piątek przywódcy Wielkiej Brytanii i UE ogłosili długo oczekiwane porozumienia w sprawie żywności, handlu uprawnieniami do emisji oraz programu wymiany młodzi",
+        "identity": "https://wiadomosci.onet.pl/politico/szczyt-ue-wielka-brytania-oto-najwieksi-zwyciezcy-i-przegrani-analiza/y5jy8k2"
+      },
+      {
+        "title": "Radosław Sikorski zapowiada kroki w sprawie Rosji. \"Żelazne dowody\" [RELACJA NA ŻYWO]",
+        "link": "https://wiadomosci.onet.pl/kraj/obiekty-naruszyly-polska-przestrzen-jest-reakcja-msz-ukrainy-relacja-na-zywo/snk07c8",
+        "enclosure": "https://cdn.wiadomosci.onet.pl/1/QCsk9lGaHR0cHM6Ly9vY2RuLmV1L3B1bHNjbXMvTURBXy80YjQ1MDk2NC0yZTgyLTQ0NzYtYWYxOC1kYmM5NGY0YWNiMGIuanBlZ5KVAwDNAS3NDF7NBvaTBc0JYM0GQN4AAqEwB6ExBA",
+        "isoDate": "2026-11-20T20:32:43.000Z",
+        "text": "Napływają nowe informacje na temat piątkowego naruszenia polskiej przestrzeni powietrznej. Rosyjskie obiekty spadły w Mołodyczu i Rudniku nad Sanem na Podkarpac",
+        "identity": "https://wiadomosci.onet.pl/kraj/obiekty-naruszyly-polska-przestrzen-jest-reakcja-msz-ukrainy-relacja-na-zywo/snk07c8"
+      }
+    ]
+  },
+  "https://boop.pl/rss": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Orange rozdaje 20 GB za darmo. Pojawił się jednak błąd, który podwaja ten bonus",
+        "link": "https://boop.pl/rozne/orange-rozdaje-20-gb-za-darmo-pojawil-sie-jednak-blad-ktory-podwaja-ten-bonus",
+        "enclosure": "https://img.boop.pl/uploads/2026/11/081120587274-orange-rozdaje-20-gb-za-darmo-pojaw.jpg?class=1200",
+        "isoDate": "2026-11-20T18:36:33.000Z",
+        "text": "W Orange pojawił się dość ciekawy błąd.",
+        "identity": "https://boop.pl/rozne/orange-rozdaje-20-gb-za-darmo-pojawil-sie-jednak-blad-ktory-podwaja-ten-bonus"
+      },
+      {
+        "title": "Jeremi i Melodia z TikToka. O co chodzi, kto to jest?",
+        "link": "https://boop.pl/rozrywka/jeremi-i-melodia-z-tiktoka-o-co-chodzi-kto-to-jest",
+        "enclosure": "https://img.boop.pl/uploads/2026/11/170720611859-jeremi-i-melodia-z-tiktoka-o-co-cho.jpg?class=1200",
+        "isoDate": "2026-11-20T18:22:44.000Z",
+        "text": "Jakiś czas temu na polskim TikToku pojawia się Jeremi.",
+        "identity": "https://boop.pl/rozrywka/jeremi-i-melodia-z-tiktoka-o-co-chodzi-kto-to-jest"
+      },
+      {
+        "title": "\"Blondynka na autostopie\" chciała pomóc prawdopodobnie uchodźcom. Kapitan się nie zgodził",
+        "link": "https://boop.pl/rozne/blondynka-na-autostopie-chciala-pomoc-prawdopodobnie-uchodzcom-kapitan-sie-nie-zgodzil",
+        "enclosure": "https://img.boop.pl/uploads/2026/11/590620710589-blondynka-na-autostopie-chciala-pom.jpg?class=1200",
+        "isoDate": "2026-11-20T17:32:06.000Z",
+        "text": "Polska influencerka, podróżniczka „Blondynka na autostopie” podczas rejsu natknęła się na grupę osób, prawdopodobnie uchodźców.",
+        "identity": "https://boop.pl/rozne/blondynka-na-autostopie-chciala-pomoc-prawdopodobnie-uchodzcom-kapitan-sie-nie-zgodzil"
+      },
+      {
+        "title": "Cudna nowa kolekcja Dune z Action. Ledwo weszła, a już jest na nią promocja",
+        "link": "https://boop.pl/rozne/cudna-nowa-kolekcja-dune-z-action-ledwo-weszla-a-juz-jest-na-nia-promocja",
+        "enclosure": "https://img.boop.pl/uploads/2026/11/460620592526-cudna-nowa-kolekcja-dune-z-action-l.jpg?class=1200",
+        "isoDate": "2026-11-20T17:13:53.000Z",
+        "text": "Nowa kolekcja, nowa zastawa jest w Action przeceniona i to dość wyraźnie.",
+        "identity": "https://boop.pl/rozne/cudna-nowa-kolekcja-dune-z-action-ledwo-weszla-a-juz-jest-na-nia-promocja"
+      },
+      {
+        "title": "Polacy montowali fotowoltaikę. Teraz dowiadują się, że zapłacą więcej",
+        "link": "https://boop.pl/rozne/macie-fotowoltaike-zaplacicie-wiecej-za-prad-od-przyszlego-roku",
+        "enclosure": "https://img.boop.pl/uploads/2026/11/220520705840-macie-fotowoltaike-zaplacicie-wiece.jpg?class=1200",
+        "isoDate": "2026-11-20T16:12:35.000Z",
+        "text": "Masz panele na dachu?",
+        "identity": "https://boop.pl/rozne/macie-fotowoltaike-zaplacicie-wiecej-za-prad-od-przyszlego-roku"
+      }
+    ]
+  },
+  "https://gry-wideo.pl/rss": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Recenzenci GTA 6 muszą uważać? Rockstar miał wpisać dziennikarza na czarną listę za tekst o GTA 5",
+        "author": "Kelly Błoch",
+        "link": "https://gry-wideo.pl/newsy/rockstar-czarna-lista-recenzja-gta-5/",
+        "enclosure": "https://gry-wideo.pl/wp-content/uploads/2025/11/image-10.png",
+        "isoDate": "2026-11-20T16:23:57.000Z",
+        "text": "Patrick O’Rourke – który w 2013 roku recenzował gry dla kanadyjskiej sieci gazet Postmedia – twierdzi, że Rockstar przestał się z nim kontaktować po jego recenz",
+        "identity": "https://gry-wideo.pl/newsy/rockstar-czarna-lista-recenzja-gta-5/"
+      },
+      {
+        "title": "GTA 6 zgłoszone do prokuratury w Iławie! Publicysta zarzuca grze Rockstara promowanie przemocy i terroryzmu",
+        "author": "Kelly Błoch",
+        "link": "https://gry-wideo.pl/newsy/gta-6-zawiadomienie-prokuratura-ilawa/",
+        "enclosure": "https://gry-wideo.pl/wp-content/uploads/2026/11/image-13.png",
+        "isoDate": "2026-11-20T11:04:49.000Z",
+        "text": "Daniel Foubert – polsko-francuski publicysta piszący o geoekonomii – opublikował 19 listopada na X/Twitterze zdjęcie zawiadomienia o podejrzeniu przestępstwa w ",
+        "identity": "https://gry-wideo.pl/newsy/gta-6-zawiadomienie-prokuratura-ilawa/"
+      },
+      {
+        "title": "Wydali miliard dolarów na GTA 6? Rockstar odrobi zwolnieniami po premierze",
+        "author": "Kelly Błoch",
+        "link": "https://gry-wideo.pl/newsy/gta-6-rockstar-obawy-zwolnienia-po-premierze/",
+        "enclosure": "https://gry-wideo.pl/wp-content/uploads/2025/05/image-12.png",
+        "isoDate": "2026-11-19T18:50:38.000Z",
+        "text": "Nestor Uriarte – programista animacji z Rockstar North – przyznał na łamach The Guardian, że po premierze GTA 6 pracownicy studia obawiają się zwolnień. Jacob N",
+        "identity": "https://gry-wideo.pl/newsy/gta-6-rockstar-obawy-zwolnienia-po-premierze/"
+      },
+      {
+        "title": "Dlaczego GTA 6 mnie WK***IA?",
+        "author": "gry-wideo.pl",
+        "link": "https://gry-wideo.pl/filmy/dlaczego-gta-6-mnie-wkia/",
+        "enclosure": "https://i.ytimg.com/vi/82OKcGujA-8/maxresdefault.jpg",
+        "imageFallback": "https://i1.ytimg.com/vi/82OKcGujA-8/hqdefault.jpg",
+        "isoDate": "2026-11-18T17:00:35.000Z",
+        "text": "Zadbaj o swoją finansową przyszłość z aplikacją XTB - https://link-pso.xtb.com/pso/3STsU\nRejestrując się na XTB z kodem GRY WIDEO otrzymasz specjalny kurs zarzą",
+        "identity": "https://gry-wideo.pl/filmy/dlaczego-gta-6-mnie-wkia/"
+      },
+      {
+        "title": "GTA+ trafi do kampanii fabularnej GTA 6. Abonament z korzyściami w singlowej grze?",
+        "author": "Kelly Błoch",
+        "link": "https://gry-wideo.pl/newsy/gta-6-gtaplus-abonament-w-kampanii/",
+        "enclosure": "https://gry-wideo.pl/wp-content/uploads/2026/06/image-54.png",
+        "isoDate": "2026-11-18T15:47:07.000Z",
+        "text": "Rockstar Games przeniesie abonament GTA+ do kampanii fabularnej GTA 6, która zadebiutuje 19 listopada 2026 roku na PS5 i Xbox Series X|S. Subskrybenci dostaną m",
+        "identity": "https://gry-wideo.pl/newsy/gta-6-gtaplus-abonament-w-kampanii/"
+      }
+    ]
+  },
+  "https://lowcygier.pl/rss": {
+    "parser": "parseXML",
+    "entries": 5,
+    "items": [
+      {
+        "title": "Pad Nintendo Switch 2 Pro Controller Resident Evil Requiem Edition za 328,89 zł w Empiku",
+        "author": "Kamil \"Nesus\" Pasternak",
+        "link": "https://lowcygier.pl/sprzet-gamingowy/pad-nintendo-switch-2-pro-controller-resident-evil-requiem-edition-za-32889-zl-w-empiku/",
+        "enclosure": "https://lowcygier.pl/wp-content/uploads/2026/01/Preorder-Nintendo-Switch-2-Pro-Controller-Resident-Evil-Requiem-Edition-za-378-zl-w-Empiku_miniaturka.jpg",
+        "imageFallback": "https://lowcygier.pl/wp-content/uploads/2026/01/Preorder-Nintendo-Switch-2-Pro-Controller-Resident-Evil-Requiem-Edition-za-378-zl-w-Empiku_miniaturka-224x224.jpg",
+        "isoDate": "2026-11-20T22:04:14.000Z",
+        "text": "Gra Resident Evil Requiem, czyli najnowsza odsłona legendarnej serii od firmy CAPCOM zadebiutowała zadebiutowała na rynku na początku 2026 roku. W tym samym cza",
+        "identity": "https://lowcygier.pl/sprzet-gamingowy/pad-nintendo-switch-2-pro-controller-resident-evil-requiem-edition-za-32889-zl-w-empiku/"
+      },
+      {
+        "title": "Zestaw Silent Hill 2 + Silent Hill f na konsole Xbox Series za 150 zł (możliwe 132 zł) w Xbox Store!",
+        "author": "Kamil \"Nesus\" Pasternak",
+        "link": "https://lowcygier.pl/promocje-cyfrowe/zestaw-silent-hill-2-silent-hill-f-na-konsole-xbox-series-za-150-zl-mozliwe-132-zl-w-xbox-store/",
+        "enclosure": "https://lowcygier.pl/wp-content/uploads/2026/11/Zestaw-Silent-Hill-2-Silent-Hill-f-na-konsole-Xbox-Series-za-150-zl-mozliwe-132-zl-w-Xbox-Store_minaturka.jpg",
+        "imageFallback": "https://lowcygier.pl/wp-content/uploads/2026/11/Zestaw-Silent-Hill-2-Silent-Hill-f-na-konsole-Xbox-Series-za-150-zl-mozliwe-132-zl-w-Xbox-Store_minaturka-224x224.jpg",
+        "isoDate": "2026-11-20T20:46:12.000Z",
+        "text": "Łowcy, w ramach trwającej w Xbox Store wyprzedaży Black Friday 2026 pojawiło się kilka ciekawych promocji, w tym bardzo dobre oferty na najnowsze odsłony kultow",
+        "identity": "https://lowcygier.pl/promocje-cyfrowe/zestaw-silent-hill-2-silent-hill-f-na-konsole-xbox-series-za-150-zl-mozliwe-132-zl-w-xbox-store/"
+      },
+      {
+        "title": "Stwórz perfekcyjną talię kart z Humble Bundle. Zestaw 7 gier Steam dostępny za 60 zł!",
+        "author": "Kamil \"Nesus\" Pasternak",
+        "link": "https://lowcygier.pl/bundle/stworz-perfekcyjna-talie-kart-z-humble-bundle-zestaw-7-gier-steam-dostepny-za-60-zl/",
+        "enclosure": "https://lowcygier.pl/wp-content/uploads/2026/11/Stworz-perfekcyjna-talie-kart-z-Humble-Bundle.-Zestaw-7-gier-Steam-dostepny-od-60-zl_miniaturka.jpg",
+        "imageFallback": "https://lowcygier.pl/wp-content/uploads/2026/11/Stworz-perfekcyjna-talie-kart-z-Humble-Bundle.-Zestaw-7-gier-Steam-dostepny-od-60-zl_miniaturka-224x224.jpg",
+        "isoDate": "2026-11-20T20:11:56.000Z",
+        "text": "Łowcy, tego wieczora zespół Humble Bundle przygotował ciekawą paczkę dedykowaną amatorom gier o budowaniu tali kart. W ramach zestawu Humble Deck the Halls with",
+        "identity": "https://lowcygier.pl/bundle/stworz-perfekcyjna-talie-kart-z-humble-bundle-zestaw-7-gier-steam-dostepny-za-60-zl/"
+      },
+      {
+        "title": "Weekendowe Łowy: Jak zdobyć GTA VI ZA DARMO na PS5 i XSX? Premiera, promocje i oceny!",
+        "author": "Kamil \"Nesus\" Pasternak",
+        "link": "https://lowcygier.pl/filmy/weekendowe-lowy-jak-zdobyc-gta-vi-za-darmo-na-ps5-i-xsx-premiera-promocje-i-oceny/",
+        "enclosure": "https://lowcygier.pl/wp-content/uploads/2026/11/Weekendowe-Lowy_-Jak-zdobyc-GTA-VI-ZA-DARMO-na-PS5-i-XSX_-Premiera-promocje-i-oceny_minaturka.jpg",
+        "imageFallback": "https://lowcygier.pl/wp-content/uploads/2026/11/Weekendowe-Lowy_-Jak-zdobyc-GTA-VI-ZA-DARMO-na-PS5-i-XSX_-Premiera-promocje-i-oceny_minaturka-224x224.jpg",
+        "isoDate": "2026-11-20T19:52:15.000Z",
+        "text": "Łowcy, przedstawiamy Wam trzecie w tym miesiącu podsumowanie ostatnich siedmiu dni z cyklu Weekendowe Łowy. Filmowe zestawienie, pozwalające zobaczyć w pigułce ",
+        "identity": "https://lowcygier.pl/filmy/weekendowe-lowy-jak-zdobyc-gta-vi-za-darmo-na-ps5-i-xsx-premiera-promocje-i-oceny/"
+      },
+      {
+        "title": "Zagraj w Deadlink za darmo na konsolach Xbox. Trzy nowe gry w usłudze Free Play Days!",
+        "author": "Kamil \"Nesus\" Pasternak",
+        "link": "https://lowcygier.pl/darmowe/zagraj-w-deadlink-za-darmo-na-konsolach-xbox-trzy-nowe-gry-w-usludze-free-play-days/",
+        "enclosure": "https://lowcygier.pl/wp-content/uploads/2026/11/Zagraj-w-Deadlink-za-darmo-na-konsolach-Xbox.-Trzy-nowe-gry-w-usludze-Free-Play-Days_miniaturka.jpg",
+        "imageFallback": "https://lowcygier.pl/wp-content/uploads/2026/11/Zagraj-w-Deadlink-za-darmo-na-konsolach-Xbox.-Trzy-nowe-gry-w-usludze-Free-Play-Days_miniaturka-224x224.jpg",
+        "isoDate": "2026-11-20T19:31:33.000Z",
+        "text": "Dzięki trzeciej w listopadzie odsłonie Xbox Free Play Days, posiadacze konsol Microsoftu mogą przetestować trzy nowe produkcje na Xbox One i Xbox Series X|S. Pr",
+        "identity": "https://lowcygier.pl/darmowe/zagraj-w-deadlink-za-darmo-na-konsolach-xbox-trzy-nowe-gry-w-usludze-free-play-days/"
+      }
+    ]
+  }
+}

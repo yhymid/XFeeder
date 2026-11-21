@@ -1,0 +1,22 @@
+{
+  "name": "dev",
+  "description": "Code activity: GitHub commits (30 px avatars), GitHub user activity (HTML), Gitea (relative links), FMHY tracker",
+  "feeds": [
+    {
+      "url": "https://github.com/yhymid/XFeeder/commits/3.0-beta.atom",
+      "sample": "tests/fixtures/profiles/dev/github-commits.atom"
+    },
+    {
+      "url": "https://github.com/yhymid.atom",
+      "sample": "tests/fixtures/profiles/dev/github-activity.atom"
+    },
+    {
+      "url": "https://git.marmak.net.pl/MARMAK/mirror.rss",
+      "sample": "tests/fixtures/profiles/dev/gitea.xml"
+    },
+    {
+      "url": "https://fmhy-tracker.pages.dev/feed.xml",
+      "sample": "tests/fixtures/profiles/dev/fmhy-tracker.xml"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+<channel>
+	<title>BOOP.PL</title>
+	<atom:link href="https://boop.pl/rss" rel="self" type="application/rss+xml" />
+	<link>https://boop.pl</link>
+	<description>Nowości ze świata rozrywki i gier</description>
+	<language>pl-PL</language>
+	<lastBuildDate>Fri, 20 Nov 2026 18:36:33 +0000</lastBuildDate>
+	<image>
+		<url>https://boop.pl/assets/icon/favicon-32x32.png</url>
+		<title>BOOP.PL</title>
+		<link>https://boop.pl</link>
+		<width>32</width>
+		<height>32</height>
+	</image>
+	<item>
+		<title><![CDATA[Orange rozdaje 20 GB za darmo. Pojawił się jednak błąd, który podwaja ten bonus]]></title>
+		<link>https://boop.pl/rozne/orange-rozdaje-20-gb-za-darmo-pojawil-sie-jednak-blad-ktory-podwaja-ten-bonus</link>
+		<pubDate>Fri, 20 Nov 2026 18:36:33 +0000</pubDate>
+		<guid isPermaLink="false">45740436-203311-261833</guid>
+		<category>Różne</category>
+		<description><![CDATA[W Orange pojawił się dość ciekawy błąd.]]></description>
+		<enclosure url="https://img.boop.pl/uploads/2026/11/081120587274-orange-rozdaje-20-gb-za-darmo-pojaw.jpg?class=1200" length="0" type="image/jpeg"/>
+	</item>
+	<item>
+		<title><![CDATA[Jeremi i Melodia z TikToka. O co chodzi, kto to jest?]]></title>
+		<link>https://boop.pl/rozrywka/jeremi-i-melodia-z-tiktoka-o-co-chodzi-kto-to-jest</link>
+		<pubDate>Fri, 20 Nov 2026 18:22:44 +0000</pubDate>
+		<guid isPermaLink="false">45750222-204411-261844</guid>
+		<category>Rozrywka</category>
+		<description><![CDATA[Jakiś czas temu na polskim TikToku pojawia się Jeremi.]]></description>
+		<enclosure url="https://img.boop.pl/uploads/2026/11/170720611859-jeremi-i-melodia-z-tiktoka-o-co-cho.jpg?class=1200" length="0" type="image/jpeg"/>
+	</item>
+	<item>
+		<title><![CDATA["Blondynka na autostopie" chciała pomóc prawdopodobnie uchodźcom. Kapitan się nie zgodził]]></title>
+		<link>https://boop.pl/rozne/blondynka-na-autostopie-chciala-pomoc-prawdopodobnie-uchodzcom-kapitan-sie-nie-zgodzil</link>
+		<pubDate>Fri, 20 Nov 2026 17:32:06 +0000</pubDate>
+		<guid isPermaLink="false">45749632-200611-261706</guid>
+		<category>Różne</category>
+		<description><![CDATA[Polska influencerka, podróżniczka &#8222;Blondynka na autostopie&#8221; podczas rejsu natknęła się na grupę osób, prawdopodobnie uchodźców.]]></description>
+		<enclosure url="https://img.boop.pl/uploads/2026/11/590620710589-blondynka-na-autostopie-chciala-pom.jpg?class=1200" length="0" type="image/jpeg"/>
+	</item>
+	<item>
+		<title><![CDATA[Cudna nowa kolekcja Dune z Action. Ledwo weszła, a już jest na nią promocja]]></title>
+		<link>https://boop.pl/rozne/cudna-nowa-kolekcja-dune-z-action-ledwo-weszla-a-juz-jest-na-nia-promocja</link>
+		<pubDate>Fri, 20 Nov 2026 17:13:53 +0000</pubDate>
+		<guid isPermaLink="false">45748913-205311-261753</guid>
+		<category>Różne</category>
+		<description><![CDATA[Nowa kolekcja, nowa zastawa jest w Action przeceniona i to dość wyraźnie.]]></description>
+		<enclosure url="https://img.boop.pl/uploads/2026/11/460620592526-cudna-nowa-kolekcja-dune-z-action-l.jpg?class=1200" length="0" type="image/jpeg"/>
+	</item>
+	<item>
+		<title><![CDATA[Polacy montowali fotowoltaikę. Teraz dowiadują się, że zapłacą więcej]]></title>
+		<link>https://boop.pl/rozne/macie-fotowoltaike-zaplacicie-wiecej-za-prad-od-przyszlego-roku</link>
+		<pubDate>Fri, 20 Nov 2026 16:12:35 +0000</pubDate>
+		<guid isPermaLink="false">45745812-203511-261635</guid>
+		<category>Różne</category>
+		<description><![CDATA[Masz panele na dachu?]]></description>
+		<enclosure url="https://img.boop.pl/uploads/2026/11/220520705840-macie-fotowoltaike-zaplacicie-wiece.jpg?class=1200" length="0" type="image/jpeg"/>
+	</item>
+  </channel>
+</rss>

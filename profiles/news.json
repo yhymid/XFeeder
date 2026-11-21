@@ -1,0 +1,22 @@
+{
+  "name": "news",
+  "description": "Polish news and deals sites: RSS 2.0 with enclosures, WordPress thumbnails, Cloudflare (boop, gry-wideo)",
+  "feeds": [
+    {
+      "url": "https://wiadomosci.onet.pl/.feed",
+      "sample": "tests/fixtures/profiles/news/onet.xml"
+    },
+    {
+      "url": "https://boop.pl/rss",
+      "sample": "tests/fixtures/profiles/news/boop.xml"
+    },
+    {
+      "url": "https://gry-wideo.pl/rss",
+      "sample": "tests/fixtures/profiles/news/gry-wideo.xml"
+    },
+    {
+      "url": "https://lowcygier.pl/rss",
+      "sample": "tests/fixtures/profiles/news/lowcygier.xml"
+    }
+  ]
+}

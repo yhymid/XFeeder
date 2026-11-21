@@ -24,6 +24,8 @@ pub enum SendError {
     /// The destination itself is gone or forbidden (deleted thread/webhook,
     /// revoked token, unknown chat); retrying other entries now is pointless.
     Unreachable(String),
+    /// The message to edit no longer exists.
+    Gone,
 }
 
 /// Discord answers that do not depend on the message being sent.
@@ -307,14 +309,32 @@ fn discord_retry_ms(response: &http::Response, attempt: u32) -> u64 {
     clamp(500.0 * 2f64.powi(attempt as i32))
 }
 
-pub async fn send_webhook(
+/// A message posted through a webhook.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SentMessage {
+    pub id: String,
+    /// Channel or thread the message is in.
+    pub channel_id: String,
+}
+
+/// Webhook URL with `with_components`, `wait` and `thread_id`; with a
+/// message id, the URL of that message (for editing).
+fn webhook_url(
     webhook: &str,
     thread: Option<&str>,
-    entry: &Value,
-    cancel: &CancellationToken,
-) -> Result<(), SendError> {
+    message: Option<&str>,
+) -> Result<url::Url, SendError> {
     let mut url =
         url::Url::parse(webhook).map_err(|_| SendError::Failed("Invalid webhookUrl.".into()))?;
+    if let Some(id) = message {
+        if !id.chars().all(|c| c.is_ascii_digit()) || id.is_empty() {
+            return Err(SendError::Failed("Invalid message id.".into()));
+        }
+        url.path_segments_mut()
+            .map_err(|_| SendError::Failed("Invalid webhookUrl.".into()))?
+            .pop_if_empty()
+            .extend(["messages", id]);
+    }
     let retained: Vec<(String, String)> = url
         .query_pairs()
         .filter(|(k, _)| !matches!(k.as_ref(), "with_components" | "wait" | "thread_id"))
@@ -325,38 +345,33 @@ pub async fn send_webhook(
         query
             .clear()
             .extend_pairs(retained)
-            .append_pair("with_components", "true")
-            .append_pair("wait", "true");
+            .append_pair("with_components", "true");
+        if message.is_none() {
+            query.append_pair("wait", "true");
+        }
         if let Some(thread) = thread.filter(|t| !t.is_empty() && *t != "null") {
             query.append_pair("thread_id", thread);
         }
     }
-    let (payload, label) = webhook_payload(entry);
-    if payload["components"][0]["components"]
-        .as_array()
-        .is_none_or(Vec::is_empty)
-    {
-        return Err(SendError::Failed(
-            "Components payload is empty after sanitization.".into(),
-        ));
-    }
+    Ok(url)
+}
+
+/// POST (new message) or PATCH (edit) with Discord's 429 handling.
+async fn webhook_call(
+    url: &url::Url,
+    payload: &Value,
+    edit: bool,
+    label: &str,
+    cancel: &CancellationToken,
+) -> Result<http::Response, SendError> {
     for attempt in 0..=MAX_429_RETRIES {
-        let started = std::time::Instant::now();
-        match http::post_json(url.as_str(), &payload, None, cancel).await {
-            Ok(response) => {
-                let body = serde_json::from_str::<Value>(&response.body).unwrap_or(Value::Null);
-                let confirmed = truthy(get(&body, "id"));
-                crate::info!(
-                    "ComponentsV2",
-                    "Sent: {} (HTTP {}, {}ms, confirmed={confirmed}, message={} channel={})",
-                    crate::diag::sanitize_text(&label),
-                    response.status,
-                    started.elapsed().as_millis(),
-                    js::to_string_or_empty(get(&body, "id")),
-                    js::to_string_or_empty(get(&body, "channel_id"))
-                );
-                return Ok(());
-            }
+        let result = if edit {
+            http::patch_json(url.as_str(), payload, None, cancel).await
+        } else {
+            http::post_json(url.as_str(), payload, None, cancel).await
+        };
+        match result {
+            Ok(response) => return Ok(response),
             Err(HttpError::Status(response))
                 if response.status == 429 && attempt < MAX_429_RETRIES =>
             {
@@ -391,24 +406,88 @@ pub async fn send_webhook(
                     .unwrap_or_default();
                 crate::error!(
                     "Discord delivery",
-                    "Webhook delivery failed: {error}{}",
+                    "Webhook {} failed for {}: {error}{}",
+                    if edit { "edit" } else { "delivery" },
+                    crate::diag::sanitize_text(label),
                     crate::diag::sanitize_text(&detail)
                 );
-                if let Some(r) = error.response()
-                    && discord_target_gone(r.status, &r.body)
-                {
-                    return Err(SendError::Unreachable(format!(
-                        "{error}{}",
-                        crate::diag::sanitize_text(&detail)
-                    )));
+                if let Some(r) = error.response() {
+                    // Editing a message that was deleted: not a dead target.
+                    if edit && r.status == 404 && r.body.contains("10008") {
+                        return Err(SendError::Gone);
+                    }
+                    if discord_target_gone(r.status, &r.body) {
+                        return Err(SendError::Unreachable(format!(
+                            "{error}{}",
+                            crate::diag::sanitize_text(&detail)
+                        )));
+                    }
                 }
                 return Err(error.into());
             }
         }
     }
     Err(SendError::Failed(
-        "Discord rate limit retries exhausted".into(),
+        "Discord rate limit retries exhausted.".into(),
     ))
+}
+
+pub async fn send_webhook(
+    webhook: &str,
+    thread: Option<&str>,
+    entry: &Value,
+    cancel: &CancellationToken,
+) -> Result<Option<SentMessage>, SendError> {
+    let url = webhook_url(webhook, thread, None)?;
+    let (payload, label) = webhook_payload(entry);
+    if payload["components"][0]["components"]
+        .as_array()
+        .is_none_or(Vec::is_empty)
+    {
+        return Err(SendError::Failed(
+            "Components payload is empty after sanitization.".into(),
+        ));
+    }
+    let started = std::time::Instant::now();
+    let response = webhook_call(&url, &payload, false, &label, cancel).await?;
+    let body = serde_json::from_str::<Value>(&response.body).unwrap_or(Value::Null);
+    let id = js::to_string_or_empty(get(&body, "id"));
+    let channel_id = js::to_string_or_empty(get(&body, "channel_id"));
+    crate::info!(
+        "ComponentsV2",
+        "Sent: {} (HTTP {}, {}ms, confirmed={}, message={id} channel={channel_id})",
+        crate::diag::sanitize_text(&label),
+        response.status,
+        started.elapsed().as_millis(),
+        !id.is_empty(),
+    );
+    Ok((!id.is_empty()).then_some(SentMessage { id, channel_id }))
+}
+
+/// Replace a message this webhook sent earlier with the current layout of
+/// `entry` (`xfeeder rerender`, Steam + SteamDB merging).
+pub async fn edit_webhook(
+    webhook: &str,
+    thread: Option<&str>,
+    message_id: &str,
+    entry: &Value,
+    cancel: &CancellationToken,
+) -> Result<(), SendError> {
+    let url = webhook_url(webhook, thread, Some(message_id))?;
+    let (payload, label) = webhook_payload(entry);
+    // The message already has the Components V2 flag; an edit sends only
+    // the new components.
+    let payload = json!({ "components": payload["components"] });
+    let started = std::time::Instant::now();
+    let response = webhook_call(&url, &payload, true, &label, cancel).await?;
+    crate::info!(
+        "ComponentsV2",
+        "Edited: {} (HTTP {}, {}ms, message={message_id})",
+        crate::diag::sanitize_text(&label),
+        response.status,
+        started.elapsed().as_millis(),
+    );
+    Ok(())
 }
 
 // ---------------------------------------------------------------- Telegram --
@@ -948,5 +1027,26 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("Anonymous"));
+    }
+}
+
+#[cfg(test)]
+mod webhook_url_tests {
+    use super::webhook_url;
+
+    #[test]
+    fn send_and_edit_urls() {
+        let hook = "https://discord.com/api/webhooks/1/tok?wait=false&x=1";
+        let send = webhook_url(hook, Some("55"), None).unwrap();
+        assert_eq!(
+            send.as_str(),
+            "https://discord.com/api/webhooks/1/tok?x=1&with_components=true&wait=true&thread_id=55"
+        );
+        let edit = webhook_url(hook, None, Some("99")).unwrap();
+        assert_eq!(
+            edit.as_str(),
+            "https://discord.com/api/webhooks/1/tok/messages/99?x=1&with_components=true"
+        );
+        assert!(webhook_url(hook, None, Some("../x")).is_err());
     }
 }

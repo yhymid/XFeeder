@@ -824,13 +824,34 @@ pub async fn post_json(
     timeout_ms: Option<u64>,
     cancel: &CancellationToken,
 ) -> Result<Response, HttpError> {
+    send_json(reqwest::Method::POST, url, payload, timeout_ms, cancel).await
+}
+
+/// PATCH with a JSON body (editing a webhook message).
+pub async fn patch_json(
+    url: &str,
+    payload: &Value,
+    timeout_ms: Option<u64>,
+    cancel: &CancellationToken,
+) -> Result<Response, HttpError> {
+    send_json(reqwest::Method::PATCH, url, payload, timeout_ms, cancel).await
+}
+
+async fn send_json(
+    method: reqwest::Method,
+    url: &str,
+    payload: &Value,
+    timeout_ms: Option<u64>,
+    cancel: &CancellationToken,
+) -> Result<Response, HttpError> {
     let parsed = parse_url(url)?;
     let started = Instant::now();
     let mut phases = None;
-    let result = post_inner(&parsed, payload, timeout_ms, cancel, &mut phases).await;
+    let label = method.as_str().to_string();
+    let result = post_inner(method, &parsed, payload, timeout_ms, cancel, &mut phases).await;
     let permitted = phases.map_or(started, |(p, _)| p);
     record_timing(
-        "POST",
+        &label,
         &parsed,
         started,
         permitted,
@@ -841,6 +862,7 @@ pub async fn post_json(
 }
 
 async fn post_inner(
+    method: reqwest::Method,
     parsed: &url::Url,
     payload: &Value,
     timeout_ms: Option<u64>,
@@ -855,7 +877,7 @@ async fn post_inner(
     let body = serde_json::to_vec(payload).unwrap_or_default();
     net.record(0, body.len() as u64);
     let mut request = client
-        .post(parsed.clone())
+        .request(method, parsed.clone())
         .header("content-type", "application/json")
         .body(body);
     if let Some(ms) = timeout_ms.filter(|ms| *ms > 0) {

@@ -777,6 +777,7 @@ xfeeder [run] [--dry-run] [--once] [--check-config] [--debug-expert]
               [--config ŚCIEŻKA] [--cache ŚCIEŻKA]
 xfeeder dashboard [--data-dir FOLDER]
 xfeeder preview <URL>... [--profile NAZWA] [--items N] [--bench N] [--json]
+xfeeder rerender [--channel NAZWA] [--hours N] [--limit N] [--apply]
 xfeeder --version | --help
 ```
 
@@ -788,6 +789,7 @@ xfeeder --version | --help
 | `--debug-expert` | Szczegółowe zdarzenia techniczne w logu (sekrety są ukryte). |
 | `--config`, `--cache` | Inne położenie `config.json` i `cache.json` (domyślnie bieżący folder). |
 | `preview <URL>` | Pokazuje, co XFeeder odczyta z feedu (tytuł, autor, data, obrazek, link, tekst) i ile trwa pobranie, parsowanie i sprawdzenie obrazka. Nic nie wysyła i nie zapisuje; używa Scraplinga, solvera i proxy z `config.json`. `--bench 10` mierzy 10 razy (min/mediana/p95/max), `--profile news` sprawdza wszystkie feedy profilu, `--json` daje wynik dla skryptów. |
+| `rerender` | Przebudowuje wysłane już posty Discorda w aktualnym wyglądzie, edytując wiadomości przez ich webhook (nic nowego nie wysyła). Korzysta z `sent.json` (obok `cache.json`, zapisywany od tej wersji: ID wiadomości i treść wpisu, bez adresów webhooków), więc starsze posty zostają bez zmian. Bez `--apply` tylko wypisuje, co by zmienił. `--channel channels11#11` ogranicza do kanału, `--hours 24` do ostatnich godzin, `--limit` (50) do najnowszych postów. |
 | `dashboard --data-dir` | Uruchamia panel WWW dla folderu z `config.json`. Domyślnie `http://127.0.0.1:3000`. Steruje tylko workerem, którego sam uruchomił; worker z systemd obsługuje `systemctl`. |
 
 ```sh

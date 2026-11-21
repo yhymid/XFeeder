@@ -17,7 +17,9 @@ mod parsers;
 mod preview;
 #[cfg(test)]
 mod profile_tests;
+mod rerender;
 mod scrapling;
+mod sent;
 mod solver;
 mod state;
 mod telemetry;
@@ -36,6 +38,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const HELP: &str = "Usage: xfeeder [run] [options]
        xfeeder dashboard [--data-dir DIR]
        xfeeder preview <URL>... [--profile NAME] [--bench N]   (see xfeeder preview --help)
+       xfeeder rerender [--channel NAME] [--hours N] [--apply]   rebuild sent Discord posts in the current layout
 
 Worker options:
   --dry-run       Simulate deliveries without persisting cache changes.
@@ -78,7 +81,10 @@ pub async fn shutdown_signal() -> &'static str {
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let preview = args.first().map(String::as_str) == Some("preview");
+    let preview = matches!(
+        args.first().map(String::as_str),
+        Some("preview" | "rerender")
+    );
     if !preview && args.iter().any(|a| a == "--help" || a == "-h") {
         println!("{HELP}");
         return ExitCode::SUCCESS;
@@ -93,7 +99,10 @@ fn main() -> ExitCode {
         .build()
         .expect("tokio runtime");
     if preview {
-        args.remove(0);
+        let command = args.remove(0);
+        if command == "rerender" {
+            return runtime.block_on(rerender::run(args));
+        }
         return runtime.block_on(preview::run(args));
     }
     if args.first().map(String::as_str) == Some("dashboard") {

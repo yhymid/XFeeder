@@ -10,6 +10,10 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- `xfeeder rerender`: rebuilds Discord posts already sent in the current layout by editing
+  them through their webhook (dry listing without `--apply`; `--channel`, `--hours`,
+  `--limit`). Posts are known from `sent.json` (message id + entry, no webhook URLs, newest
+  2000), written from this version on; older posts stay as they are.
 - `Settings.AdaptivePolling` (off by default): every feed gets its own check interval
   from the dates of its entries. After a fresh entry (`BurstHours`, 6) the feed is checked
   every `MinMinutes` (5), because game updates come in series; otherwise every average

@@ -128,6 +128,7 @@ impl App {
             .parent()
             .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
         crate::clearance::init(crate::clearance::path_for(&base), !dry_run);
+        crate::sent::init(crate::sent::path_for(&base.join("cache.json")), !dry_run);
         let app = Arc::new(Self {
             config_path: config_path.to_path_buf(),
             base,
@@ -311,8 +312,11 @@ impl App {
         crate::deliver::working_image(entry, &self.cancel).await.0
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn deliver(
         &self,
+        channel_key: &str,
+        identity: &str,
         label: &str,
         source: &str,
         target: Target,
@@ -356,6 +360,12 @@ impl App {
                 )
                 .await
             }
+            .map(|message| {
+                // Kept for later edits (`xfeeder rerender`, Steam merging).
+                if let Some(message) = message {
+                    crate::sent::record(channel_key, source, identity, &message, entry);
+                }
+            }),
             Target::Telegram => match &targets.telegram {
                 Some(tg) => deliver::send_telegram(tg, entry, &self.cancel).await,
                 None => Ok(()),
@@ -383,6 +393,7 @@ impl App {
                 );
                 Ok(Sent::Unreachable)
             }
+            Err(SendError::Gone) => Ok(Sent::Failed),
             Err(SendError::Failed(message)) => {
                 crate::error!(
                     "Channel",
@@ -662,7 +673,17 @@ impl App {
                     failed = true;
                     continue;
                 }
-                let delivered = self.deliver(&label, source, target, targets, entry).await;
+                let delivered = self
+                    .deliver(
+                        &channel.cache_key,
+                        identity,
+                        &label,
+                        source,
+                        target,
+                        targets,
+                        entry,
+                    )
+                    .await;
                 if !self.dry_run {
                     // Pace provider requests even after a failure.
                     let pause = self.sleep(SEND_DELAY).await;

@@ -7,6 +7,7 @@
 !.env.example
 /config.json
 clearance.json
+sent.json
 
 # Application state (default paths) and atomic write leftovers
 /cache.json

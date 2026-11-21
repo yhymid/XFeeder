@@ -477,6 +477,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/config/remove-section") => remove_section(server, req),
         (true, "/channels/duplicate") => channel_duplicate(server, req),
         (false, "/activity") => activity(server, req),
+        (false, "/channel") => channel_page(server, req),
         (false, "/logs") => logs_page(req).await,
         (false, "/feed") => feed_page(server, req),
         (true, "/feed/test") => feed_test(server, req).await,
@@ -1584,6 +1585,31 @@ fn charts_html(posts: &[crate::sent::Record], labels: &HashMap<String, String>) 
     if posts.is_empty() {
         return String::new();
     }
+    let week_ago = chrono::Utc::now().timestamp_millis() - 7 * 86_400_000;
+    let mut per_channel: HashMap<String, u64> = HashMap::new();
+    for post in posts.iter().filter(|p| p.sent_at >= week_ago) {
+        let name = labels
+            .get(&post.channel)
+            .cloned()
+            .unwrap_or_else(|| post.channel.clone());
+        *per_channel.entry(name).or_default() += 1;
+    }
+    let mut channels: Vec<(String, u64)> = per_channel.into_iter().collect();
+    channels.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    format!(
+        "<div class=\"split charts\"><section><h2>Posts per day</h2><div class=\"panel\">{}</div></section>\
+         <section><h2>Posts per channel, last 7 days</h2><div class=\"panel\">{}</div></section></div>",
+        days_chart(posts),
+        if channels.is_empty() {
+            "<p class=\"muted\">No posts in the last 7 days.</p>".to_string()
+        } else {
+            hbar_list(&channels)
+        }
+    )
+}
+
+/// Posts per day over the last 30 days.
+fn days_chart(posts: &[crate::sent::Record]) -> String {
     let today = chrono::Local::now().date_naive();
     let day_of = |ms: i64| {
         chrono::DateTime::from_timestamp_millis(ms)
@@ -1608,27 +1634,7 @@ fn charts_html(posts: &[crate::sent::Record], labels: &HashMap<String, String>) 
             )
         })
         .collect();
-    let week_ago = chrono::Utc::now().timestamp_millis() - 7 * 86_400_000;
-    let mut per_channel: HashMap<String, u64> = HashMap::new();
-    for post in posts.iter().filter(|p| p.sent_at >= week_ago) {
-        let name = labels
-            .get(&post.channel)
-            .cloned()
-            .unwrap_or_else(|| post.channel.clone());
-        *per_channel.entry(name).or_default() += 1;
-    }
-    let mut channels: Vec<(String, u64)> = per_channel.into_iter().collect();
-    channels.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    format!(
-        "<div class=\"split charts\"><section><h2>Posts per day</h2><div class=\"panel\">{}</div></section>\
-         <section><h2>Posts per channel, last 7 days</h2><div class=\"panel\">{}</div></section></div>",
-        bar_chart(&days, "Posts per day"),
-        if channels.is_empty() {
-            "<p class=\"muted\">No posts in the last 7 days.</p>".to_string()
-        } else {
-            hbar_list(&channels)
-        }
-    )
+    bar_chart(&days, "Posts per day")
 }
 
 /// Channel name of a post, linking to that channel's posts.
@@ -1965,6 +1971,172 @@ fn channel_entries(config: &Value) -> Vec<(String, String, Value)> {
     out
 }
 
+/// History of one channel in cache.json: feed::target → remembered ids.
+fn channel_history(server: &Server, channel: &config::Channel) -> Map<String, Value> {
+    let cache = read_json(&server.paths.cache);
+    [
+        Some(channel.cache_key.as_str()),
+        channel.legacy_cache_key.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|k| cache.get(k).and_then(Value::as_object).cloned())
+    .unwrap_or_default()
+}
+
+fn destination(channel: &config::Channel) -> String {
+    let mut out = Vec::new();
+    if !channel.webhook.is_empty() {
+        out.push(match &channel.thread {
+            Some(t) => format!("Discord thread {t}"),
+            None => "Discord".into(),
+        });
+    }
+    if channel.telegram.as_ref().is_some_and(|t| t.is_target()) {
+        out.push("Telegram".into());
+    }
+    if out.is_empty() {
+        "none".into()
+    } else {
+        out.join(" + ")
+    }
+}
+
+fn channel_page(server: &Server, req: &Req) -> Response {
+    let (group, key) = (req.q("group"), req.q("key"));
+    let Some(channel) = runtime_channel(server, group, key) else {
+        return page(
+            req,
+            StatusCode::NOT_FOUND,
+            "Not found",
+            "<p>Channel not found. <a href=\"/channels\">Channels</a></p>",
+        );
+    };
+    let q = format!("group={}&amp;key={}", esc(&enc(group)), esc(&enc(key)));
+    let snapshots = feed_snapshots(server);
+    let history = channel_history(server, &channel);
+    let keys = [
+        Some(channel.cache_key.as_str()),
+        channel.legacy_cache_key.as_deref(),
+    ];
+    let posts: Vec<crate::sent::Record> = recent_posts(server, 2000)
+        .into_iter()
+        .filter(|p| keys.contains(&Some(p.channel.as_str())))
+        .collect();
+    let week_ago = chrono::Utc::now().timestamp_millis() - 7 * 86_400_000;
+    let remembered: usize = history
+        .values()
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .sum();
+    let intervals: Vec<u64> = channel
+        .feeds
+        .iter()
+        .map(|f| feed_interval(&channel, snapshots.get(f).unwrap_or(&Value::Null)).0)
+        .collect();
+    let (lo, hi) = (
+        intervals.iter().min().copied().unwrap_or(0),
+        intervals.iter().max().copied().unwrap_or(0),
+    );
+    let mut body = format!(
+        "<p class=\"row\"><a class=\"button\" href=\"/channels/edit?{q}\">Edit</a>\
+         <a class=\"button secondary\" href=\"/channel/history?{q}\">Delivery history</a>\
+         <form method=\"post\" action=\"/channel/check\" class=\"inline\">{}{}<button class=\"secondary\">Check now</button></form></p>\
+         <div class=\"cards\">",
+        hidden("group", group),
+        hidden("key", key),
+    );
+    for (label, value, sub) in [
+        (
+            "Destination",
+            destination(&channel),
+            format!("key {}", channel.cache_key),
+        ),
+        (
+            "Feeds",
+            channel.feeds.len().to_string(),
+            format!("max {} per run", channel.request_send),
+        ),
+        (
+            "Checked every",
+            if lo == hi {
+                format!("{} min", minutes(lo))
+            } else {
+                format!("{}–{} min", minutes(lo), minutes(hi))
+            },
+            format!("TimeChecker {} min", channel.time_checker),
+        ),
+        (
+            "Posts, 7 days",
+            posts
+                .iter()
+                .filter(|p| p.sent_at >= week_ago)
+                .count()
+                .to_string(),
+            format!("{} recorded", posts.len()),
+        ),
+        (
+            "Remembered entries",
+            remembered.to_string(),
+            "in cache.json".into(),
+        ),
+    ] {
+        let _ = write!(
+            body,
+            "<div class=\"card\"><span>{}</span><strong>{}</strong><small>{}</small></div>",
+            esc(label),
+            esc(&value),
+            esc(&sub)
+        );
+    }
+    body.push_str("</div>");
+    let _ = write!(
+        body,
+        "<section><h2>Posts per day</h2><div class=\"panel\">{}</div></section>",
+        days_chart(&posts)
+    );
+    body.push_str("<section><h2>Feeds</h2><table><thead><tr><th>Feed</th><th>Checked every</th><th>Why</th><th>Newest entry</th><th class=\"num\">Failures in a row</th><th class=\"num\">Remembered</th></tr></thead><tbody>");
+    for (feed, ms) in channel.feeds.iter().zip(&intervals) {
+        let snapshot = snapshots.get(feed).unwrap_or(&Value::Null);
+        let (_, why) = feed_interval(&channel, snapshot);
+        let newest = snapshot["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|i| i["isoDate"].as_str())
+            .max()
+            .map_or("–".into(), ago);
+        let failures = snapshot["health"]["consecutiveFailures"]
+            .as_u64()
+            .unwrap_or(0);
+        let kept: usize = history
+            .iter()
+            .filter(|(k, _)| k.rsplit_once("::").map_or(k.as_str(), |(u, _)| u) == feed)
+            .filter_map(|(_, v)| v.as_array())
+            .map(Vec::len)
+            .sum();
+        let _ = write!(
+            body,
+            "<tr{}><td><a href=\"/feed?url={}\">{}</a></td><td>{} min</td><td>{}</td><td>{}</td><td class=\"num\">{failures}</td><td class=\"num\">{kept}</td></tr>",
+            if failures > 0 { " class=\"error\"" } else { "" },
+            esc(&enc(feed)),
+            esc(&short_url(feed)),
+            minutes(*ms),
+            esc(why),
+            esc(&newest),
+        );
+    }
+    body.push_str("</tbody></table></section>");
+    let labels = channel_labels(server, &read_json(&server.paths.config));
+    let _ = write!(
+        body,
+        "<section><h2>Recent posts</h2>{}<p><a href=\"/posts?channel={}\">All posts of this channel →</a></p></section>",
+        posts_table(&posts.iter().take(10).cloned().collect::<Vec<_>>(), &labels),
+        esc(&enc(&channel.cache_key)),
+    );
+    page(req, StatusCode::OK, &channel.label(), &body)
+}
+
 /// The worker's view of the channel at `group`/`key` (with `.env` resolved).
 fn runtime_channel(server: &Server, group: &str, key: &str) -> Option<config::Channel> {
     let loaded = config::load(&server.paths.config).ok()?;
@@ -2189,7 +2361,7 @@ fn channels(server: &Server, req: &Req) -> Response {
         let q = format!("group={}&amp;key={}", esc(&enc(group)), esc(&enc(key)));
         let _ = write!(
             body,
-            "<tr><td><a href=\"/channels/edit?{q}\">{}</a>{}</td><td><strong>{}</strong> <span class=\"muted\">{}</span></td><td>{}</td><td>{interval}</td><td>{last_post}</td><td>{status}</td>\
+            "<tr><td><a href=\"/channel?{q}\">{}</a>{}</td><td><strong>{}</strong> <span class=\"muted\">{}</span></td><td>{}</td><td>{interval}</td><td>{last_post}</td><td>{status}</td>\
              <td class=\"actions\"><a href=\"/channels/edit?{q}\">Edit</a>\
              <form method=\"post\" action=\"/channels/duplicate\" class=\"inline\">{}{}{}<button class=\"link\">Duplicate</button></form>\
              <a class=\"danger\" href=\"/channels/delete?{q}\">Delete</a></td></tr>",

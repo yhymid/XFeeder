@@ -285,3 +285,5 @@ ul.hbars .fill.w85 { width: 85%; }
 ul.hbars .fill.w90 { width: 90%; }
 ul.hbars .fill.w95 { width: 95%; }
 ul.hbars .fill.w100 { width: 100%; }
+button.secondary, .button.secondary { background: var(--hover); color: var(--text); border-color: var(--line-strong); }
+button.secondary:hover, .button.secondary:hover { background: var(--raised); border-color: #555; }

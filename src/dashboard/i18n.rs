@@ -476,6 +476,17 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("Delivery history", "Historia wysyłek"),
+    ("Check now", "Sprawdź teraz"),
+    ("Posts, 7 days", "Posty, 7 dni"),
+    ("Remembered entries", "Zapamiętane wpisy"),
+    ("in cache.json", "w cache.json"),
+    ("Newest entry", "Najnowszy wpis"),
+    ("Remembered", "Zapamiętane"),
+    (
+        "All posts of this channel →",
+        "Wszystkie posty tego kanału →",
+    ),
     ("Posts per day", "Posty dziennie"),
     (
         "Posts per channel, last 7 days",
@@ -1031,6 +1042,14 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 None => format!("zostało {} / {}", &c[1], &c[2]),
             },
         ),
+        rule(r"^max (\d+) per run$", |c| {
+            format!("maks. {} na obieg", &c[1])
+        }),
+        rule(r"^(\d+) recorded$", |c| format!("{} zapisanych", &c[1])),
+        rule(r"^key (\S+)$", |c| format!("klucz {}", &c[1])),
+        rule(r"^TimeChecker (\d+) min$", |c| {
+            format!("TimeChecker {} min", &c[1])
+        }),
         rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
             format!("Diagnostyka XFeedera — {} (UTC)", &c[1])
         }),

@@ -1755,6 +1755,7 @@ mod tests {
             "/channels/edit?group=channels&key=0",
             "/posts",
             "/logs",
+            "/channel?group=channels&key=0",
             "/posts?q=x&channel=nope",
             "/activity?q=feed&channel=channel%3Aabc&feed=feed%3Adef",
             "/feed?url=https%3A%2F%2Fa.example%2Ffeed",

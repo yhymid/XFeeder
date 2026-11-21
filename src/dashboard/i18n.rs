@@ -755,7 +755,10 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 ),
             },
         ),
-        rule(r"^(\d+) min \((.+)\)$", |c| {
+        rule(r"^larger image used for (\d+)/(\d+) entries$", |c| {
+            format!("większy obrazek użyty dla {}/{} wpisów", &c[1], &c[2])
+        }),
+        rule(r"^(\d+(?:\.\d+)?) min \((.+)\)$", |c| {
             format!(
                 "{} min ({})",
                 &c[1],
@@ -763,7 +766,7 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             )
         }),
         rule(
-            r"^(\S+) \(download (\S+ ?\S*), parsing (\S+ ?\S*), image check (\S+ ?\S*)\)$",
+            r"^(.+?) \(download (.+?), parsing (.+?), image check (.+?)\)$",
             |c| {
                 format!(
                     "{} (pobranie {}, parsowanie {}, sprawdzenie obrazka {})",
@@ -919,6 +922,14 @@ mod tests {
         assert!(
             pl.contains("<p>Tom &amp; Jerry</p>"),
             "unknown text kept as it was"
+        );
+        let test = to_polish(
+            "<td>5.0 min (fresh entry)</td><td>892 ms (download 260 ms, parsing 8 ms, image check 46 ms)</td>",
+        );
+        assert!(test.contains("5.0 min (świeży wpis)"), "{test}");
+        assert!(
+            test.contains("892 ms (pobranie 260 ms, parsowanie 8 ms, sprawdzenie obrazka 46 ms)"),
+            "{test}"
         );
         assert_eq!(plural(5, "a", "b", "c"), "c");
         assert_eq!(plural(13, "a", "b", "c"), "c");

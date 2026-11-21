@@ -481,6 +481,81 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("Adaptive polling", "Adaptacyjne sprawdzanie"),
+    (
+        "Feeds that post often are checked more often (never less often than the channel's “Check every”). Off = every feed is checked at its channel's interval.",
+        "Feedy, które często publikują, są sprawdzane częściej (nigdy rzadziej niż „Sprawdzaj co” kanału). Wyłączone = każdy feed jest sprawdzany w odstępie swojego kanału.",
+    ),
+    (
+        "Fastest check (minutes)",
+        "Najczęstsze sprawdzanie (minuty)",
+    ),
+    ("Default 5.", "Domyślnie 5."),
+    ("“Fresh” for (hours)", "„Świeży” przez (godziny)"),
+    (
+        "After a new entry the feed is checked at the fastest rate for this long. Default 6.",
+        "Po nowym wpisie feed jest sprawdzany najczęściej przez tyle czasu. Domyślnie 6.",
+    ),
+    ("Divisor", "Dzielnik"),
+    ("Fastest check", "Najczęstsze sprawdzanie"),
+    ("“Fresh” for", "„Świeży” przez"),
+    ("Window", "Okno"),
+    ("Timeout", "Limit czasu"),
+    (
+        "Interval = average gap between entries ÷ this. Default 8.",
+        "Odstęp = średnia przerwa między wpisami ÷ ta liczba. Domyślnie 8.",
+    ),
+    (
+        "Steam + SteamDB in one post",
+        "Steam + SteamDB w jednym poście",
+    ),
+    (
+        "A SteamDB patch note and the Steam news about the same update become one post (edited when the second arrives).",
+        "Patch note ze SteamDB i news ze Steama o tej samej aktualizacji stają się jednym postem (edytowanym, gdy przyjdzie drugi).",
+    ),
+    ("Window (hours)", "Okno (godziny)"),
+    (
+        "How far apart the two may arrive. 1–72, default 12.",
+        "Jak daleko od siebie mogą przyjść. 1–72, domyślnie 12.",
+    ),
+    ("Cloudflare", "Cloudflare"),
+    (
+        "Reuse the Cloudflare clearance (ReuseClearance)",
+        "Używaj ponownie ciasteczka Cloudflare (ReuseClearance)",
+    ),
+    (
+        "Reuses a solved Cloudflare clearance for plain requests until it expires, so the browser is started less often. Temporary mechanism.",
+        "Rozwiązane ciasteczko Cloudflare służy zwykłym zapytaniom aż do wygaśnięcia, więc przeglądarka startuje rzadziej. Mechanizm tymczasowy.",
+    ),
+    (
+        "Telegram (defaults for all channels)",
+        "Telegram (domyślne dla wszystkich kanałów)",
+    ),
+    ("Bot token", "Token bota"),
+    (
+        "Use ${NAME} and set the value under Secrets (.env) below.",
+        "Wpisz ${NAZWA} i ustaw wartość niżej w Sekretach (.env).",
+    ),
+    (
+        "A token is written directly in config.json; empty keeps it. Better: ${NAME} with the value in .env.",
+        "Token jest wpisany wprost w config.json; puste pole go zostawia. Lepiej: ${NAZWA} z wartością w .env.",
+    ),
+    ("Chat ID", "ID czatu"),
+    ("Or ${NAME}.", "Albo ${NAZWA}."),
+    ("Topic (message thread) ID", "ID tematu (wątku)"),
+    ("Optional.", "Opcjonalne."),
+    ("Send the image as a photo", "Wysyłaj obrazek jako zdjęcie"),
+    ("Turn off link previews", "Wyłącz podgląd linków"),
+    ("Timeout (ms)", "Limit czasu (ms)"),
+    ("Empty = 15000.", "Puste = 15000."),
+    (
+        "This config uses schema v2; edit it in Advanced.",
+        "Ten config używa schematu v2; edytuj go w zakładce Zaawansowane.",
+    ),
+    (
+        "Topic ID must be a whole number.",
+        "ID tematu musi być liczbą całkowitą.",
+    ),
     ("Posts", "Posty"),
     ("All posts →", "Wszystkie posty →"),
     ("Feeds with problems", "Feedy z problemami"),
@@ -755,6 +830,14 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 ),
             },
         ),
+        rule(r"^(.+) must be a number ([\d.]+)–([\d.]+)\.$", |c| {
+            format!(
+                "{} musi być liczbą {}–{}.",
+                translate_text(&c[1]).unwrap_or_else(|| c[1].to_string()),
+                &c[2],
+                &c[3]
+            )
+        }),
         rule(r"^larger image used for (\d+)/(\d+) entries$", |c| {
             format!("większy obrazek użyty dla {}/{} wpisów", &c[1], &c[2])
         }),

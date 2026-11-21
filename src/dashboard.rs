@@ -1815,6 +1815,56 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body.contains("changed on disk"));
 
+        // Feature switches: on with values, then off keeping the values.
+        let rev = revision(&written);
+        let (status, _, body) = call(
+            &server,
+            Method::POST,
+            "/settings/features",
+            &format!("rev={rev}&adaptive=on&adaptive_min=4&adaptive_burst=&adaptive_divisor=8&merge=on&merge_hours=2.5&reuse_clearance=on&tg_token=&tg_chat=&tg_thread=&tg_timeout="),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER, "{body}");
+        let saved: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved["Settings"]["AdaptivePolling"],
+            json!({ "Enabled": true, "MinMinutes": 4, "Divisor": 8 })
+        );
+        assert_eq!(
+            saved["Settings"]["SteamMerge"],
+            json!({ "Enabled": true, "WindowHours": 2.5 })
+        );
+        assert_eq!(saved["Scrapling"]["ReuseClearance"], json!(true));
+        assert!(
+            saved.get("Telegram").is_none(),
+            "Telegram not added when off"
+        );
+        let rev = revision(&std::fs::read_to_string(dir.join("config.json")).unwrap());
+        let (status, _, _) = call(
+            &server,
+            Method::POST,
+            "/settings/features",
+            &format!("rev={rev}&adaptive_min=4&adaptive_burst=&adaptive_divisor=8&merge_hours=2.5&tg_token=&tg_chat=&tg_thread=&tg_timeout="),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let saved: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved["Settings"]["AdaptivePolling"]["Enabled"],
+            json!(false)
+        );
+        assert_eq!(saved["Settings"]["AdaptivePolling"]["MinMinutes"], json!(4));
+        assert!(crate::adaptive::from_config(&json!({}), &saved).is_none());
+        assert!(crate::steam_merge::from_config(&saved).is_none());
+        assert_eq!(saved["Scrapling"]["ReuseClearance"], json!(false));
+        let written = std::fs::read_to_string(dir.join("config.json")).unwrap();
+
         // Advanced editor rejects invalid JSON without touching the file.
         let rev = revision(&written);
         let (status, _, body) = call(

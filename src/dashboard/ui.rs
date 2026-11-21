@@ -483,6 +483,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (false, "/settings") => settings(server, req, None),
         (true, "/settings/general") => settings_general(server, req),
         (true, "/settings/network") => settings_network(server, req),
+        (true, "/settings/features") => settings_features(server, req),
         (true, "/settings/secret") => settings_secret(server, req),
         (false, "/advanced") => advanced(server, req, None, None),
         (true, "/advanced") => advanced_save(server, req),
@@ -2695,6 +2696,10 @@ fn settings(server: &Server, req: &Req, notice: Option<String>) -> Response {
         checkbox("Save despite warnings", "accept", false),
     );
 
+    if !v2 {
+        body.push_str(&features_form(&config, &rev));
+    }
+
     // Network
     let raw = js::get(&config, "network");
     let get = |k: &str| js::to_string_or_empty(js::get(raw, k));
@@ -2866,6 +2871,238 @@ fn settings(server: &Server, req: &Req, notice: Option<String>) -> Response {
     }
     body.push_str("</section>");
     page(req, StatusCode::OK, "Settings", &body)
+}
+
+/// Value of an optional switchable feature: `true`, `{ "Enabled": … }` or absent.
+fn feature_on(value: &Value) -> bool {
+    match value {
+        Value::Bool(b) => *b,
+        Value::Object(map) => map.get("Enabled") != Some(&Value::Bool(false)),
+        _ => false,
+    }
+}
+
+fn features_form(config: &Value, rev: &str) -> String {
+    let settings = js::get(config, "Settings");
+    let adaptive = js::get(settings, "AdaptivePolling");
+    let merge = js::get(settings, "SteamMerge");
+    let telegram = js::get(config, "Telegram");
+    let num = |v: &Value, k: &str, d: &str| {
+        js::get(v, k)
+            .as_f64()
+            .map_or_else(|| d.to_string(), |n| n.to_string())
+    };
+    let token = js::to_string_or_empty(js::get(telegram, "BotToken"));
+    let token_shown = if token.starts_with("${") {
+        token.clone()
+    } else {
+        String::new()
+    };
+    let token_hint = if token.is_empty() || token.starts_with("${") {
+        "Use ${NAME} and set the value under Secrets (.env) below."
+    } else {
+        "A token is written directly in config.json; empty keeps it. Better: ${NAME} with the value in .env."
+    };
+    format!(
+        "<form method=\"post\" action=\"/settings/features\" class=\"stack\">{}\
+         <fieldset><legend>Adaptive polling</legend><p class=\"muted\">Feeds that post often are checked more often (never less often than the channel's “Check every”). Off = every feed is checked at its channel's interval.</p>{}<div class=\"grid3\">{}{}{}</div></fieldset>\
+         <fieldset><legend>Steam + SteamDB in one post</legend><p class=\"muted\">A SteamDB patch note and the Steam news about the same update become one post (edited when the second arrives).</p>{}<div class=\"grid3\">{}</div></fieldset>\
+         <fieldset><legend>Cloudflare</legend>{}<small>Reuses a solved Cloudflare clearance for plain requests until it expires, so the browser is started less often. Temporary mechanism.</small></fieldset>\
+         <fieldset><legend>Telegram (defaults for all channels)</legend>{}<div class=\"grid3\">{}{}{}</div><div class=\"grid3\">{}{}{}</div></fieldset>\
+         <div class=\"row\">{}<button>Save</button></div></form>",
+        hidden("rev", rev),
+        checkbox("Enabled", "adaptive", feature_on(adaptive)),
+        text_input(
+            "Fastest check (minutes)",
+            "adaptive_min",
+            &num(adaptive, "MinMinutes", "5"),
+            "Default 5.",
+            "text"
+        ),
+        text_input(
+            "“Fresh” for (hours)",
+            "adaptive_burst",
+            &num(adaptive, "BurstHours", "6"),
+            "After a new entry the feed is checked at the fastest rate for this long. Default 6.",
+            "text"
+        ),
+        text_input(
+            "Divisor",
+            "adaptive_divisor",
+            &num(adaptive, "Divisor", "8"),
+            "Interval = average gap between entries ÷ this. Default 8.",
+            "text"
+        ),
+        checkbox("Enabled", "merge", feature_on(merge)),
+        text_input(
+            "Window (hours)",
+            "merge_hours",
+            &num(merge, "WindowHours", "12"),
+            "How far apart the two may arrive. 1–72, default 12.",
+            "text"
+        ),
+        checkbox(
+            "Reuse the Cloudflare clearance (ReuseClearance)",
+            "reuse_clearance",
+            js::path(config, &["Scrapling", "ReuseClearance"]) == &json!(true)
+        ),
+        checkbox(
+            "Enabled",
+            "tg_enabled",
+            telegram.is_object() && js::get(telegram, "Enabled") != &json!(false)
+        ),
+        text_input("Bot token", "tg_token", &token_shown, token_hint, "text"),
+        text_input(
+            "Chat ID",
+            "tg_chat",
+            &js::to_string_or_empty(js::get(telegram, "ChatID")),
+            "Or ${NAME}.",
+            "text"
+        ),
+        text_input(
+            "Topic (message thread) ID",
+            "tg_thread",
+            &js::to_string_or_empty(js::get(telegram, "MessageThreadID")),
+            "Optional.",
+            "text"
+        ),
+        checkbox(
+            "Send the image as a photo",
+            "tg_photo",
+            js::get(telegram, "SendPhoto") != &json!(false)
+        ),
+        checkbox(
+            "Turn off link previews",
+            "tg_nopreview",
+            js::get(telegram, "DisableWebPagePreview") == &json!(true)
+        ),
+        text_input(
+            "Timeout (ms)",
+            "tg_timeout",
+            &js::to_string_or_empty(js::get(telegram, "TimeoutMs")),
+            "Empty = 15000.",
+            "text"
+        ),
+        checkbox("Save despite warnings", "accept", false),
+    )
+}
+
+fn settings_features(server: &Server, req: &Req) -> Response {
+    let text = read_text(&server.paths.config);
+    let Ok(mut config) = serde_json::from_str::<Value>(&text) else {
+        return redirect("/settings", "config.json is not valid JSON.", true);
+    };
+    if stale(req, &revision(&text)) {
+        return redirect("/settings", STALE, true);
+    }
+    if is_v2(&config) {
+        return redirect(
+            "/settings",
+            "This config uses schema v2; edit it in Advanced.",
+            true,
+        );
+    }
+    let number = |key: &str, label: &str, lo: f64, hi: f64| -> Result<Option<f64>, String> {
+        match req.f(key).trim().replace(',', ".") {
+            t if t.is_empty() => Ok(None),
+            t => t
+                .parse::<f64>()
+                .ok()
+                .filter(|n| n.is_finite() && (lo..=hi).contains(n))
+                .map(Some)
+                .ok_or_else(|| format!("{label} must be a number {lo}–{hi}.")),
+        }
+    };
+    let parsed = (|| -> Result<_, String> {
+        Ok((
+            number("adaptive_min", "Fastest check", 1.0, 1440.0)?,
+            number("adaptive_burst", "“Fresh” for", 0.0, 168.0)?,
+            number("adaptive_divisor", "Divisor", 1.0, 100.0)?,
+            number("merge_hours", "Window", 1.0, 72.0)?,
+            number("tg_timeout", "Timeout", 1000.0, 120_000.0)?,
+        ))
+    })();
+    let (min, burst, divisor, hours, timeout) = match parsed {
+        Ok(v) => v,
+        Err(message) => return redirect("/settings", &message, true),
+    };
+    let thread = req.f("tg_thread").trim().to_string();
+    if !thread.is_empty() && thread.parse::<u64>().is_err() {
+        return redirect("/settings", "Topic ID must be a whole number.", true);
+    }
+    let as_json = |n: f64| {
+        if n.fract() == 0.0 {
+            json!(n as u64)
+        } else {
+            json!(n)
+        }
+    };
+    // Keep unknown keys of each object; turning a feature off keeps its values.
+    let object = |v: &Value| v.as_object().cloned().unwrap_or_default();
+    if !config["Settings"].is_object() {
+        config["Settings"] = json!({});
+    }
+    let section = &mut config["Settings"];
+    let mut adaptive = object(&section["AdaptivePolling"]);
+    adaptive.insert("Enabled".into(), json!(req.checked("adaptive")));
+    for (key, value) in [
+        ("MinMinutes", min),
+        ("BurstHours", burst),
+        ("Divisor", divisor),
+    ] {
+        match value {
+            Some(n) => adaptive.insert(key.into(), as_json(n)),
+            None => adaptive.shift_remove(key),
+        };
+    }
+    section["AdaptivePolling"] = Value::Object(adaptive);
+    let mut merge = object(&section["SteamMerge"]);
+    merge.insert("Enabled".into(), json!(req.checked("merge")));
+    match hours {
+        Some(n) => merge.insert("WindowHours".into(), as_json(n)),
+        None => merge.shift_remove("WindowHours"),
+    };
+    section["SteamMerge"] = Value::Object(merge);
+    let reuse = req.checked("reuse_clearance");
+    if reuse || config["Scrapling"].is_object() {
+        if !config["Scrapling"].is_object() {
+            config["Scrapling"] = json!({});
+        }
+        config["Scrapling"]["ReuseClearance"] = json!(reuse);
+    }
+    let tg_enabled = req.checked("tg_enabled");
+    if tg_enabled || config["Telegram"].is_object() {
+        let mut tg = object(&config["Telegram"]);
+        tg.insert("Enabled".into(), json!(tg_enabled));
+        let token = req.f("tg_token").trim();
+        if !token.is_empty() {
+            tg.insert("BotToken".into(), json!(token));
+        }
+        let chat = req.f("tg_chat").trim();
+        if chat.is_empty() {
+            tg.shift_remove("ChatID");
+        } else {
+            tg.insert("ChatID".into(), json!(chat));
+        }
+        tg.insert(
+            "MessageThreadID".into(),
+            thread.parse::<u64>().map_or(Value::Null, |n| json!(n)),
+        );
+        tg.insert("SendPhoto".into(), json!(req.checked("tg_photo")));
+        tg.insert(
+            "DisableWebPagePreview".into(),
+            json!(req.checked("tg_nopreview")),
+        );
+        match timeout {
+            Some(n) => tg.insert("TimeoutMs".into(), as_json(n)),
+            None => tg.shift_remove("TimeoutMs"),
+        };
+        config["Telegram"] = Value::Object(tg);
+    }
+    match server.store(&config, &text, req.checked("accept")) {
+        Ok(()) => redirect("/settings", "Settings saved.", false),
+        Err(p) => settings(server, req, Some(problems_html(&p, true))),
+    }
 }
 
 fn settings_general(server: &Server, req: &Req) -> Response {

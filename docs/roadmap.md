@@ -1,5 +1,7 @@
 # Roadmap: ideas from comparable projects (2026-11)
 
+**English** · [Polski](roadmap.pl.md)
+
 Forty-three related projects (two rounds) were reviewed for features worth bringing into
 XFeeder. This page records what was taken, what is a candidate and what was
 rejected, so the review does not have to be repeated.

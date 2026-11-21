@@ -1,5 +1,7 @@
 # Deployment
 
+**English** · [Polski](deployment.pl.md)
+
 Build on the target machine (or on one with the same or an older glibc). A
 binary built on a rolling-release distribution may not start on an older
 Ubuntu/Debian because of glibc symbol versions.
@@ -18,7 +20,7 @@ install -m 0755 target/release/xfeeder /usr/local/bin/xfeeder   # or keep it in 
 ## Data directory
 
 Keep `config.json`, `.env` and `cache.json` together, readable only by the
-service user (`chmod 600`). The worker also creates `cache.feeds.json`, the
+service user (`chmod 600`). The worker also creates `cache.feeds.json`, `sent.json`, the
 `*.runtime.json` telemetry files and, if Scrapling is installed, a
 `scrapling/` directory there.
 

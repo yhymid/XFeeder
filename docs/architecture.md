@@ -1,5 +1,7 @@
 # Architecture (Rust, 3.0)
 
+**English** · [Polski](architecture.pl.md)
+
 One binary, two modes: the **worker** (default) and the **dashboard**
 (`xfeeder dashboard`). They never share memory; the dashboard edits files and
 reads the worker's telemetry snapshots.
@@ -33,6 +35,13 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 | `telemetry.rs` | Bounded, pseudonymised activity events and metrics, published every 2 s for the dashboard. |
 | `dashboard.rs` | JSON API, password sessions, Host/Origin checks, `If-Match` revisions, worker control. |
 | `dashboard/ui.rs` | Server-rendered HTML pages and form posts (no JavaScript; CSP `default-src 'none'`), revision-checked saves. |
+| `adaptive.rs` | Optional per-feed check interval from entry dates (`Settings.AdaptivePolling`), never longer than `TimeChecker`. |
+| `clearance.rs` | Temporary, optional reuse of a Cloudflare clearance cookie from the browser (`Scrapling.ReuseClearance`). |
+| `github_api.rs` | GitHub REST API list endpoints as feeds; token only for api.github.com. |
+| `sent.rs` | `sent.json`: message ids and entries of webhook posts, for later edits. |
+| `steam_merge.rs` | One post per game update: a Steam announcement and its SteamDB build edit each other's post (`Settings.SteamMerge`). |
+| `preview.rs`, `rerender.rs` | `xfeeder preview` (what a feed gives, timings, benchmarks) and `xfeeder rerender` (rebuild sent posts). |
+| `profile_tests.rs` | Snapshot tests on saved production feeds (`profiles/`). |
 | `text.rs`, `js.rs`, `diag.rs` | HTML/entity/date helpers and link normalisation, JavaScript-compatible value semantics, redacting logger. |
 
 ## Delivery identity and cache
@@ -55,7 +64,8 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
   `<feed>::<target>` bucket, or an empty one, and no legacy bucket), the
   current entries are written to the bucket as already seen, except the newest
   `FirstRunSend` (by date). Editing a channel changes its cache key, so this
-  also prevents replays after a config edit.
+  also prevents replays after a config edit. To add feeds to a channel and keep
+  its history, pin the key with `"CacheKey": "<current key>"`.
 - `Filters` are applied to fetched entries before pending detection; filtered
   entries are not recorded, so relaxing a filter can let them through later.
 - When a destination is permanently unreachable (deleted thread/webhook,
@@ -72,6 +82,8 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
   could wait up to N × 30 s.
 - After a run with errors the next run is delayed by `interval × 2^(n-1)`,
   capped at 8 intervals or 1 hour.
+- With `Settings.AdaptivePolling` a channel wakes up for its earliest due feed
+  and fetches only the feeds that are due.
 - `MaxConcurrentChannels > 1` runs different channels in parallel.
 - On SIGTERM/SIGINT no new channel starts; running ones get
   `network.shutdownGraceMs` to finish, then are cancelled. A second signal

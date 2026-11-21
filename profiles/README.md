@@ -1,5 +1,7 @@
 # Feed profiles
 
+**English** · [Polski](README.pl.md)
+
 Three sets of real feeds that XFeeder runs in production, each with a saved
 sample (5 entries) in `tests/fixtures/profiles/<profile>/`:
 

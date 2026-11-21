@@ -481,6 +481,101 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("Posts", "Posty"),
+    ("All posts →", "Wszystkie posty →"),
+    ("Feeds with problems", "Feedy z problemami"),
+    ("Failures in a row", "Błędy z rzędu"),
+    ("Last failure", "Ostatni błąd"),
+    ("Last success", "Ostatni sukces"),
+    ("Last success after a failure", "Ostatni sukces po błędzie"),
+    ("Feed details and test", "Szczegóły i test feedów"),
+    ("Test now", "Testuj teraz"),
+    (
+        "Downloads the feed now, as the worker would (browser, solver and proxy included). Nothing is sent or saved.",
+        "Pobiera feed teraz, tak jak worker (razem z przeglądarką, solverem i proxy). Nic nie jest wysyłane ani zapisywane.",
+    ),
+    (
+        "Not used by any channel.",
+        "Nie jest używany przez żaden kanał.",
+    ),
+    ("Why", "Dlaczego"),
+    ("State", "Stan"),
+    ("Browser (Scrapling)", "Przeglądarka (Scrapling)"),
+    (
+        "Saved Cloudflare clearance",
+        "Zapisane ciasteczko Cloudflare",
+    ),
+    ("ETag / Last-Modified", "ETag / Last-Modified"),
+    (
+        "always (PerUrlConfig enabled)",
+        "zawsze (PerUrlConfig enabled)",
+    ),
+    (
+        "only when blocked (PerUrlConfig fallback)",
+        "tylko przy blokadzie (PerUrlConfig fallback)",
+    ),
+    ("never (PerUrlConfig)", "nigdy (PerUrlConfig)"),
+    ("never", "nigdy"),
+    (
+        "only when blocked (AutoFallback)",
+        "tylko przy blokadzie (AutoFallback)",
+    ),
+    ("none", "brak"),
+    ("Last saved entries", "Ostatnie zapisane wpisy"),
+    ("No entries saved yet.", "Nie zapisano jeszcze wpisów."),
+    ("Date", "Data"),
+    ("Author", "Autor"),
+    ("Image", "Obrazek"),
+    ("image", "obrazek"),
+    (
+        "Another test is running; try again in a moment.",
+        "Trwa inny test; spróbuj za chwilę.",
+    ),
+    (
+        "The test took longer than 150 s.",
+        "Test trwał dłużej niż 150 s.",
+    ),
+    ("The test gave no result.", "Test nie dał wyniku."),
+    ("Not an http(s) URL.", "To nie jest adres http(s)."),
+    ("← Back to the feed", "← Wróć do feedu"),
+    ("Result", "Wynik"),
+    ("Entries", "Wpisy"),
+    ("Parser", "Parser"),
+    ("Fetched with", "Pobrany przez"),
+    ("browser (Scrapling)", "przeglądarkę (Scrapling)"),
+    ("plain HTTP", "zwykłe HTTP"),
+    ("Would be checked every", "Byłby sprawdzany co"),
+    ("Hints", "Wskazówki"),
+    (
+        "Entries as XFeeder reads them",
+        "Wpisy tak, jak je odczytuje XFeeder",
+    ),
+    (
+        "Posts sent to Discord (newest first). “Rebuild” edits the message in the current layout; nothing new is posted.",
+        "Posty wysłane na Discorda (od najnowszych). „Przebuduj” edytuje wiadomość w aktualnym wyglądzie; nic nowego nie jest wysyłane.",
+    ),
+    ("Rebuild", "Przebuduj"),
+    ("Post not found.", "Nie znaleziono posta."),
+    (
+        "The channel of this post no longer exists or has no webhook.",
+        "Kanał tego posta już nie istnieje albo nie ma webhooka.",
+    ),
+    ("Post rebuilt.", "Post przebudowany."),
+    (
+        "This message was deleted on Discord.",
+        "Ta wiadomość została usunięta na Discordzie.",
+    ),
+    (
+        "Discord did not accept the edit; see the log.",
+        "Discord nie przyjął edycji; szczegóły w logu.",
+    ),
+    ("fresh entry", "świeży wpis"),
+    ("rarely updated", "rzadko aktualizowany"),
+    ("very active", "bardzo aktywny"),
+    ("average gap", "średni odstęp"),
+    ("no dated entries", "brak dat we wpisach"),
+    ("single entry", "jeden wpis"),
+    ("failed", "błąd"),
     ("Last post", "Ostatni post"),
     ("OK", "OK"),
     ("Display name", "Nazwa wyświetlana"),
@@ -644,6 +739,38 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 None => format!("{} min", &c[1]),
             }
         }),
+        rule(r"^Feed (.+)$", |c| format!("Feed {}", &c[1])),
+        rule(r"^Test (.+)$", |c| format!("Test {}", &c[1])),
+        rule(
+            r"^saved (.+?)(?:, valid for (\d+) more days)?$",
+            |c| match c.get(2) {
+                Some(d) => format!(
+                    "zapisane {}, ważne jeszcze {} dni",
+                    translate_text(&c[1]).unwrap_or_else(|| c[1].to_string()),
+                    d.as_str()
+                ),
+                None => format!(
+                    "zapisane {}",
+                    translate_text(&c[1]).unwrap_or_else(|| c[1].to_string())
+                ),
+            },
+        ),
+        rule(r"^(\d+) min \((.+)\)$", |c| {
+            format!(
+                "{} min ({})",
+                &c[1],
+                translate_text(&c[2]).unwrap_or_else(|| c[2].to_string())
+            )
+        }),
+        rule(
+            r"^(\S+) \(download (\S+ ?\S*), parsing (\S+ ?\S*), image check (\S+ ?\S*)\)$",
+            |c| {
+                format!(
+                    "{} (pobranie {}, parsowanie {}, sprawdzenie obrazka {})",
+                    &c[1], &c[2], &c[3], &c[4]
+                )
+            },
+        ),
         rule(r"^Updated (.+)$", |c| {
             format!(
                 "Zaktualizowano {}",

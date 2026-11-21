@@ -141,9 +141,10 @@ fn redirect_with_cookie(to: &str, cookie: &str) -> Response {
         .expect("response")
 }
 
-const NAV: [(&str, &str); 6] = [
+const NAV: [(&str, &str); 7] = [
     ("/", "Overview"),
     ("/channels", "Channels"),
+    ("/posts", "Posts"),
     ("/activity", "Activity"),
     ("/diagnostics", "Diagnostics"),
     ("/settings", "Settings"),
@@ -474,6 +475,10 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/config/remove-section") => remove_section(server, req),
         (true, "/channels/duplicate") => channel_duplicate(server, req),
         (false, "/activity") => activity(server, req),
+        (false, "/feed") => feed_page(server, req),
+        (true, "/feed/test") => feed_test(server, req).await,
+        (false, "/posts") => posts_page(server, req),
+        (true, "/posts/rerender") => post_rerender(server, req).await,
         (false, "/diagnostics") => diagnostics(server, req),
         (false, "/settings") => settings(server, req, None),
         (true, "/settings/general") => settings_general(server, req),
@@ -583,6 +588,403 @@ fn channel_labels(server: &Server, config: &Value) -> HashMap<String, String> {
         labels.insert(channel.cache_key.clone(), channel.label());
     }
     labels
+}
+
+// ------------------------------------------------------------------ feeds --
+
+fn ms_time(ms: u64) -> String {
+    if ms == 0 {
+        return "–".into();
+    }
+    chrono::DateTime::from_timestamp_millis(ms as i64).map_or("–".into(), |d| ago(&d.to_rfc3339()))
+}
+
+fn failing_feeds_html(server: &Server) -> String {
+    let mut rows = String::new();
+    for (url, snapshot) in feed_snapshots(server) {
+        let health = &snapshot["health"];
+        let failures = health["consecutiveFailures"].as_u64().unwrap_or(0);
+        if failures == 0 {
+            continue;
+        }
+        let _ = write!(
+            rows,
+            "<tr><td><a href=\"/feed?url={}\">{}</a></td><td class=\"num\">{failures}</td><td>{}</td><td>{}</td></tr>",
+            esc(&enc(&url)),
+            esc(&short_url(&url)),
+            esc(&ms_time(health["lastFailureAt"].as_u64().unwrap_or(0))),
+            esc(&ms_time(health["lastSuccessAt"].as_u64().unwrap_or(0))),
+        );
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<section><h2>Feeds with problems</h2><table><thead><tr><th>Feed</th><th>Failures in a row</th><th>Last failure</th><th>Last success</th></tr></thead><tbody>{rows}</tbody></table></section>"
+    )
+}
+
+fn feed_page(server: &Server, req: &Req) -> Response {
+    let url = req.q("url").trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return page(
+            req,
+            StatusCode::NOT_FOUND,
+            "Not found",
+            "<p>Not an http(s) URL.</p>",
+        );
+    }
+    let config = read_json(&server.paths.config);
+    let snapshots = feed_snapshots(server);
+    let snapshot = snapshots.get(url).cloned().unwrap_or(Value::Null);
+    let channels: Vec<config::Channel> = config::load(&server.paths.config)
+        .map(|c| c.channels)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| c.feeds.iter().any(|f| f == url))
+        .collect();
+    let mut body = format!(
+        "<p><a href=\"{0}\" rel=\"noreferrer\"><code>{1}</code></a></p>\
+         <form method=\"post\" action=\"/feed/test\" class=\"inline\">{2}<button>Test now</button></form> \
+         <small class=\"muted\">Downloads the feed now, as the worker would (browser, solver and proxy included). Nothing is sent or saved.</small>",
+        esc(url),
+        esc(url),
+        hidden("url", url),
+    );
+    // Where it is used and how often it is checked.
+    body.push_str("<h2>Channels</h2>");
+    if channels.is_empty() {
+        body.push_str("<p class=\"muted\">Not used by any channel.</p>");
+    } else {
+        body.push_str("<table><thead><tr><th>Channel</th><th>Checked every</th><th>Why</th></tr></thead><tbody>");
+        for channel in &channels {
+            let (ms, why) = feed_interval(channel, &snapshot);
+            let _ = write!(
+                body,
+                "<tr><td>{}</td><td>{} min</td><td>{}</td></tr>",
+                esc(&channel.label()),
+                minutes(ms),
+                esc(why)
+            );
+        }
+        body.push_str("</tbody></table>");
+    }
+    // Health and how it is fetched.
+    let health = &snapshot["health"];
+    let per_url = js::path(&config, &["Scrapling", "PerUrlConfig", url]);
+    let browser = if per_url["enabled"] == json!(true) {
+        "always (PerUrlConfig enabled)"
+    } else if per_url["fallback"] == json!(true) {
+        "only when blocked (PerUrlConfig fallback)"
+    } else if per_url["enabled"] == json!(false) {
+        "never (PerUrlConfig)"
+    } else if js::path(&config, &["Scrapling", "AutoFallback"]) == &json!(false) {
+        "never"
+    } else {
+        "only when blocked (AutoFallback)"
+    };
+    let host = url::Url::parse(url)
+        .ok()
+        .and_then(|u| {
+            u.host_str()
+                .map(|h| h.trim_start_matches("www.").to_string())
+        })
+        .unwrap_or_default();
+    let clearance = read_json(
+        &server
+            .paths
+            .config
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("clearance.json"),
+    )
+    .get(&host)
+    .map_or_else(
+        || "none".to_string(),
+        |c| {
+            let saved = c["savedAt"].as_i64().unwrap_or(0) * 1000;
+            let expires = c["expires"].as_i64().unwrap_or(0);
+            let days = (expires - chrono::Utc::now().timestamp()) / 86_400;
+            format!(
+                "saved {}{}",
+                ms_time(saved as u64),
+                if expires > 0 {
+                    format!(", valid for {days} more days")
+                } else {
+                    String::new()
+                }
+            )
+        },
+    );
+    let _ = write!(
+        body,
+        "<h2>State</h2><table><tbody>\
+         <tr><td>Failures in a row</td><td>{}</td></tr>\
+         <tr><td>Last failure</td><td>{}</td></tr>\
+         <tr><td>Last success after a failure</td><td>{}</td></tr>\
+         <tr><td>Browser (Scrapling)</td><td>{}</td></tr>\
+         <tr><td>Saved Cloudflare clearance</td><td>{}</td></tr>\
+         <tr><td>ETag / Last-Modified</td><td><code>{}</code> / <code>{}</code></td></tr>\
+         </tbody></table>",
+        health["consecutiveFailures"].as_u64().unwrap_or(0),
+        esc(&ms_time(health["lastFailureAt"].as_u64().unwrap_or(0))),
+        esc(&ms_time(health["lastSuccessAt"].as_u64().unwrap_or(0))),
+        esc(browser),
+        esc(&clearance),
+        esc(snapshot["etag"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("–")),
+        esc(snapshot["lastModified"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("–")),
+    );
+    body.push_str("<h2>Last saved entries</h2>");
+    body.push_str(&entries_table(
+        snapshot["items"].as_array().map_or(&[][..], Vec::as_slice),
+        5,
+    ));
+    page(
+        req,
+        StatusCode::OK,
+        &format!("Feed {}", short_url(url)),
+        &body,
+    )
+}
+
+fn entries_table(items: &[Value], limit: usize) -> String {
+    if items.is_empty() {
+        return "<p class=\"muted\">No entries saved yet.</p>".into();
+    }
+    let mut out = String::from(
+        "<table><thead><tr><th>Date</th><th>Entry</th><th>Author</th><th>Image</th></tr></thead><tbody>",
+    );
+    for item in items.iter().take(limit) {
+        let link = js::to_string_or_empty(&item["link"]);
+        let title = js::to_string_or_empty(&item["title"]);
+        let image = js::to_string_or_empty(&item["enclosure"]);
+        let _ = write!(
+            out,
+            "<tr><td>{}</td><td>{}<br><small class=\"muted\">{}</small></td><td>{}</td><td>{}</td></tr>",
+            esc(&item["isoDate"].as_str().map_or("–".into(), ago)),
+            if link.starts_with("http") {
+                format!(
+                    "<a href=\"{}\" rel=\"noreferrer\">{}</a>",
+                    esc(&link),
+                    esc(&title)
+                )
+            } else {
+                esc(&title)
+            },
+            esc(js::prefix16(
+                &js::to_string_or_empty(&item["contentSnippet"]),
+                160
+            )),
+            esc(&js::to_string_or_empty(&item["author"])),
+            if image.starts_with("http") {
+                format!("<a href=\"{}\" rel=\"noreferrer\">image</a>", esc(&image))
+            } else {
+                "–".into()
+            },
+        );
+    }
+    out.push_str("</tbody></table>");
+    out
+}
+
+static TEST_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Run `xfeeder preview` for one URL in a child process (same config).
+async fn feed_test(server: &Server, req: &Req<'_>) -> Response {
+    use std::sync::atomic::Ordering;
+    let url = req.f("url").trim().to_string();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return redirect("/channels", "Not an http(s) URL.", true);
+    }
+    let back = format!("/feed?url={}", enc(&url));
+    if TEST_RUNNING.swap(true, Ordering::SeqCst) {
+        return redirect(
+            &back,
+            "Another test is running; try again in a moment.",
+            true,
+        );
+    }
+    let result = async {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let child = tokio::process::Command::new(exe)
+            .args(["preview", &url, "--items", "5", "--json", "--config"])
+            .arg(&server.paths.config)
+            .current_dir(server.paths.config.parent().unwrap_or(Path::new(".")))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output();
+        let output = tokio::time::timeout(std::time::Duration::from_secs(150), child)
+            .await
+            .map_err(|_| "The test took longer than 150 s.".to_string())?
+            .map_err(|e| e.to_string())?;
+        serde_json::from_slice::<Value>(&output.stdout)
+            .map_err(|_| "The test gave no result.".to_string())
+    }
+    .await;
+    TEST_RUNNING.store(false, Ordering::SeqCst);
+    let data = match result {
+        Ok(data) => data,
+        Err(message) => return redirect(&back, &sanitize_text(&message), true),
+    };
+    let ms = |k: &str| {
+        data["ms"][k]["median"]
+            .as_u64()
+            .map_or("–".into(), |v| ms(v as f64))
+    };
+    let transport = if data["scrapling"] == json!(true) {
+        "browser (Scrapling)"
+    } else {
+        "plain HTTP"
+    };
+    let mut body = format!(
+        "<p><a href=\"{back}\">← Back to the feed</a></p><table><tbody>\
+         <tr><td>Result</td><td>{}</td></tr>\
+         <tr><td>Entries</td><td>{}</td></tr><tr><td>Parser</td><td>{}</td></tr><tr><td>Fetched with</td><td>{}</td></tr>\
+         <tr><td>Time</td><td>{} (download {}, parsing {}, image check {})</td></tr>\
+         <tr><td>Would be checked every</td><td>{} min ({})</td></tr></tbody></table>",
+        esc(&data["failure"]
+            .as_str()
+            .map_or_else(|| "OK".to_string(), str::to_string)),
+        data["entries"].as_u64().unwrap_or(0),
+        esc(data["parser"].as_str().unwrap_or("–")),
+        transport,
+        ms("total"),
+        ms("download"),
+        ms("parse"),
+        ms("imageCheck"),
+        data["adaptiveMinutes"]
+            .as_f64()
+            .map_or("–".into(), |m| format!("{m:.1}")),
+        esc(data["adaptiveReason"].as_str().unwrap_or("–")),
+    );
+    let hints: Vec<String> = data["hints"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(esc)
+        .collect();
+    if !hints.is_empty() {
+        let _ = write!(
+            body,
+            "<h2>Hints</h2><ul>{}</ul>",
+            hints
+                .iter()
+                .map(|h| format!("<li>{h}</li>"))
+                .collect::<String>()
+        );
+    }
+    body.push_str("<h2>Entries as XFeeder reads them</h2>");
+    body.push_str(&entries_table(
+        data["items"].as_array().map_or(&[][..], Vec::as_slice),
+        5,
+    ));
+    page(
+        req,
+        StatusCode::OK,
+        &format!("Test {}", short_url(&url)),
+        &body,
+    )
+}
+
+// ------------------------------------------------------------------ posts --
+
+fn posts_page(server: &Server, req: &Req) -> Response {
+    let config = read_json(&server.paths.config);
+    let labels = channel_labels(server, &config);
+    let posts = recent_posts(server, 200);
+    let mut body = String::from(
+        "<p class=\"muted\">Posts sent to Discord (newest first). “Rebuild” edits the message in the current layout; nothing new is posted.</p>",
+    );
+    if posts.is_empty() {
+        body.push_str("<p class=\"muted\">No posts recorded yet (posts are recorded since version 3.0 beta).</p>");
+        return page(req, StatusCode::OK, "Posts", &body);
+    }
+    body.push_str("<table><thead><tr><th>Time</th><th>Channel</th><th>Entry</th><th></th></tr></thead><tbody>");
+    for post in &posts {
+        let time = chrono::DateTime::from_timestamp_millis(post.sent_at)
+            .map(|d| d.to_rfc3339())
+            .unwrap_or_default();
+        let title = js::to_string_or_empty(&post.entry["title"]);
+        let link = js::to_string_or_empty(&post.entry["link"]);
+        let _ = write!(
+            body,
+            "<tr><td title=\"{}\">{}</td><td>{}</td><td>{}{}</td><td><form method=\"post\" action=\"/posts/rerender\" class=\"inline\">{}<button class=\"link\">Rebuild</button></form></td></tr>",
+            esc(&time),
+            esc(&ago(&time)),
+            esc(labels
+                .get(&post.channel)
+                .map_or(post.channel.as_str(), String::as_str)),
+            if link.starts_with("http") {
+                format!(
+                    "<a href=\"{}\" rel=\"noreferrer\">{}</a>",
+                    esc(&link),
+                    esc(&title)
+                )
+            } else {
+                esc(&title)
+            },
+            if post.entry["merged"].is_object() {
+                " <small>(+ SteamDB)</small>"
+            } else {
+                ""
+            },
+            hidden("id", &post.message_id),
+        );
+    }
+    body.push_str("</tbody></table>");
+    page(req, StatusCode::OK, "Posts", &body)
+}
+
+async fn post_rerender(server: &Server, req: &Req<'_>) -> Response {
+    let id = req.f("id");
+    let Some(post) = recent_posts(server, 2000)
+        .into_iter()
+        .find(|p| p.message_id == id)
+    else {
+        return redirect("/posts", "Post not found.", true);
+    };
+    let channel = config::load(&server.paths.config).ok().and_then(|c| {
+        c.channels.into_iter().find(|ch| {
+            ch.cache_key == post.channel
+                || ch.legacy_cache_key.as_deref() == Some(post.channel.as_str())
+        })
+    });
+    let Some(channel) = channel.filter(|c| !c.webhook.is_empty()) else {
+        return redirect(
+            "/posts",
+            "The channel of this post no longer exists or has no webhook.",
+            true,
+        );
+    };
+    let cancel = tokio_util::sync::CancellationToken::new();
+    match crate::deliver::edit_webhook(
+        &channel.webhook,
+        channel.thread.as_deref(),
+        &post.message_id,
+        &post.entry,
+        &cancel,
+    )
+    .await
+    {
+        Ok(()) => redirect("/posts", "Post rebuilt.", false),
+        Err(crate::deliver::SendError::Gone) => {
+            redirect("/posts", "This message was deleted on Discord.", true)
+        }
+        Err(_) => redirect(
+            "/posts",
+            "Discord did not accept the edit; see the log.",
+            true,
+        ),
+    }
 }
 
 /// Newest posts from `sent.json` (newest first).
@@ -789,7 +1191,8 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
     let labels = channel_labels(server, &config);
     let _ = write!(
         body,
-        "<section><h2>Recent posts</h2>{}</section>",
+        "{}<section><h2>Recent posts</h2>{}<p><a href=\"/posts\">All posts →</a></p></section>",
+        failing_feeds_html(server),
         posts_table(&recent_posts(server, 10), &labels)
     );
     let mut problems_feed = activity.clone();
@@ -1590,16 +1993,34 @@ fn channel_form_html(form: &ChannelForm, rev: &str, groups: &[String], notice: &
             "text"
         ),
     );
+    let feed_links: String = split_lines(&form.sources)
+        .iter()
+        .map(|url| {
+            format!(
+                "<li><a href=\"/feed?url={}\">{}</a></li>",
+                esc(&enc(url)),
+                esc(&short_url(url))
+            )
+        })
+        .collect();
+    let rows = split_lines(&form.sources).len().clamp(4, 20) as u32 + 1;
     let _ = write!(
         out,
-        "<fieldset><legend>Sources</legend>{}</fieldset>",
+        "<fieldset><legend>Sources</legend>{}{}</fieldset>",
         textarea(
             "Feed URLs",
             "sources",
             &form.sources,
-            6,
+            rows,
             "One URL per line: RSS, Atom, JSON Feed, YouTube or a web page with a feed link."
-        )
+        ),
+        if feed_links.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<details><summary>Feed details and test</summary><ul class=\"feeds\">{feed_links}</ul></details>"
+            )
+        }
     );
     let _ = write!(
         out,

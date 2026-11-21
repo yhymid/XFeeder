@@ -109,3 +109,7 @@ button.link { background: none; border: 0; color: var(--accent); padding: 0; tex
 a.danger { color: var(--bad); }
 .pill { padding: 0.2rem 0.75rem; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; background: var(--panel); }
 .pill.on { border-color: var(--accent); font-weight: 600; }
+details { margin: 0.5rem 0; }
+details summary { cursor: pointer; color: var(--muted); }
+ul.feeds { columns: 2; margin: 0.4rem 0; font-size: 0.9rem; }
+@media (max-width: 800px) { ul.feeds { columns: 1; } }

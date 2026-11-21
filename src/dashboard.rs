@@ -1736,6 +1736,8 @@ mod tests {
             "/settings",
             "/advanced",
             "/channels/edit?group=channels&key=0",
+            "/posts",
+            "/feed?url=https%3A%2F%2Fa.example%2Ffeed",
         ] {
             let (status, _, body) = call(&server, Method::GET, page, "", &auth).await;
             assert_eq!(status, StatusCode::OK, "{page}");

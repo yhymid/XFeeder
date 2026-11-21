@@ -469,7 +469,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
     match (post, req.path) {
         (false, "/") => overview(server, req).await,
         (true, "/worker") => worker(server, req).await,
-        (false, "/channels") => channels(server, req),
+        (false, "/channels") => channels(server, req).await,
         (false, "/channels/edit") => channel_edit(server, req),
         (true, "/channels/save") => channel_save(server, req),
         (false, "/channels/delete") => channel_delete_confirm(server, req),
@@ -477,7 +477,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/config/remove-section") => remove_section(server, req),
         (true, "/channels/duplicate") => channel_duplicate(server, req),
         (false, "/activity") => activity(server, req),
-        (false, "/channel") => channel_page(server, req),
+        (false, "/channel") => channel_page(server, req).await,
         (false, "/channel/history") => channel_history_page(server, req),
         (true, "/channel/forget") => channel_forget(server, req),
         (true, "/channel/check") => channel_check(server, req),
@@ -1974,6 +1974,117 @@ fn channel_entries(config: &Value) -> Vec<(String, String, Value)> {
     out
 }
 
+// --------------------------------------------------------------- webhooks --
+
+/// What Discord says about a webhook (GET, read-only; never posts).
+#[derive(Clone)]
+enum Hook {
+    Ok { name: String, channel_id: String },
+    Gone,
+    Failed(String),
+}
+
+impl Hook {
+    fn html(&self) -> String {
+        match self {
+            Hook::Ok { name, .. } => format!("<small>webhook “{}”</small>", esc(name)),
+            Hook::Gone => "<small class=\"bad\">webhook deleted (404)</small>".into(),
+            Hook::Failed(why) => format!(
+                "<small class=\"muted\">webhook not checked: {}</small>",
+                esc(why)
+            ),
+        }
+    }
+}
+
+type HookCache = HashMap<String, (std::time::Instant, Hook)>;
+static HOOKS: std::sync::Mutex<Option<HookCache>> = std::sync::Mutex::new(None);
+const HOOK_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+
+fn is_discord_webhook(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|u| {
+        u.scheme() == "https"
+            && matches!(
+                u.host_str(),
+                Some("discord.com" | "discordapp.com" | "ptb.discord.com" | "canary.discord.com")
+            )
+            && u.path().starts_with("/api/webhooks/")
+    })
+}
+
+async fn webhook_info(url: String) -> Hook {
+    if cfg!(test) {
+        // Tests never call Discord.
+        return Hook::Failed("tests".into());
+    }
+    let cached = HOOKS
+        .lock()
+        .expect("lock")
+        .as_ref()
+        .and_then(|m| m.get(&url).cloned());
+    if let Some((at, hook)) = cached
+        && at.elapsed() < HOOK_TTL
+    {
+        return hook;
+    }
+    let Ok(mut clean) = url::Url::parse(&url) else {
+        return Hook::Failed("invalid URL".into());
+    };
+    clean.set_query(None);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let result = crate::http::get(crate::http::Get {
+        url: clean.as_str(),
+        headers: Vec::new(),
+        cancel: &cancel,
+        timeout_ms: Some(8000),
+    })
+    .await;
+    let hook = match result {
+        Ok(response) => match serde_json::from_str::<Value>(&response.body) {
+            // Only the name and channel are kept; the answer also carries
+            // the token, which is never stored or shown.
+            Ok(data) => Hook::Ok {
+                name: js::to_string_or_empty(&data["name"]),
+                channel_id: js::to_string_or_empty(&data["channel_id"]),
+            },
+            Err(_) => Hook::Failed("unexpected answer".into()),
+        },
+        Err(error) if matches!(error.status(), Some(401 | 404)) => Hook::Gone,
+        Err(error) => Hook::Failed(
+            error
+                .status()
+                .map_or("no answer".into(), |s| format!("HTTP {s}")),
+        ),
+    };
+    if !matches!(hook, Hook::Failed(_)) {
+        HOOKS
+            .lock()
+            .expect("lock")
+            .get_or_insert_with(HashMap::new)
+            .insert(url, (std::time::Instant::now(), hook.clone()));
+    }
+    hook
+}
+
+/// Info for every distinct Discord webhook, fetched in parallel.
+async fn webhook_infos(urls: Vec<String>) -> HashMap<String, Hook> {
+    let mut unique: Vec<String> = urls.into_iter().filter(|u| is_discord_webhook(u)).collect();
+    unique.sort();
+    unique.dedup();
+    let mut set = tokio::task::JoinSet::new();
+    for url in unique {
+        set.spawn(async move {
+            let hook = webhook_info(url.clone()).await;
+            (url, hook)
+        });
+    }
+    let mut out = HashMap::new();
+    while let Some(Ok((url, hook))) = set.join_next().await {
+        out.insert(url, hook);
+    }
+    out
+}
+
 /// History of one channel in cache.json: feed::target → remembered ids.
 fn channel_history(server: &Server, channel: &config::Channel) -> Map<String, Value> {
     channel_bucket(server, channel)
@@ -2175,7 +2286,7 @@ fn destination(channel: &config::Channel) -> String {
     }
 }
 
-fn channel_page(server: &Server, req: &Req) -> Response {
+async fn channel_page(server: &Server, req: &Req<'_>) -> Response {
     let (group, key) = (req.q("group"), req.q("key"));
     let Some(channel) = runtime_channel(server, group, key) else {
         return page(
@@ -2258,6 +2369,22 @@ fn channel_page(server: &Server, req: &Req) -> Response {
             body,
             "<div class=\"card\"><span>{}</span><strong>{}</strong><small>{}</small></div>",
             esc(label),
+            esc(&value),
+            esc(&sub)
+        );
+    }
+    if is_discord_webhook(&channel.webhook) {
+        let (value, sub) = match webhook_info(channel.webhook.clone()).await {
+            Hook::Ok { name, channel_id } => (name, format!("Discord channel {channel_id}")),
+            Hook::Gone => (
+                "deleted (404)".to_string(),
+                "recreate it and update the URL".to_string(),
+            ),
+            Hook::Failed(why) => ("–".to_string(), format!("not checked: {why}")),
+        };
+        let _ = write!(
+            body,
+            "<div class=\"card\"><span>Webhook</span><strong>{}</strong><small>{}</small></div>",
             esc(&value),
             esc(&sub)
         );
@@ -2397,7 +2524,7 @@ fn channel_label(group: &str, key: &str, object_group: bool) -> String {
     }
 }
 
-fn channels(server: &Server, req: &Req) -> Response {
+async fn channels(server: &Server, req: &Req<'_>) -> Response {
     let text = read_text(&server.paths.config);
     let config: Value = serde_json::from_str(&text).unwrap_or_else(|_| json!({}));
     let rev = revision(&text);
@@ -2435,6 +2562,7 @@ fn channels(server: &Server, req: &Req) -> Response {
     let resolved = config::load(&server.paths.config)
         .map(|c| c.channels)
         .unwrap_or_default();
+    let hooks = webhook_infos(resolved.iter().map(|c| c.webhook.clone()).collect()).await;
     for (group, key, raw) in &entries {
         let runtime = {
             let object = config.get(group).is_some_and(Value::is_object);
@@ -2532,6 +2660,17 @@ fn channels(server: &Server, req: &Req) -> Response {
             dest.push("Telegram".into());
         }
         let q = format!("group={}&amp;key={}", esc(&enc(group)), esc(&enc(key)));
+        let dest_html = format!(
+            "{}{}",
+            esc(&if dest.is_empty() {
+                "none".to_string()
+            } else {
+                dest.join(" + ")
+            }),
+            runtime
+                .and_then(|c| hooks.get(&c.webhook))
+                .map_or(String::new(), |h| format!("<br>{}", h.html()))
+        );
         let _ = write!(
             body,
             "<tr><td><a href=\"/channel?{q}\">{}</a>{}</td><td><strong>{}</strong> <span class=\"muted\">{}</span></td><td>{}</td><td>{interval}</td><td>{last_post}</td><td>{status}</td>\
@@ -2551,11 +2690,7 @@ fn channels(server: &Server, req: &Req) -> Response {
             },
             feeds.len(),
             esc(&hosts.into_iter().take(3).collect::<Vec<_>>().join(", ")),
-            esc(&if dest.is_empty() {
-                "none".to_string()
-            } else {
-                dest.join(" + ")
-            }),
+            dest_html,
             hidden("rev", &rev),
             hidden("group", group),
             hidden("key", key),

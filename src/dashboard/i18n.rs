@@ -476,6 +476,13 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("webhook deleted (404)", "webhook usunięty (404)"),
+    ("deleted (404)", "usunięty (404)"),
+    (
+        "recreate it and update the URL",
+        "utwórz go ponownie i zaktualizuj adres",
+    ),
+    ("Webhook", "Webhook"),
     (
         "Entries this channel remembers as already posted, per feed and destination, newest first. “Forget” lets the worker post that entry again if the feed still lists it (within the channel's limits). The worker applies it on its next tick.",
         "Wpisy, które ten kanał pamięta jako już wysłane, według feedu i celu, od najnowszych. „Zapomnij” pozwala workerowi wysłać ten wpis ponownie, jeśli feed nadal go zawiera (w limitach kanału). Worker wykona to w następnym cyklu.",
@@ -1079,6 +1086,16 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         }),
         rule(r"^Delivery history · (.+)$", |c| {
             format!("Historia wysyłek · {}", &c[1])
+        }),
+        rule(r"^webhook “(.+)”$", |c| format!("webhook „{}”", &c[1])),
+        rule(r"^webhook not checked: (.+)$", |c| {
+            format!("webhook niesprawdzony: {}", &c[1])
+        }),
+        rule(r"^not checked: (.+)$", |c| {
+            format!("niesprawdzony: {}", &c[1])
+        }),
+        rule(r"^Discord channel (\d+)$", |c| {
+            format!("kanał Discorda {}", &c[1])
         }),
         rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
             format!("Diagnostyka XFeedera — {} (UTC)", &c[1])

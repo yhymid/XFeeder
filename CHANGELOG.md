@@ -10,6 +10,10 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- Documentation in English and Polish: every page is `NAME.md` (English) with
+  `NAME.pl.md` (Polish), linked to each other at the top. The configuration guide, until
+  now only in Polish, has an English version; the Scrapling README and anti-bot guide,
+  also Polish-only, are rewritten for the Rust worker in both languages.
 - GitHub REST API URLs work as feeds: commits (also of private repos), issues and pull
   requests (one repo or all of yours via `/user/issues`), releases, new branches and tags.
   The account activity Atom feed comes from GitHub's events, which lagged two days in a

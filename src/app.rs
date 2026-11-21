@@ -105,10 +105,14 @@ pub struct App {
     bucket_keys: Mutex<HashMap<String, String>>,
     /// Diagnostics: when each entry (source + identity) was first fetched.
     first_seen: Mutex<HashMap<String, i64>>,
+    /// `AdaptivePolling`: when each feed (channel key + URL) is due again.
+    feed_due: Mutex<HashMap<String, u64>>,
 }
 
 pub struct ChannelResult {
     pub failure: Option<String>,
+    /// With `AdaptivePolling`: when the channel's earliest feed is due.
+    pub next_due_ms: Option<u64>,
 }
 
 impl App {
@@ -137,6 +141,7 @@ impl App {
             debug_expert,
             bucket_keys: Mutex::new(HashMap::new()),
             first_seen: Mutex::new(HashMap::new()),
+            feed_due: Mutex::new(HashMap::new()),
         });
         let current = app.config();
         app.apply(&current, false);
@@ -743,7 +748,21 @@ impl App {
         })?;
         let mut failure: Option<String> = None;
 
-        if let Some(discord) = &channel.discord {
+        let discord_key = format!("{}|discord", channel.cache_key);
+        let discord_due = channel.adaptive.is_none()
+            || self
+                .feed_due
+                .lock()
+                .expect("lock")
+                .get(&discord_key)
+                .is_none_or(|due| *due <= now_ms());
+        if let Some(discord) = channel.discord.as_ref().filter(|_| discord_due) {
+            if channel.adaptive.is_some() {
+                self.feed_due
+                    .lock()
+                    .expect("lock")
+                    .insert(discord_key, now_ms() + channel.time_checker * 60_000);
+            }
             let targets = Targets::new(
                 channel.discord_webhook(),
                 channel.discord_thread(),
@@ -785,15 +804,49 @@ impl App {
             channel.thread.clone(),
             channel.telegram.clone(),
         );
+        let mut next_due: Option<u64> = None;
+        let max_ms = channel.time_checker * 60_000;
         for url in &channel.feeds {
             if self.cancel.is_cancelled() {
                 return Err(Stop::Cancelled);
+            }
+            let due_key = format!("{}|{url}", channel.cache_key);
+            if channel.adaptive.is_some() {
+                let due = self.feed_due.lock().expect("lock").get(&due_key).copied();
+                if let Some(due) = due.filter(|d| *d > now_ms()) {
+                    next_due = Some(next_due.map_or(due, |n| n.min(due)));
+                    expert(
+                        "channel.feed.not_due",
+                        json!({ "channel": label, "url": url, "dueInSec": (due - now_ms()) / 1000 }),
+                    );
+                    continue;
+                }
             }
             expert(
                 "channel.feed.begin",
                 json!({ "channel": label, "url": url }),
             );
             let outcome = pipeline.fetch(url).await?;
+            if let Some(adaptive) = &channel.adaptive {
+                let fetched_at = now_ms();
+                let (interval, reason) = if outcome.failure.is_some() {
+                    (max_ms, "failed")
+                } else {
+                    crate::adaptive::interval_ms(
+                        &outcome.items,
+                        fetched_at as i64,
+                        max_ms,
+                        adaptive,
+                    )
+                };
+                let due = fetched_at + interval;
+                self.feed_due.lock().expect("lock").insert(due_key, due);
+                next_due = Some(next_due.map_or(due, |n| n.min(due)));
+                expert(
+                    "feed.interval",
+                    json!({ "channel": label, "url": url, "minutes": interval as f64 / 60_000.0, "reason": reason }),
+                );
+            }
             if let Some(error) = outcome.failure {
                 failure.get_or_insert(error);
             }
@@ -831,7 +884,10 @@ impl App {
             "channel.process.complete",
             json!({ "index": channel.index + 1, "channel": label, "durationMs": started.elapsed().as_millis() as u64 }),
         );
-        Ok(ChannelResult { failure })
+        Ok(ChannelResult {
+            failure,
+            next_due_ms: next_due,
+        })
     }
 
     pub async fn run_once(&self) -> Result<(usize, usize), Stop> {
@@ -1066,12 +1122,21 @@ fn handle_done(
     active.retain(|k| k != &key);
     let schedule = schedules.entry(key.clone()).or_default();
     match result {
-        Ok(ChannelResult { failure: None }) => {
+        Ok(ChannelResult {
+            failure: None,
+            next_due_ms,
+        }) => {
             reschedule(schedule, minutes, false);
+            // AdaptivePolling: wake up for the earliest due feed (never later
+            // than TimeChecker, never sooner than a minute).
+            if let Some(due) = next_due_ms {
+                schedule.next_run_at = schedule.next_run_at.min(due.max(now_ms() + 60_000));
+            }
             expert("queue.channel.complete", json!({ "channel": label }));
         }
         Ok(ChannelResult {
             failure: Some(message),
+            ..
         }) => {
             reschedule(schedule, minutes, true);
             crate::warn!(

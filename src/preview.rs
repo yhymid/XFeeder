@@ -134,6 +134,8 @@ struct Timing {
 
 struct Run {
     timing: Timing,
+    /// `AdaptivePolling` interval this feed would get (minutes, reason).
+    interval: (f64, &'static str),
     items: Vec<Value>,
     image_status: Vec<Option<u16>>,
     failure: Option<String>,
@@ -144,6 +146,7 @@ async fn fetch_once(
     url: &str,
     items_shown: usize,
     cancel: &CancellationToken,
+    adaptive: &crate::adaptive::Adaptive,
 ) -> Result<Run, String> {
     crate::diag::capture_start();
     let started = Instant::now();
@@ -175,6 +178,12 @@ async fn fetch_once(
     }
     let source = outcome.source.as_deref().unwrap_or(url);
     let items = crate::parsers::finish(source, outcome.items);
+    let (interval_ms, reason) = crate::adaptive::interval_ms(
+        &items,
+        chrono::Utc::now().timestamp_millis(),
+        30 * 60_000,
+        adaptive,
+    );
     let mut shown = Vec::new();
     let mut image_status = Vec::new();
     let image_started = Instant::now();
@@ -192,6 +201,7 @@ async fn fetch_once(
     all.extend(items.into_iter().skip(items_shown.max(1)));
     Ok(Run {
         timing,
+        interval: (interval_ms as f64 / 60_000.0, reason),
         items: all,
         image_status,
         failure: outcome.failure,
@@ -318,6 +328,10 @@ fn print_text(url: &str, runs: &[Run], items_shown: usize) {
         println!("    parse          {}", col(|t| t.parse_ms.unwrap_or(0)));
         println!("    image check    {}", col(|t| t.image_ms));
     }
+    println!(
+        "  AdaptivePolling: checked every {:.1} min ({}; TimeChecker 30)",
+        first.interval.0, first.interval.1
+    );
     for hint in hints(&first.items) {
         println!("  · {hint}");
     }
@@ -369,6 +383,8 @@ fn print_json(url: &str, runs: &[Run], items_shown: usize) {
             "imageCheck": col(|t| t.image_ms),
         },
         "hints": hints(&first.items),
+        "adaptiveMinutes": first.interval.0,
+        "adaptiveReason": first.interval.1,
         "items": first.items.iter().take(items_shown).collect::<Vec<_>>(),
     });
     println!("{out}");
@@ -417,6 +433,7 @@ pub async fn run(args: Vec<String>) -> ExitCode {
     // Saved clearances are used but never written by a preview.
     crate::clearance::init(crate::clearance::path_for(&base), false);
     let cancel = CancellationToken::new();
+    let adaptive = crate::adaptive::from_config(&json!({}), &config.root).unwrap_or_default();
     let mut failed = false;
     for url in &args.urls {
         let mut runs = Vec::new();
@@ -430,7 +447,7 @@ pub async fn run(args: Vec<String>) -> ExitCode {
                 base: &base,
                 cancel: &cancel,
             };
-            match fetch_once(&pipeline, url, args.items, &cancel).await {
+            match fetch_once(&pipeline, url, args.items, &cancel, &adaptive).await {
                 Ok(run) => runs.push(run),
                 Err(error) => {
                     eprintln!("{}: {error}", crate::diag::sanitize_url(url));

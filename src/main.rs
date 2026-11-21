@@ -1,6 +1,7 @@
 //! XFeeder — RSS/Atom/JSON/YouTube/Discord feed relay to Discord webhooks
 //! (Components V2) and Telegram, with an optional web dashboard.
 
+mod adaptive;
 mod app;
 mod clearance;
 mod config;

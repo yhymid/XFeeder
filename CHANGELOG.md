@@ -10,6 +10,15 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- `Settings.AdaptivePolling` (off by default): every feed gets its own check interval
+  from the dates of its entries. After a fresh entry (`BurstHours`, 6) the feed is checked
+  every `MinMinutes` (5), because game updates come in series; otherwise every average
+  gap / `Divisor` (8). Always between `MinMinutes` and the channel's `TimeChecker`, so no
+  feed is checked less often than before (a game updated twice a year stays at 30 min).
+  On the production feeds: onet, boop, lowcygier and an active GitHub branch → 5 min,
+  FMHY → 19 min, Steam, SteamDB, YouTube, Gitea → 30 min (unchanged). `false` (or a
+  channel's `"AdaptivePolling": false`) is the previous scheduler; `xfeeder preview`
+  shows the interval a feed would get.
 - `Scrapling.ReuseClearance` (temporary, off by default): after a browser passes a
   Cloudflare check, the site's cookies (`cf_clearance`) and the browser's User-Agent are
   kept in `clearance.json` (0600, git-ignored) and the next checks try plain HTTP with

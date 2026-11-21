@@ -802,6 +802,9 @@ pub struct Channel {
     pub first_run_send: usize,
     /// Entry filter (`Filters`), if configured.
     pub filter: Option<crate::filter::Filter>,
+    /// Per-feed check interval (`AdaptivePolling`); `None` = every feed is
+    /// checked every `TimeChecker` minutes.
+    pub adaptive: Option<crate::adaptive::Adaptive>,
     /// Normalized Discord source configuration (raw JSON shape kept).
     pub discord: Option<Value>,
     pub telegram: Option<Telegram>,
@@ -1125,6 +1128,7 @@ pub fn collect_channels(root: &Value) -> Vec<Channel> {
                 request_send: positive_floor(js::get(&raw, "RequestSend"), 5) as usize,
                 first_run_send: first_run_send(&raw, root),
                 filter: crate::filter::Filter::parse(js::get(&raw, "Filters")).0,
+                adaptive: crate::adaptive::from_config(&raw, root),
                 discord: normalize_discord(js::get(&raw, "Discord"), &auth),
                 telegram: merge_telegram(js::get(root, "Telegram"), js::get(&raw, "Telegram")),
                 source_key,
@@ -1220,7 +1224,9 @@ pub fn unsupported_sections(root: &Value, channels: &[Channel]) -> Vec<String> {
     }
     let mut inspect = |raw: &Value, label: &str| {
         for (key, value) in raw.as_object().into_iter().flatten() {
-            if !CHANNEL_HINTS[..13].contains(&key.as_str()) && key != "Filters" && value.is_object()
+            if !CHANNEL_HINTS[..13].contains(&key.as_str())
+                && !matches!(key.as_str(), "Filters" | "AdaptivePolling")
+                && value.is_object()
             {
                 report(format!("{label}.{key}"));
             }

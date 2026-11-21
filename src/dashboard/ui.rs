@@ -484,6 +484,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/settings/general") => settings_general(server, req),
         (true, "/settings/network") => settings_network(server, req),
         (true, "/settings/features") => settings_features(server, req),
+        (true, "/settings/clearance-forget") => clearance_forget(server, req),
         (true, "/settings/secret") => settings_secret(server, req),
         (false, "/advanced") => advanced(server, req, None, None),
         (true, "/advanced") => advanced_save(server, req),
@@ -2707,6 +2708,7 @@ fn settings(server: &Server, req: &Req, notice: Option<String>) -> Response {
     if !v2 {
         body.push_str(&features_form(&config, &rev));
     }
+    body.push_str(&clearances_html(server));
 
     // Network
     let raw = js::get(&config, "network");
@@ -2993,6 +2995,62 @@ fn features_form(config: &Value, rev: &str) -> String {
         ),
         checkbox("Save despite warnings", "accept", false),
     )
+}
+
+fn clearance_path(server: &Server) -> std::path::PathBuf {
+    crate::clearance::path_for(server.paths.config.parent().unwrap_or(Path::new(".")))
+}
+
+fn clearances_html(server: &Server) -> String {
+    let saved = crate::clearance::list(&clearance_path(server));
+    if saved.is_empty() {
+        return String::new();
+    }
+    let now = chrono::Utc::now().timestamp();
+    let mut rows = String::new();
+    for (host, c) in &saved {
+        let _ = write!(
+            rows,
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td><form method=\"post\" action=\"/settings/clearance-forget\" class=\"inline\">{}<button class=\"link\">Forget</button></form></td></tr>",
+            esc(host),
+            esc(&ms_time(c.saved_at.max(0) as u64 * 1000)),
+            if c.expires > 0 {
+                format!("{} d", (c.expires - now).max(0) / 86_400)
+            } else {
+                "–".into()
+            },
+            hidden("host", host),
+        );
+    }
+    format!(
+        "<section><h2>Saved Cloudflare clearances</h2><p class=\"muted\">Forgetting one makes the next check of that site use the browser again. The worker notices it without a restart.</p>\
+         <table><thead><tr><th>Site</th><th>Saved</th><th>Valid for</th><th></th></tr></thead><tbody>{rows}</tbody></table>\
+         <form method=\"post\" action=\"/settings/clearance-forget\">{}<button class=\"danger\">Forget all</button></form></section>",
+        hidden("host", "*"),
+    )
+}
+
+fn clearance_forget(server: &Server, req: &Req) -> Response {
+    let path = clearance_path(server);
+    let mut saved = crate::clearance::list(&path);
+    let host = req.f("host");
+    let removed = if host == "*" {
+        std::mem::take(&mut saved).len()
+    } else {
+        usize::from(saved.remove(host).is_some())
+    };
+    if removed == 0 {
+        return redirect("/settings", "Nothing to forget.", true);
+    }
+    let text = serde_json::to_string_pretty(&saved).unwrap_or_else(|_| "{}".into());
+    match write_private(&path, &text) {
+        Ok(()) => redirect("/settings", "Clearance forgotten.", false),
+        Err(e) => redirect(
+            "/settings",
+            &format!("Cannot write clearance.json: {e}"),
+            true,
+        ),
+    }
 }
 
 fn settings_features(server: &Server, req: &Req) -> Response {

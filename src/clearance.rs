@@ -40,6 +40,32 @@ struct Store {
     path: PathBuf,
     persist: bool,
     hosts: BTreeMap<String, Clearance>,
+    /// Modification time of the file as last read or written here; another
+    /// value means someone else (the dashboard) changed or removed it.
+    seen: Option<std::time::SystemTime>,
+}
+
+fn modified(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+fn read_hosts(path: &Path) -> BTreeMap<String, Clearance> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// Pick up a change made outside the worker (e.g. "forget" in the dashboard).
+fn refresh(store: &mut Store) {
+    if !store.persist {
+        return;
+    }
+    let now = modified(&store.path);
+    if now != store.seen {
+        store.hosts = read_hosts(&store.path);
+        store.seen = now;
+    }
 }
 
 static STORE: Mutex<Option<Store>> = Mutex::new(None);
@@ -56,14 +82,13 @@ pub fn path_for(base: &Path) -> PathBuf {
 /// Load `clearance.json`. `persist = false` (dry runs, `preview`) keeps
 /// changes in memory only.
 pub fn init(path: PathBuf, persist: bool) {
-    let hosts = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default();
+    let hosts = read_hosts(&path);
+    let seen = modified(&path);
     *STORE.lock().expect("clearance lock") = Some(Store {
         path,
         persist,
         hosts,
+        seen,
     });
 }
 
@@ -81,8 +106,10 @@ fn now() -> i64 {
 /// Saved clearance for the URL's site, unless it has expired.
 pub fn get(url: &str) -> Option<Clearance> {
     let host = host_of(url)?;
-    let guard = STORE.lock().expect("clearance lock");
-    let clearance = guard.as_ref()?.hosts.get(&host)?.clone();
+    let mut guard = STORE.lock().expect("clearance lock");
+    let store = guard.as_mut()?;
+    refresh(store);
+    let clearance = store.hosts.get(&host)?.clone();
     (clearance.expires == 0 || clearance.expires > now() + 60).then_some(clearance)
 }
 
@@ -90,7 +117,7 @@ pub fn age_minutes(clearance: &Clearance) -> i64 {
     (now() - clearance.saved_at) / 60
 }
 
-fn write(store: &Store) {
+fn write(store: &mut Store) {
     if !store.persist {
         return;
     }
@@ -100,6 +127,12 @@ fn write(store: &Store) {
     if let Err(error) = crate::state::write_atomic(&store.path, text.as_bytes(), 0o600) {
         crate::warn!("Clearance", "Cannot save {}: {error}", store.path.display());
     }
+    store.seen = modified(&store.path);
+}
+
+/// Saved clearances (host → clearance), as on disk.
+pub fn list(path: &Path) -> BTreeMap<String, Clearance> {
+    read_hosts(path)
 }
 
 /// Keep the cookies of a browser fetch that passed Cloudflare. Only a fetch
@@ -146,6 +179,7 @@ pub fn save_from_browser(url: &str, cookies: &[Value], user_agent: Option<&str>)
     let Some(store) = guard.as_mut() else {
         return;
     };
+    refresh(store);
     if store
         .hosts
         .get(&host)
@@ -170,6 +204,7 @@ pub fn forget(url: &str, status: Option<u16>) {
     let Some(host) = host_of(url) else { return };
     let mut guard = STORE.lock().expect("clearance lock");
     let Some(store) = guard.as_mut() else { return };
+    refresh(store);
     if let Some(old) = store.hosts.remove(&host) {
         write(store);
         crate::info!(
@@ -226,6 +261,15 @@ mod tests {
         }
         // Reload from disk.
         init(path.clone(), true);
+        assert!(get("https://boop.pl/rss").is_some());
+        // Removed from outside (dashboard): forgotten without a restart.
+        std::fs::remove_file(&path).unwrap();
+        assert!(get("https://boop.pl/rss").is_none());
+        save_from_browser(
+            "https://www.boop.pl/rss",
+            &cookies,
+            Some("Mozilla/5.0 Test"),
+        );
         assert!(get("https://boop.pl/rss").is_some());
         forget("https://boop.pl/rss", Some(403));
         assert!(get("https://boop.pl/rss").is_none());

@@ -1795,6 +1795,35 @@ mod tests {
             assert_eq!(status, StatusCode::FORBIDDEN, "{host} {origin}");
         }
 
+        // Saved clearances: listed without the cookie, forgotten one by one.
+        std::fs::write(
+            dir.join("clearance.json"),
+            r#"{"boop.pl":{"userAgent":"UA","cookie":"cf_clearance=S3cr3tCookie","expires":0,"savedAt":1},"x.example":{"userAgent":"UA","cookie":"c=1","expires":0,"savedAt":1}}"#,
+        )
+        .unwrap();
+        let (_, _, body) = call(&server, Method::GET, "/settings", "", &auth).await;
+        assert!(body.contains("boop.pl") && !body.contains("S3cr3tCookie"));
+        let (status, _, _) = call(
+            &server,
+            Method::POST,
+            "/settings/clearance-forget",
+            "host=boop.pl",
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let left = crate::clearance::list(&dir.join("clearance.json"));
+        assert_eq!(left.keys().collect::<Vec<_>>(), ["x.example"]);
+        call(
+            &server,
+            Method::POST,
+            "/settings/clearance-forget",
+            "host=%2A",
+            &auth,
+        )
+        .await;
+        assert!(crate::clearance::list(&dir.join("clearance.json")).is_empty());
+
         // Every page renders in Polish too.
         let polish = format!("{}; xf_lang=pl", auth[0].1);
         for page in [

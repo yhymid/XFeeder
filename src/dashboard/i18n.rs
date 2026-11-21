@@ -482,6 +482,21 @@ const EXACT: &[(&str, &str)] = &[
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
     (
+        "Saved Cloudflare clearances",
+        "Zapisane ciasteczka Cloudflare",
+    ),
+    (
+        "Forgetting one makes the next check of that site use the browser again. The worker notices it without a restart.",
+        "Po zapomnieniu następne sprawdzenie tej strony znów użyje przeglądarki. Worker zauważy to bez restartu.",
+    ),
+    ("Site", "Strona"),
+    ("Saved", "Zapisane"),
+    ("Valid for", "Ważne jeszcze"),
+    ("Forget", "Zapomnij"),
+    ("Forget all", "Zapomnij wszystkie"),
+    ("Nothing to forget.", "Nie ma czego zapominać."),
+    ("Clearance forgotten.", "Ciasteczko zapomniane."),
+    (
         "End-to-end latency (publication → Discord)",
         "Opóźnienie od publikacji do Discorda",
     ),
@@ -890,6 +905,7 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 &c[2]
             )
         }),
+        rule(r"^(\d+) d$", |c| format!("{} dni", &c[1])),
         rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
             format!("Diagnostyka XFeedera — {} (UTC)", &c[1])
         }),

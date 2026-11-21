@@ -1090,7 +1090,11 @@ impl Pipeline<'_> {
             return Err(Stop::Cancelled);
         }
         let body = Body::new(dl.data.clone());
-        for (name, parser) in parsers::PARSERS {
+        // GitHub answers `[]` for a repository without releases, tags, …:
+        // an empty feed, not an unknown format.
+        let empty_api = crate::github_api::is_api(url)
+            && matches!(&body.json, Some(Value::Array(items)) if items.is_empty());
+        for (name, parser) in parsers::PARSERS.iter().filter(|_| !empty_api) {
             expert("feed.parser.begin", json!({ "url": url, "parser": name }));
             let items = parser(url, &body);
             if !items.is_empty() {
@@ -1119,7 +1123,11 @@ impl Pipeline<'_> {
                 json!({ "url": url, "parser": name }),
             );
         }
-        let items = parsers::regex_items(&dl.data);
+        let items = if empty_api {
+            Vec::new()
+        } else {
+            parsers::regex_items(&dl.data)
+        };
         if !items.is_empty() {
             expert(
                 "feed.parsed",
@@ -1135,7 +1143,7 @@ impl Pipeline<'_> {
                 None,
             ));
         }
-        if parsers::is_feed_document(&body) {
+        if empty_api || parsers::is_feed_document(&body) {
             crate::info!(
                 "Feed pipeline",
                 "Feed has no entries: {}",

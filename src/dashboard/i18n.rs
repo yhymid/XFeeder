@@ -476,6 +476,33 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    (
+        "Entries this channel remembers as already posted, per feed and destination, newest first. “Forget” lets the worker post that entry again if the feed still lists it (within the channel's limits). The worker applies it on its next tick.",
+        "Wpisy, które ten kanał pamięta jako już wysłane, według feedu i celu, od najnowszych. „Zapomnij” pozwala workerowi wysłać ten wpis ponownie, jeśli feed nadal go zawiera (w limitach kanału). Worker wykona to w następnym cyklu.",
+    ),
+    ("Nothing remembered yet.", "Nic jeszcze nie zapamiętano."),
+    ("Remembered entry", "Zapamiętany wpis"),
+    ("Waiting for the worker", "Czeka na workera"),
+    (
+        "Nothing remembered for this channel.",
+        "Ten kanał nic nie pamięta.",
+    ),
+    (
+        "This entry is not remembered (any more).",
+        "Ten wpis nie jest (już) zapamiętany.",
+    ),
+    (
+        "Queued: the worker forgets the entry on its next tick.",
+        "W kolejce: worker zapomni wpis w następnym cyklu.",
+    ),
+    (
+        "Queued: the worker checks this channel within 30 s.",
+        "W kolejce: worker sprawdzi ten kanał w ciągu 30 s.",
+    ),
+    (
+        "Queued, but the worker is not running: it checks the channel once it starts.",
+        "W kolejce, ale worker nie działa: sprawdzi kanał po uruchomieniu.",
+    ),
     ("Delivery history", "Historia wysyłek"),
     ("Check now", "Sprawdź teraz"),
     ("Posts, 7 days", "Posty, 7 dni"),
@@ -1049,6 +1076,9 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule(r"^key (\S+)$", |c| format!("klucz {}", &c[1])),
         rule(r"^TimeChecker (\d+) min$", |c| {
             format!("TimeChecker {} min", &c[1])
+        }),
+        rule(r"^Delivery history · (.+)$", |c| {
+            format!("Historia wysyłek · {}", &c[1])
         }),
         rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
             format!("Diagnostyka XFeedera — {} (UTC)", &c[1])

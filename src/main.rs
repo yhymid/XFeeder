@@ -18,6 +18,7 @@ mod parsers;
 mod preview;
 #[cfg(test)]
 mod profile_tests;
+mod requests;
 mod rerender;
 mod scrapling;
 mod sent;

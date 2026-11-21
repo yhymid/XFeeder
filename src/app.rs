@@ -16,7 +16,7 @@ use crate::deliver::{self, SendError};
 use crate::diag::{expert, sanitize_text, sanitize_url};
 use crate::feed::{Circuit, Pipeline, Stop};
 use crate::http::net;
-use crate::state::{StateStore, push_cache};
+use crate::state::{StateStore, UnsafeState, push_cache};
 use crate::text::entry_identity;
 
 const SEND_DELAY: Duration = Duration::from_millis(500);
@@ -229,6 +229,43 @@ impl App {
     pub fn begin_stop(&self) {
         self.stopping.store(true, Ordering::Relaxed);
         self.stop.cancel();
+    }
+
+    /// Drop one remembered entry (dashboard request). False if it was not
+    /// there; nothing is written in a dry run.
+    pub async fn forget_entry(
+        &self,
+        bucket: &str,
+        feed: &str,
+        id: &str,
+    ) -> Result<bool, UnsafeState> {
+        if self.dry_run {
+            return Ok(false);
+        }
+        let removed = self.state.delivery.with(|root| {
+            root.get_mut(bucket)
+                .and_then(Value::as_object_mut)
+                .and_then(|b| b.get_mut(feed))
+                .and_then(Value::as_array_mut)
+                .is_some_and(|list| {
+                    let before = list.len();
+                    list.retain(|v| v.as_str() != Some(id));
+                    list.len() != before
+                })
+        })?;
+        if removed {
+            self.state.delivery.save().await?;
+        }
+        Ok(removed)
+    }
+
+    /// Make every feed of the channel due now (AdaptivePolling).
+    fn clear_feed_due(&self, cache_key: &str) {
+        let prefix = format!("{cache_key}|");
+        self.feed_due
+            .lock()
+            .expect("lock")
+            .retain(|k, _| !k.starts_with(&prefix));
     }
 
     fn bucket_key(&self, channel: &Channel) -> String {
@@ -1112,6 +1149,7 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
         app.refresh(false);
         let config = app.config();
         let channels = &config.channels;
+        apply_requests(&app, channels, &mut schedules, &active).await;
         for channel in channels {
             if let Some(schedule) = schedules.get_mut(&channel.cache_key) {
                 apply_interval(schedule, channel.time_checker);
@@ -1198,6 +1236,52 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
                 let _ = tokio::time::timeout(Duration::from_secs(2), async { while running.join_next().await.is_some() {} }).await;
                 running.abort_all();
                 break;
+            }
+        }
+    }
+}
+
+/// Dashboard requests (see `requests.rs`). A forget for a channel that is
+/// running now waits: the running round would write its own copy back.
+async fn apply_requests(
+    app: &App,
+    channels: &[Channel],
+    schedules: &mut HashMap<String, Schedule>,
+    active: &[String],
+) {
+    let dir = crate::requests::dir_for(&app.config_path);
+    for (path, request) in crate::requests::pending(&dir) {
+        match request {
+            crate::requests::Request::Check { channel } => {
+                match channels.iter().find(|c| c.cache_key == channel) {
+                    Some(found) => {
+                        schedules.entry(channel.clone()).or_default().next_run_at = 0;
+                        app.clear_feed_due(&channel);
+                        crate::info!("Requests", "Checking {} now (dashboard)", found.label());
+                    }
+                    None => crate::warn!("Requests", "Check requested for an unknown channel"),
+                }
+                crate::requests::done(&path);
+            }
+            crate::requests::Request::Forget { bucket, feed, id } => {
+                let busy = channels
+                    .iter()
+                    .any(|c| active.contains(&c.cache_key) && app.bucket_key(c) == bucket);
+                if busy {
+                    continue;
+                }
+                match app.forget_entry(&bucket, &feed, &id).await {
+                    Ok(removed) => {
+                        crate::info!(
+                            "Requests",
+                            "{} a remembered entry of {} (dashboard); it can be posted again",
+                            if removed { "Forgot" } else { "Did not find" },
+                            sanitize_text(feed.rsplit_once("::").map_or(&feed, |(u, _)| u))
+                        );
+                        crate::requests::done(&path);
+                    }
+                    Err(error) => crate::error!("Requests", "Cannot forget the entry: {error}"),
+                }
             }
         }
     }

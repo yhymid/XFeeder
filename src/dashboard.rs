@@ -1846,6 +1846,77 @@ mod tests {
                 .contains("NEW_ONE")
         );
 
+        // Channel page, delivery history, forget and check go through requests/.
+        let key_now = crate::config::load(&dir.join("config.json"))
+            .unwrap()
+            .channels[0]
+            .cache_key
+            .clone();
+        std::fs::write(
+            dir.join("cache.json"),
+            format!(r#"{{"{key_now}":{{"https://a.example/feed::webhook":["https://a.example/1","https://a.example/2"]}}}}"#),
+        )
+        .unwrap();
+        let (status, _, body) = call(
+            &server,
+            Method::GET,
+            "/channel/history?group=channels&key=0",
+            "",
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("https://a.example/2"), "{body}");
+        let (status, _, _) = call(
+            &server,
+            Method::POST,
+            "/channel/forget",
+            "group=channels&key=0&feed=https%3A%2F%2Fa.example%2Ffeed%3A%3Awebhook&id=https%3A%2F%2Fa.example%2F2",
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let (status, headers, _) = call(
+            &server,
+            Method::POST,
+            "/channel/forget",
+            "group=channels&key=0&feed=https%3A%2F%2Fa.example%2Ffeed%3A%3Awebhook&id=https%3A%2F%2Fnot.remembered",
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        assert!(
+            headers[header::LOCATION]
+                .to_str()
+                .unwrap()
+                .contains("error=")
+        );
+        call(
+            &server,
+            Method::POST,
+            "/channel/check",
+            "group=channels&key=0",
+            &auth,
+        )
+        .await;
+        let queued: Vec<crate::requests::Request> = crate::requests::pending(&dir.join("requests"))
+            .into_iter()
+            .map(|(_, r)| r)
+            .collect();
+        assert_eq!(
+            queued,
+            [
+                crate::requests::Request::Forget {
+                    bucket: key_now.clone(),
+                    feed: "https://a.example/feed::webhook".into(),
+                    id: "https://a.example/2".into()
+                },
+                crate::requests::Request::Check {
+                    channel: key_now.clone()
+                }
+            ]
+        );
+
         // Saved clearances: listed without the cookie, forgotten one by one.
         std::fs::write(
             dir.join("clearance.json"),

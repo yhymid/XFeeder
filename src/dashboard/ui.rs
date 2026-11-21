@@ -478,6 +478,9 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/channels/duplicate") => channel_duplicate(server, req),
         (false, "/activity") => activity(server, req),
         (false, "/channel") => channel_page(server, req),
+        (false, "/channel/history") => channel_history_page(server, req),
+        (true, "/channel/forget") => channel_forget(server, req),
+        (true, "/channel/check") => channel_check(server, req),
         (false, "/logs") => logs_page(req).await,
         (false, "/feed") => feed_page(server, req),
         (true, "/feed/test") => feed_test(server, req).await,
@@ -1973,6 +1976,16 @@ fn channel_entries(config: &Value) -> Vec<(String, String, Value)> {
 
 /// History of one channel in cache.json: feed::target → remembered ids.
 fn channel_history(server: &Server, channel: &config::Channel) -> Map<String, Value> {
+    channel_bucket(server, channel)
+        .map(|(_, m)| m)
+        .unwrap_or_default()
+}
+
+/// The channel's key in cache.json (current or 2.x) and its content.
+fn channel_bucket(
+    server: &Server,
+    channel: &config::Channel,
+) -> Option<(String, Map<String, Value>)> {
     let cache = read_json(&server.paths.cache);
     [
         Some(channel.cache_key.as_str()),
@@ -1980,8 +1993,168 @@ fn channel_history(server: &Server, channel: &config::Channel) -> Map<String, Va
     ]
     .into_iter()
     .flatten()
-    .find_map(|k| cache.get(k).and_then(Value::as_object).cloned())
-    .unwrap_or_default()
+    .find_map(|k| {
+        cache
+            .get(k)
+            .and_then(Value::as_object)
+            .map(|m| (k.to_string(), m.clone()))
+    })
+}
+
+fn requests_dir(server: &Server) -> std::path::PathBuf {
+    crate::requests::dir_for(&server.paths.config)
+}
+
+fn channel_history_page(server: &Server, req: &Req) -> Response {
+    let (group, key) = (req.q("group"), req.q("key"));
+    let Some(channel) = runtime_channel(server, group, key) else {
+        return page(
+            req,
+            StatusCode::NOT_FOUND,
+            "Not found",
+            "<p>Channel not found. <a href=\"/channels\">Channels</a></p>",
+        );
+    };
+    let q = format!("group={}&amp;key={}", esc(&enc(group)), esc(&enc(key)));
+    let mut body = format!(
+        "<p><a href=\"/channel?{q}\">← {}</a></p><p class=\"muted\">Entries this channel remembers as already posted, per feed and destination, newest first. “Forget” lets the worker post that entry again if the feed still lists it (within the channel's limits). The worker applies it on its next tick.</p>",
+        esc(&channel.label())
+    );
+    let Some((bucket, history)) = channel_bucket(server, &channel) else {
+        body.push_str("<p class=\"muted\">Nothing remembered yet.</p>");
+        return page(req, StatusCode::OK, "Delivery history", &body);
+    };
+    let waiting: Vec<(String, String)> = crate::requests::pending(&requests_dir(server))
+        .into_iter()
+        .filter_map(|(_, r)| match r {
+            crate::requests::Request::Forget {
+                bucket: b,
+                feed,
+                id,
+            } if b == bucket => Some((feed, id)),
+            _ => None,
+        })
+        .collect();
+    // Titles for remembered ids: sent posts and the saved feed entries.
+    let mut titles: HashMap<String, String> = HashMap::new();
+    for snapshot in feed_snapshots(server).values() {
+        for item in snapshot["items"].as_array().into_iter().flatten() {
+            let title = js::to_string_or_empty(&item["title"]);
+            for field in ["link", "guid"] {
+                let id = js::to_string_or_empty(&item[field]);
+                if !id.is_empty() && !title.is_empty() {
+                    titles.insert(id, title.clone());
+                }
+            }
+        }
+    }
+    for post in recent_posts(server, 2000) {
+        let title = js::to_string_or_empty(&post.entry["title"]);
+        if !title.is_empty() {
+            titles.insert(post.identity.clone(), title.clone());
+            titles.insert(js::to_string_or_empty(&post.entry["link"]), title);
+        }
+    }
+    let mut feeds: Vec<(&String, &Value)> = history.iter().collect();
+    feeds.sort_by(|a, b| a.0.cmp(b.0));
+    for (feed_key, ids) in feeds {
+        let ids = ids.as_array().cloned().unwrap_or_default();
+        let (url, target) = feed_key
+            .rsplit_once("::")
+            .unwrap_or((feed_key.as_str(), ""));
+        let _ = write!(
+            body,
+            "<details><summary>{} <span class=\"muted\">· {} · {}</span></summary><table><thead><tr><th>Remembered entry</th><th></th></tr></thead><tbody>",
+            esc(&short_url(url)),
+            esc(target),
+            ids.len()
+        );
+        for id in ids.iter().filter_map(Value::as_str) {
+            let shown = match titles.get(id) {
+                Some(title) => format!("{}<br><small>{}</small>", esc(title), esc(id)),
+                None => esc(id),
+            };
+            let action = if waiting.iter().any(|(f, i)| f == feed_key && i == id) {
+                "<span class=\"badge warn\">Waiting for the worker</span>".to_string()
+            } else {
+                format!(
+                    "<form method=\"post\" action=\"/channel/forget\" class=\"inline\">{}{}{}{}<button class=\"link\">Forget</button></form>",
+                    hidden("group", group),
+                    hidden("key", key),
+                    hidden("feed", feed_key),
+                    hidden("id", id),
+                )
+            };
+            let _ = write!(
+                body,
+                "<tr><td>{shown}</td><td class=\"actions\">{action}</td></tr>"
+            );
+        }
+        body.push_str("</tbody></table></details>");
+    }
+    page(
+        req,
+        StatusCode::OK,
+        &format!("Delivery history · {}", channel.label()),
+        &body,
+    )
+}
+
+fn channel_forget(server: &Server, req: &Req) -> Response {
+    let (group, key) = (req.f("group"), req.f("key"));
+    let back = format!("/channel/history?group={}&key={}", enc(group), enc(key));
+    let Some(channel) = runtime_channel(server, group, key) else {
+        return redirect("/channels", "Channel not found.", true);
+    };
+    let Some((bucket, history)) = channel_bucket(server, &channel) else {
+        return redirect(&back, "Nothing remembered for this channel.", true);
+    };
+    let (feed, id) = (req.f("feed"), req.f("id"));
+    // Only something that is really remembered for this channel.
+    let known = history
+        .get(feed)
+        .and_then(Value::as_array)
+        .is_some_and(|l| l.iter().any(|v| v.as_str() == Some(id)));
+    if !known {
+        return redirect(&back, "This entry is not remembered (any more).", true);
+    }
+    let request = crate::requests::Request::Forget {
+        bucket,
+        feed: feed.into(),
+        id: id.into(),
+    };
+    match crate::requests::submit(&requests_dir(server), &request) {
+        Ok(()) => redirect(
+            &back,
+            "Queued: the worker forgets the entry on its next tick.",
+            false,
+        ),
+        Err(e) => redirect(&back, &sanitize_text(&e.to_string()), true),
+    }
+}
+
+fn channel_check(server: &Server, req: &Req) -> Response {
+    let (group, key) = (req.f("group"), req.f("key"));
+    let back = format!("/channel?group={}&key={}", enc(group), enc(key));
+    let Some(channel) = runtime_channel(server, group, key) else {
+        return redirect("/channels", "Channel not found.", true);
+    };
+    let request = crate::requests::Request::Check {
+        channel: channel.cache_key.clone(),
+    };
+    match crate::requests::submit(&requests_dir(server), &request) {
+        Ok(()) if worker_ready(&server.paths.config) => redirect(
+            &back,
+            "Queued: the worker checks this channel within 30 s.",
+            false,
+        ),
+        Ok(()) => redirect(
+            &back,
+            "Queued, but the worker is not running: it checks the channel once it starts.",
+            true,
+        ),
+        Err(e) => redirect(&back, &sanitize_text(&e.to_string()), true),
+    }
 }
 
 fn destination(channel: &config::Channel) -> String {

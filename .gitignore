@@ -6,6 +6,7 @@
 .env.*
 !.env.example
 /config.json
+/config.json.bak
 clearance.json
 sent.json
 

@@ -791,6 +791,9 @@ impl Telegram {
 pub struct Channel {
     pub index: usize,
     pub name: Option<String>,
+    /// `Label`: the name shown in logs and the dashboard. Not part of the
+    /// history key, so it can be changed freely.
+    pub display: Option<String>,
     pub source_key: String,
     pub webhook: String,
     pub thread: Option<String>,
@@ -818,8 +821,9 @@ pub struct Channel {
 
 impl Channel {
     pub fn label(&self) -> String {
-        self.name
+        self.display
             .clone()
+            .or_else(|| self.name.clone())
             .unwrap_or_else(|| format!("{}#{}", self.source_key, self.index + 1))
     }
     pub fn has_webhook(&self) -> bool {
@@ -1118,6 +1122,9 @@ pub fn collect_channels(root: &Value) -> Vec<Channel> {
             let mut channel = Channel {
                 index,
                 name,
+                display: js::trimmed_str(js::get(&raw, "Label"))
+                    .filter(|l| !l.is_empty())
+                    .map(|l| js::prefix16(l, 60).to_string()),
                 webhook: js::get(&raw, "Webhook")
                     .as_str()
                     .map(|s| js::trim(s).to_string())

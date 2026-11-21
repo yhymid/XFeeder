@@ -10,6 +10,16 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- Dashboard overview and activity: newest posts (from `sent.json`) and recent problems
+  instead of routine events, channel and feed names instead of hashes, plain counter names,
+  the systemctl command instead of buttons that cannot act on a systemd worker, one-click
+  removal of an unsupported config section, and `config.json.bak` before every config
+  write from the dashboard.
+- Channel `Label`: a display name for logs and the dashboard that is not part of the
+  history key. The channel list shows it, plus the real check interval (with
+  `AdaptivePolling`), the last post and how many feeds are failing. Saving a channel of a
+  list group from the dashboard pins its current history key (`CacheKey`), so editing its
+  feeds, webhook or thread no longer starts its history over.
 - Dashboard in English or Polish: an EN · PL switch in the header (cookie `xf_lang`, works
   on the login page too). Pages are still built in English and translated in one pass
   (whole text nodes and `placeholder`/`title`/`aria-label` only, with Polish plural forms);

@@ -480,6 +480,14 @@ const EXACT: &[(&str, &str)] = &[
         "Ta sekcja jest używana; można ją usunąć tylko w zakładce Zaawansowane.",
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
+    ("Checked every", "Sprawdzany co"),
+    ("Last post", "Ostatni post"),
+    ("OK", "OK"),
+    ("Display name", "Nazwa wyświetlana"),
+    (
+        "Shown in the dashboard and logs, e.g. Changelog. Can be changed at any time: it does not affect the delivery history.",
+        "Pokazywana w dashboardzie i w logach, np. Changelog. Można ją zmieniać w dowolnej chwili: nie wpływa na historię wysyłek.",
+    ),
 ];
 
 static TABLE: LazyLock<HashMap<&'static str, &'static str>> =
@@ -622,6 +630,19 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         }),
         rule(r"^Invalid JSON: (.*)$", |c| {
             format!("Niepoprawny JSON: {}", &c[1])
+        }),
+        rule(r"^(\d+) ok / (\d+) failed$", |c| {
+            format!("{} ok / {} nieudanych", &c[1], &c[2])
+        }),
+        rule(r"^(\d+) failing$", |c| {
+            let n = count(&c[1]);
+            format!("{n} {} z błędami", plural(n, "feed", "feedy", "feedów"))
+        }),
+        rule(r"^(\d+(?:\.\d)?)(?:–(\d+(?:\.\d)?))? min$", |c| {
+            match c.get(2) {
+                Some(hi) => format!("{}–{} min", &c[1], hi.as_str()),
+                None => format!("{} min", &c[1]),
+            }
         }),
         rule(r"^Updated (.+)$", |c| {
             format!(

@@ -454,7 +454,7 @@ fn channel_projection(config: &Value) -> Vec<Value> {
             let id_input = json!([channel.source_key, channel.name.as_ref().map_or(json!(index), |n| json!(n))]).to_string();
             json!({
                 "id": &revision(&id_input)[..24],
-                "label": channel.name.as_ref().map_or_else(|| format!("Channel {}", index + 1), |n| js::prefix16(&sanitize_text(n), 80).to_string()),
+                "label": channel.display.as_ref().or(channel.name.as_ref()).map_or_else(|| format!("Channel {}", index + 1), |n| js::prefix16(&sanitize_text(n), 80).to_string()),
                 "intervalMinutes": channel.time_checker,
                 "maxEntriesPerCycle": channel.request_send,
                 "sources": { "feedCount": channel.feeds.len(), "discord": channel.discord.is_some() },
@@ -1747,8 +1747,38 @@ mod tests {
             "secret values are never rendered"
         );
 
+        // Every page renders in Polish too.
+        let polish = format!("{}; xf_lang=pl", auth[0].1);
+        for page in [
+            "/",
+            "/channels",
+            "/activity",
+            "/settings",
+            "/channels/edit?group=channels&key=0",
+        ] {
+            let (status, _, body) = call(
+                &server,
+                Method::GET,
+                page,
+                "",
+                &[("cookie", polish.as_str())],
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{page}");
+            assert!(
+                body.starts_with("<!doctype html><html lang=\"pl\">"),
+                "{page}"
+            );
+        }
+
         // Edit a channel: interval + second source, keeping CRLF line endings.
-        let rev = revision(&std::fs::read_to_string(dir.join("config.json")).unwrap());
+        let key_before = crate::config::load(&dir.join("config.json"))
+            .unwrap()
+            .channels[0]
+            .cache_key
+            .clone();
+        let original = std::fs::read_to_string(dir.join("config.json")).unwrap();
+        let rev = revision(&original);
         let form = format!(
             "rev={rev}&orig_group=channels&orig_key=0&group=channels&name=&webhook=%24%7BHOOK%7D&thread=&sources=https%3A%2F%2Fa.example%2Ffeed%0D%0Ahttps%3A%2F%2Fb.example%2Frss&time_checker=10&request_send=&first_run_send=&include=&exclude=&fields=&max_age=&extra="
         );
@@ -1761,6 +1791,22 @@ mod tests {
             written.contains("\r\n")
                 && written.contains("https://b.example/rss")
                 && written.contains("\"TimeChecker\": 10")
+        );
+        // The list channel keeps its delivery history: the old key is pinned.
+        assert!(
+            written.contains(&format!("\"CacheKey\": \"{key_before}\"")),
+            "{written}"
+        );
+        assert_eq!(
+            crate::config::load(&dir.join("config.json"))
+                .unwrap()
+                .channels[0]
+                .cache_key,
+            key_before
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("config.json.bak")).unwrap(),
+            original
         );
         // The same (now stale) revision is rejected.
         let (status, _, body) = call(&server, Method::POST, "/channels/save", &form, &auth).await;

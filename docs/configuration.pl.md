@@ -387,6 +387,7 @@ pozostałe ustawienia (np. `Webhook`) muszą przyjść z [`ChannelDefaults`](#3-
 
 | Parametr       | Typ                    | Domyślnie | Co robi |
 |----------------|------------------------|-----------|---------|
+| `Label` | tekst | – | Nazwa pokazywana w logach i dashboardzie, np. `"Changelog"`. Nie wchodzi do klucza historii: można ją zmieniać w dowolnej chwili. |
 | `RSS` / `Feeds` / `URLs` / `Sources` | lista adresów (lub jeden adres) | – | Feedy kanału. Cztery nazwy znaczą to samo; jeśli użyjesz kilku, listy są łączone, a duplikaty usuwane. |
 | `Webhook`      | tekst                  | –         | Webhook Discorda, do którego idą wpisy. |
 | `Thread`       | tekst lub liczba       | –         | ID wątku albo posta na forum, do którego webhook ma pisać (wątek musi być w kanale webhooka). |

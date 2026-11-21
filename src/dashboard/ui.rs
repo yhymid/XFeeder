@@ -28,7 +28,8 @@ const STYLES: &str = include_str!("styles.css");
 const FAVICON: &str = include_str!("favicon.svg");
 /// Channel keys edited through dedicated form fields.
 const FEED_KEYS: [&str; 4] = ["RSS", "Feeds", "URLs", "Sources"];
-const HANDLED: [&str; 9] = [
+const HANDLED: [&str; 10] = [
+    "Label",
     "RSS",
     "Feeds",
     "URLs",
@@ -568,6 +569,22 @@ fn short_url(url: &str) -> String {
     }
 }
 
+/// Delivery key (as in cache.json / sent.json) → channel label. The key
+/// covers the resolved webhook, so `${VAR}` values from `.env` are needed.
+fn channel_labels(server: &Server, config: &Value) -> HashMap<String, String> {
+    let channels = config::load(&server.paths.config)
+        .map(|c| c.channels)
+        .unwrap_or_else(|_| runtime_channels(config));
+    let mut labels = HashMap::new();
+    for channel in channels {
+        if let Some(legacy) = &channel.legacy_cache_key {
+            labels.insert(legacy.clone(), channel.label());
+        }
+        labels.insert(channel.cache_key.clone(), channel.label());
+    }
+    labels
+}
+
 /// Newest posts from `sent.json` (newest first).
 fn recent_posts(server: &Server, limit: usize) -> Vec<crate::sent::Record> {
     let path = crate::sent::path_for(&server.paths.cache);
@@ -769,10 +786,7 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
     }
 
     let names = activity_names(&config);
-    let labels: HashMap<String, String> = runtime_channels(&config)
-        .into_iter()
-        .map(|c| (c.cache_key.clone(), c.label()))
-        .collect();
+    let labels = channel_labels(server, &config);
     let _ = write!(
         body,
         "<section><h2>Recent posts</h2>{}</section>",
@@ -1060,6 +1074,73 @@ fn channel_entries(config: &Value) -> Vec<(String, String, Value)> {
     out
 }
 
+/// The worker's view of the channel at `group`/`key` (with `.env` resolved).
+fn runtime_channel(server: &Server, group: &str, key: &str) -> Option<config::Channel> {
+    let loaded = config::load(&server.paths.config).ok()?;
+    let mut in_group = loaded
+        .channels
+        .into_iter()
+        .filter(|c| c.source_key == group);
+    match key.parse::<usize>() {
+        Ok(index)
+            if read_json(&server.paths.config)
+                .get(group)
+                .is_some_and(Value::is_array) =>
+        {
+            in_group.nth(index)
+        }
+        _ => in_group.find(|c| c.name.as_deref() == Some(key)),
+    }
+}
+
+/// The key under which the channel's delivery history is stored now.
+fn delivery_key(server: &Server, group: &str, key: &str) -> Option<String> {
+    let channel = runtime_channel(server, group, key)?;
+    let cache = read_json(&server.paths.cache);
+    // A 2.x key still in use wins, as in the worker.
+    Some(match &channel.legacy_cache_key {
+        Some(legacy) if cache.get(&channel.cache_key).is_none() && cache.get(legacy).is_some() => {
+            legacy.clone()
+        }
+        _ => channel.cache_key,
+    })
+}
+
+/// Saved snapshot (last entries, health) of every feed.
+fn feed_snapshots(server: &Server) -> Map<String, Value> {
+    let path = server.paths.cache.with_file_name("cache.feeds.json");
+    read_json(&path)["__xfeeder"]["feedSnapshots"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// Current check interval of a feed (AdaptivePolling) and why.
+fn feed_interval(channel: &config::Channel, snapshot: &Value) -> (u64, &'static str) {
+    let max = channel.time_checker * 60_000;
+    match &channel.adaptive {
+        Some(adaptive) => {
+            let items = snapshot["items"].as_array().cloned().unwrap_or_default();
+            crate::adaptive::interval_ms(
+                &items,
+                chrono::Utc::now().timestamp_millis(),
+                max,
+                adaptive,
+            )
+        }
+        None => (max, "TimeChecker"),
+    }
+}
+
+fn minutes(ms: u64) -> String {
+    let m = ms as f64 / 60_000.0;
+    if (m - m.round()).abs() < 0.05 {
+        format!("{m:.0}")
+    } else {
+        format!("{m:.1}")
+    }
+}
+
 fn find_channel(config: &Value, group: &str, key: &str) -> Option<Value> {
     match config.get(group)? {
         Value::Array(items) => items.get(key.parse::<usize>().ok()?).cloned(),
@@ -1112,8 +1193,86 @@ fn channels(server: &Server, req: &Req) -> Response {
         esc(&enc(&first_group)),
         entries.len()
     );
-    body.push_str("<table><thead><tr><th>Channel</th><th>Sources</th><th>Destination</th><th>Every</th><th>Max/run</th><th></th></tr></thead><tbody>");
+    body.push_str("<table><thead><tr><th>Channel</th><th>Sources</th><th>Destination</th><th>Checked every</th><th>Last post</th><th>Status</th><th></th></tr></thead><tbody>");
+    let snapshots = feed_snapshots(server);
+    let posts = recent_posts(server, 2000);
+    let resolved = config::load(&server.paths.config)
+        .map(|c| c.channels)
+        .unwrap_or_default();
     for (group, key, raw) in &entries {
+        let runtime = {
+            let object = config.get(group).is_some_and(Value::is_object);
+            let mut in_group = resolved.iter().filter(|c| &c.source_key == group);
+            if object {
+                in_group.find(|c| c.name.as_deref() == Some(key.as_str()))
+            } else {
+                key.parse::<usize>().ok().and_then(|i| in_group.nth(i))
+            }
+        };
+        let (interval, last_post, status) = match runtime {
+            Some(channel) => {
+                let ranges: Vec<u64> = channel
+                    .feeds
+                    .iter()
+                    .map(|f| feed_interval(channel, snapshots.get(f).unwrap_or(&Value::Null)).0)
+                    .collect();
+                let (lo, hi) = (
+                    ranges
+                        .iter()
+                        .min()
+                        .copied()
+                        .unwrap_or(channel.time_checker * 60_000),
+                    ranges
+                        .iter()
+                        .max()
+                        .copied()
+                        .unwrap_or(channel.time_checker * 60_000),
+                );
+                let interval = if lo == hi {
+                    format!("{} min", minutes(lo))
+                } else {
+                    format!("{}–{} min", minutes(lo), minutes(hi))
+                };
+                let keys = [
+                    Some(channel.cache_key.as_str()),
+                    channel.legacy_cache_key.as_deref(),
+                ];
+                let last = posts
+                    .iter()
+                    .find(|p| keys.contains(&Some(p.channel.as_str())));
+                let last_post = last.map_or_else(
+                    || "<span class=\"muted\">–</span>".to_string(),
+                    |p| {
+                        let time = chrono::DateTime::from_timestamp_millis(p.sent_at)
+                            .map(|d| d.to_rfc3339())
+                            .unwrap_or_default();
+                        format!(
+                            "{}<br><small class=\"muted\">{}</small>",
+                            esc(&ago(&time)),
+                            esc(js::prefix16(&js::to_string_or_empty(&p.entry["title"]), 60))
+                        )
+                    },
+                );
+                let failing = channel
+                    .feeds
+                    .iter()
+                    .filter(|f| {
+                        snapshots
+                            .get(*f)
+                            .and_then(|s| s["health"]["consecutiveFailures"].as_u64())
+                            .unwrap_or(0)
+                            > 0
+                    })
+                    .count();
+                let status = if failing == 0 {
+                    "<span class=\"good\">OK</span>".to_string()
+                } else {
+                    format!("<span class=\"bad\">{failing} failing</span>")
+                };
+                (interval, last_post, status)
+            }
+            None => ("–".into(), "–".into(), "–".into()),
+        };
         let data = channel_data(raw);
         let feeds = feed_list(&data);
         let object_group = config.get(group).is_some_and(Value::is_object);
@@ -1134,19 +1293,24 @@ fn channels(server: &Server, req: &Req) -> Response {
         if telegram {
             dest.push("Telegram".into());
         }
-        let num = |k: &str| {
-            data.get(k)
-                .filter(|v| !v.is_null())
-                .map_or("default".into(), js::to_string_or_empty)
-        };
         let q = format!("group={}&amp;key={}", esc(&enc(group)), esc(&enc(key)));
         let _ = write!(
             body,
-            "<tr><td><a href=\"/channels/edit?{q}\">{}</a></td><td><strong>{}</strong> <span class=\"muted\">{}</span></td><td>{}</td><td>{}</td><td>{}</td>\
+            "<tr><td><a href=\"/channels/edit?{q}\">{}</a>{}</td><td><strong>{}</strong> <span class=\"muted\">{}</span></td><td>{}</td><td>{interval}</td><td>{last_post}</td><td>{status}</td>\
              <td class=\"actions\"><a href=\"/channels/edit?{q}\">Edit</a>\
              <form method=\"post\" action=\"/channels/duplicate\" class=\"inline\">{}{}{}<button class=\"link\">Duplicate</button></form>\
              <a class=\"danger\" href=\"/channels/delete?{q}\">Delete</a></td></tr>",
-            esc(&channel_label(group, key, object_group)),
+            esc(&runtime
+                .and_then(|c| c.display.clone())
+                .unwrap_or_else(|| channel_label(group, key, object_group))),
+            if runtime.is_some_and(|c| c.display.is_some()) {
+                format!(
+                    "<br><small class=\"muted\">{}</small>",
+                    esc(&channel_label(group, key, object_group))
+                )
+            } else {
+                String::new()
+            },
             feeds.len(),
             esc(&hosts.into_iter().take(3).collect::<Vec<_>>().join(", ")),
             esc(&if dest.is_empty() {
@@ -1154,8 +1318,6 @@ fn channels(server: &Server, req: &Req) -> Response {
             } else {
                 dest.join(" + ")
             }),
-            esc(&num("TimeChecker")),
-            esc(&num("RequestSend")),
             hidden("rev", &rev),
             hidden("group", group),
             hidden("key", key),
@@ -1171,6 +1333,7 @@ struct ChannelForm {
     orig_key: String,
     group: String,
     name: String,
+    label: String,
     webhook: String,
     thread: String,
     sources: String,
@@ -1237,6 +1400,7 @@ impl ChannelForm {
             orig_key: key.into(),
             group: group.into(),
             name: key.into(),
+            label: get("Label"),
             webhook: get("Webhook"),
             thread: get("Thread"),
             sources: feed_list(&data).join("\n"),
@@ -1264,6 +1428,7 @@ impl ChannelForm {
             orig_key: req.f("orig_key").into(),
             group: f("group"),
             name: f("name"),
+            label: f("label"),
             webhook: f("webhook"),
             thread: f("thread"),
             sources: req.f("sources").into(),
@@ -1315,6 +1480,9 @@ impl ChannelForm {
                 .map_err(|_| format!("{label} must be a whole number."))
         };
         let mut handled: Map<String, Value> = Map::new();
+        if !self.label.is_empty() {
+            handled.insert("Label".into(), json!(self.label));
+        }
         handled.insert(feed_key.into(), json!(sources));
         if !self.webhook.is_empty() {
             handled.insert("Webhook".into(), json!(self.webhook));
@@ -1401,7 +1569,7 @@ fn channel_form_html(form: &ChannelForm, rev: &str, groups: &[String], notice: &
         out,
         "<fieldset><legend>Channel</legend><div class=\"grid2\">\
          <label>Group<input name=\"group\" value=\"{}\" list=\"groups\" required><small>Existing group, or a new one starting with “channels”.</small></label>\
-         <datalist id=\"groups\">{}</datalist>{}</div></fieldset>",
+         <datalist id=\"groups\">{}</datalist>{}{}</div></fieldset>",
         esc(&form.group),
         groups
             .iter()
@@ -1412,6 +1580,13 @@ fn channel_form_html(form: &ChannelForm, rev: &str, groups: &[String], notice: &
             "name",
             &form.name,
             "Used only in named groups (JSON objects); array groups number channels automatically.",
+            "text"
+        ),
+        text_input(
+            "Display name",
+            "label",
+            &form.label,
+            "Shown in the dashboard and logs, e.g. Changelog. Can be changed at any time: it does not affect the delivery history.",
             "text"
         ),
     );
@@ -1690,10 +1865,22 @@ fn channel_save(server: &Server, req: &Req) -> Response {
     if orig.is_some() && original.is_none() {
         return fail("The channel no longer exists.".into(), &form);
     }
-    let value = match form.build(original.as_ref()) {
+    let mut value = match form.build(original.as_ref()) {
         Ok(v) => v,
         Err(message) => return fail(message, &form),
     };
+    // A channel in a list group is keyed by its webhook, thread and feeds:
+    // editing them would start its delivery history over. Keep the current
+    // key, unless the channel already has one of its own.
+    if let (Some((group, key)), Some(map)) = (orig, value.as_object_mut())
+        && config.get(group).is_some_and(Value::is_array)
+        && !["ID", "Key", "CacheKey"]
+            .iter()
+            .any(|k| map.contains_key(*k))
+        && let Some(current) = delivery_key(server, group, key)
+    {
+        map.insert("CacheKey".into(), json!(current));
+    }
     if let Err(message) = place(&mut config, orig, &form.group, &form.name, value) {
         return fail(message, &form);
     }

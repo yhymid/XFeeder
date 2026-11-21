@@ -387,6 +387,7 @@ other settings (e.g. `Webhook`) must come from [`ChannelDefaults`](#3-channeldef
 
 | Setting        | Type                   | Default   | What it does |
 |----------------|------------------------|-----------|--------------|
+| `Label` | text | – | The name shown in logs and the dashboard, e.g. `"Changelog"`. Not part of the history key: it can be changed at any time. |
 | `RSS` / `Feeds` / `URLs` / `Sources` | a list of URLs (or one URL) | – | The channel's feeds. The four names mean the same; if you use several, the lists are joined and duplicates removed. |
 | `Webhook`      | text                   | –         | The Discord webhook entries go to. |
 | `Thread`       | text or number         | –         | ID of the thread or forum post the webhook writes to (the thread must be in the webhook's channel). |

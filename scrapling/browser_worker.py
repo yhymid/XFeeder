@@ -354,13 +354,27 @@ def handle_request(request):
         headers = {str(key): str(value) for key, value in dict(headers or {}).items()}
     except Exception:
         headers = {}
-    return {
+    result = {
         "id": request_id,
         "html": str(html or ""),
         "status": status,
         "headers": headers,
         "url": str(getattr(response, "url", url) or url),
     }
+    if mode != "get":
+        # For XFeeder's optional clearance reuse (Scrapling.ReuseClearance):
+        # the browser's cookies and the User-Agent it sent.
+        cookies = []
+        for cookie in getattr(response, "cookies", None) or ():
+            with contextlib.suppress(Exception):
+                cookie = dict(cookie)
+                cookies.append({key: cookie.get(key) for key in ("name", "value", "domain", "path", "expires")})
+        request_headers = getattr(response, "request_headers", None) or {}
+        with contextlib.suppress(Exception):
+            request_headers = {str(k).lower(): str(v) for k, v in dict(request_headers).items()}
+        result["cookies"] = cookies
+        result["userAgent"] = request_headers.get("user-agent") if isinstance(request_headers, dict) else None
+    return result
 
 
 def write_response(response):

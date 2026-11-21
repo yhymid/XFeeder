@@ -215,6 +215,13 @@ impl Ctx<'_> {
                         "scrapling.attempt.complete",
                         json!({ "url": url, "mode": mode, "status": fetched.status, "bodyBytes": fetched.html.len(), "durationMs": started.elapsed().as_millis() as u64 }),
                     );
+                    if crate::clearance::enabled(&self.config.root) {
+                        crate::clearance::save_from_browser(
+                            url,
+                            &fetched.cookies,
+                            fetched.user_agent.as_deref(),
+                        );
+                    }
                     return Ok(Download {
                         ok: true,
                         status: fetched.status,
@@ -349,6 +356,75 @@ impl Ctx<'_> {
         }
     }
 
+    /// Plain HTTP with a saved Cloudflare clearance (see `clearance.rs`).
+    /// `None` when the site rejected it: the clearance is dropped and the
+    /// normal path (browser) runs.
+    async fn with_clearance(
+        &self,
+        url: &str,
+        validator: Option<&(String, String)>,
+        clearance: &crate::clearance::Clearance,
+    ) -> Result<Option<Download>, Stop> {
+        let started = Instant::now();
+        let mut headers = vec![
+            ("accept".to_string(), accept_auto()),
+            ("user-agent".to_string(), clearance.user_agent.clone()),
+            ("cookie".to_string(), clearance.cookie.clone()),
+        ];
+        if let Some((etag, modified)) = validator {
+            if !etag.is_empty() {
+                headers.push(("if-none-match".into(), etag.clone()));
+            }
+            if !modified.is_empty() {
+                headers.push(("if-modified-since".into(), modified.clone()));
+            }
+        }
+        let result = http::get(http::Get {
+            url,
+            headers,
+            cancel: self.cancel,
+            timeout_ms: None,
+        })
+        .await;
+        let status = match &result {
+            Ok(r) => Some(r.status),
+            Err(HttpError::Cancelled) => return Err(Stop::Cancelled),
+            Err(e) => e.status(),
+        };
+        let accepted = result.as_ref().ok().filter(|r| {
+            r.status == 304
+                || ((200..300).contains(&r.status)
+                    && looks_like_feed(&r.body)
+                    && !parsers::is_blocked_page(&r.body, r.status, &r.headers))
+        });
+        let Some(response) = accepted else {
+            crate::clearance::forget(url, status);
+            return Ok(None);
+        };
+        expert(
+            "clearance.reused",
+            json!({ "url": url, "status": response.status, "ageMinutes": crate::clearance::age_minutes(clearance), "durationMs": started.elapsed().as_millis() as u64 }),
+        );
+        let response = result.expect("accepted response");
+        Ok(Some(if response.status == 304 {
+            Download {
+                ok: true,
+                status: Some(304),
+                headers: response.headers,
+                not_modified: true,
+                ..Default::default()
+            }
+        } else {
+            Download {
+                ok: true,
+                status: Some(response.status),
+                headers: response.headers,
+                data: response.body,
+                ..Default::default()
+            }
+        }))
+    }
+
     async fn download_direct(
         &self,
         url: &str,
@@ -385,6 +461,13 @@ impl Ctx<'_> {
                 reason: Some("SCRAPLING_DISALLOWED_BY_PUBLIC_ONLY"),
                 ..Default::default()
             });
+        }
+        if !public_only
+            && crate::clearance::enabled(&self.config.root)
+            && let Some(clearance) = crate::clearance::get(url)
+            && let Some(dl) = self.with_clearance(url, validator, &clearance).await?
+        {
+            return Ok(dl);
         }
         if forced && !allow_scrapling {
             return Ok(Download {

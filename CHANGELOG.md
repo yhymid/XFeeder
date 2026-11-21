@@ -10,6 +10,13 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- `Scrapling.ReuseClearance` (temporary, off by default): after a browser passes a
+  Cloudflare check, the site's cookies (`cf_clearance`) and the browser's User-Agent are
+  kept in `clearance.json` (0600, git-ignored) and the next checks try plain HTTP with
+  them first. Measured on boop.pl from the VPS: 0.04 s with the saved clearance against
+  26 s through the browser; the cookie was still accepted after 10 minutes and is issued
+  for 365 days. A rejected clearance is deleted and the browser path runs as before;
+  `false` restores the previous behaviour exactly.
 - Feed profiles `news`, `games` and `dev` (`profiles/`): real production feeds with saved
   samples. `cargo test` parses every sample and compares the result field by field with
   the saved expectations, so a fix for one site cannot silently change another;

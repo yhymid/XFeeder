@@ -670,8 +670,9 @@ Przykład z produkcji: boop.pl zawsze blokuje, a gry-wideo.pl działa bez przegl
 | `AutoFallback` | `true` | Przeglądarka dla każdego zablokowanego feedu. |
 | `ForceGlobal` | `false` | Przeglądarka dla każdego feedu. |
 | `FallbackStatusCodes` | `[403, 429, 503]` | Kody HTTP oznaczające blokadę. |
-| `AntiBot` | – | Rozpoznawanie stron anty-bot, patrz 11.4. |
-| `DefaultOptions` | – | Opcje pobierania dla wszystkich adresów, patrz 11.3. |
+| `ReuseClearance` | `false` | **Tymczasowe, do wyłączenia.** Po przejściu Cloudflare przez przeglądarkę zapisuje ciasteczka strony (`cf_clearance`) i User-Agenta przeglądarki w `clearance.json` (obok `config.json`, uprawnienia 0600, nie trafia do gita). Kolejne sprawdzenia tej strony idą najpierw zwykłym HTTP z tym ciasteczkiem (boop.pl: 0,04 s zamiast 26 s). Gdy strona je odrzuci, wpis jest kasowany i działa przeglądarka jak dotąd. `false` lub brak = stary system; plik `clearance.json` można wtedy usunąć. |
+| `AntiBot` | – | Rozpoznawanie stron anty-bot, patrz 9.4. |
+| `DefaultOptions` | – | Opcje pobierania dla wszystkich adresów, patrz 9.3. |
 | `PerUrlConfig` | – | Ustawienia dla konkretnych adresów (adres musi być **identyczny** jak w kanale). Te same opcje co w `DefaultOptions` oraz `enabled`, `fallback`, `antiBot`, `htmlParseOptions`. |
 
 ### 9.3 Opcje pobierania (`DefaultOptions` i `PerUrlConfig`)

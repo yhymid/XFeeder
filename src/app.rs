@@ -123,6 +123,7 @@ impl App {
         let base = config::absolute(config_path)
             .parent()
             .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+        crate::clearance::init(crate::clearance::path_for(&base), !dry_run);
         let app = Arc::new(Self {
             config_path: config_path.to_path_buf(),
             base,

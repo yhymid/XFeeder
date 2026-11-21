@@ -2,6 +2,7 @@
 //! (Components V2) and Telegram, with an optional web dashboard.
 
 mod app;
+mod clearance;
 mod config;
 mod dashboard;
 mod deliver;

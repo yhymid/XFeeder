@@ -22,6 +22,11 @@ Bez niego RSS/Atom/JSON działają normalnie.
   - `ForceGlobal` albo `PerUrlConfig["URL"].enabled: true` wymusza przeglądarkę
     przy każdym pobraniu.
 - `network.outboundPolicy: "public-only"` wyłącza Scrapling.
+- `ReuseClearance: true` (tymczasowe, domyślnie wyłączone): po udanym przejściu
+  Cloudflare przez przeglądarkę ciasteczka strony i User-Agent przeglądarki
+  trafiają do `clearance.json` (0600), a kolejne sprawdzenia tej strony
+  najpierw próbują zwykłego HTTP z nimi. Odrzucone ciasteczko jest kasowane i
+  wraca ścieżka przez przeglądarkę. `false` przywraca stary system.
 
 ## Instalacja (ręczna)
 

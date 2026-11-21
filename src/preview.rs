@@ -127,6 +127,7 @@ struct Timing {
     parse_ms: Option<u64>,
     parser: String,
     scrapling: bool,
+    clearance: bool,
     image_ms: u64,
     image_checks: usize,
 }
@@ -167,6 +168,7 @@ async fn fetch_once(
                 timing.parse_ms = get(details, "parseMs").as_u64();
                 timing.parser = js::to_string(get(details, "parser"));
             }
+            "clearance.reused" => timing.clearance = true,
             e if e.starts_with("scrapling.") => timing.scrapling = true,
             _ => {}
         }
@@ -274,7 +276,13 @@ fn print_text(url: &str, runs: &[Run], items_shown: usize) {
         },
         t.requests,
         t.bytes / 1024,
-        if t.scrapling { " · Scrapling" } else { "" }
+        if t.scrapling {
+            " · Scrapling"
+        } else if t.clearance {
+            " · saved Cloudflare clearance"
+        } else {
+            ""
+        }
     );
     if let Some(failure) = &first.failure {
         println!("  ✗ {failure}");
@@ -406,6 +414,8 @@ pub async fn run(args: Vec<String>) -> ExitCode {
     let base = config::absolute(&config_path)
         .parent()
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    // Saved clearances are used but never written by a preview.
+    crate::clearance::init(crate::clearance::path_for(&base), false);
     let cancel = CancellationToken::new();
     let mut failed = false;
     for url in &args.urls {

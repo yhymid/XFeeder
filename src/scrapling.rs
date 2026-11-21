@@ -514,6 +514,10 @@ pub struct Fetched {
     pub html: String,
     pub status: Option<u16>,
     pub headers: Map<String, Value>,
+    /// Browser cookies after the fetch (browser modes only).
+    pub cookies: Vec<Value>,
+    /// User-Agent the browser sent.
+    pub user_agent: Option<String>,
 }
 
 async fn spawn(runtime: &Runtime) -> std::io::Result<Worker> {
@@ -606,6 +610,8 @@ pub async fn fetch(
                 html: js::to_string_or_empty(&response["html"]),
                 status: response["status"].as_u64().map(|s| s as u16),
                 headers: response["headers"].as_object().cloned().unwrap_or_default(),
+                cookies: response["cookies"].as_array().cloned().unwrap_or_default(),
+                user_agent: response["userAgent"].as_str().map(str::to_string),
             });
         }
     };

@@ -96,7 +96,7 @@ strong { font-weight: 600; }
 .card strong.good { color: var(--good); }
 .card strong.bad { color: var(--bad); }
 .card small { margin: 0; }
-.card.narrow { max-width: 380px; }
+.card.narrow { max-width: 380px; margin-inline: auto; }
 
 /* --------------------------------------------------------------- notices */
 .notice {
@@ -164,7 +164,7 @@ pre.log {
 }
 
 /* ----------------------------------------------------------------- forms */
-form.stack { display: flex; flex-direction: column; gap: 1rem; max-width: 980px; }
+form.stack { display: flex; flex-direction: column; gap: 1rem; }
 form.stack + form.stack, form.stack + section, section + form.stack { margin-top: 2rem; }
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 1rem 1.25rem 1.125rem; margin: 0; min-width: 0; }
 legend { font-weight: 600; color: var(--text-strong); padding: 0 0.375rem; margin-left: -0.375rem; }

@@ -2440,6 +2440,14 @@ fn tail(path: &Path, max: u64) -> String {
 
 /// Minimal Markdown → HTML for the generated summary (headings, lists,
 /// pipe tables, code spans, bold). Everything is escaped first.
+#[cfg(test)]
+pub(super) fn summary_html_for_tests(markdown: &str) -> String {
+    format!(
+        "<html lang=\"en\"><body>{}</body></html>",
+        summary_html(markdown)
+    )
+}
+
 fn summary_html(markdown: &str) -> String {
     let inline = |text: &str| -> String {
         let escaped = esc(text);

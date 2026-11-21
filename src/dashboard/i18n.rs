@@ -481,6 +481,75 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    (
+        "End-to-end latency (publication → Discord)",
+        "Opóźnienie od publikacji do Discorda",
+    ),
+    (
+        "Only entries first seen less than 24 h after publication; older ones (first run, outages) are counted as backlog.",
+        "Tylko wpisy zobaczone pierwszy raz mniej niż 24 h po publikacji; starsze (pierwsze uruchomienie, awarie) liczą się jako zaległe.",
+    ),
+    ("Scope", "Zakres"),
+    ("All channels", "Wszystkie kanały"),
+    ("Where the time goes", "Na co idzie czas"),
+    (
+        "Detection (published → first fetched by XFeeder)",
+        "Wykrycie (publikacja → pierwsze pobranie przez XFeeder)",
+    ),
+    (
+        "Queue (first fetched → sent)",
+        "Kolejka (pierwsze pobranie → wysłanie)",
+    ),
+    ("Discord send (HTTP)", "Wysyłka na Discorda (HTTP)"),
+    ("Discord 429 waits", "Czekanie po 429 z Discorda"),
+    (
+        "HTTP connection-pool/permit wait",
+        "Czekanie na połączenie/pozwolenie HTTP",
+    ),
+    ("Not enough data yet.", "Za mało danych."),
+    ("interval", "odstęp"),
+    ("runs", "obiegi"),
+    ("run p50", "obieg p50"),
+    ("run p90", "obieg p90"),
+    ("scheduler late p90", "opóźnienie harmonogramu p90"),
+    ("sent", "wysłane"),
+    ("backlog sent", "wysłane zaległe"),
+    ("queue p90", "kolejka p90"),
+    ("Feeds", "Feedy"),
+    ("fetch p50", "pobranie p50"),
+    ("fetch p90", "pobranie p90"),
+    ("ok", "ok"),
+    ("browser", "przeglądarka"),
+    ("avg KB", "śr. KB"),
+    ("parse p50", "parsowanie p50"),
+    ("detect p50", "wykrycie p50"),
+    ("publishes every (median)", "publikuje co (mediana)"),
+    ("newest entry age", "wiek najnowszego wpisu"),
+    ("yes", "tak"),
+    ("no", "nie"),
+    ("HTTP by host", "HTTP według hosta"),
+    ("Host", "Host"),
+    ("time to first byte p50", "czas do pierwszego bajtu p50"),
+    ("body download p50", "pobieranie treści p50"),
+    ("requests", "zapytania"),
+    ("No browser fetches.", "Brak pobrań przez przeglądarkę."),
+    ("Resources", "Zasoby"),
+    ("Anomalies", "Anomalie"),
+    ("Warnings and errors", "Ostrzeżenia i błędy"),
+    ("None.", "Brak."),
+    ("Event counts", "Liczba zdarzeń"),
+    (
+        ": an entry waits on average half an interval before the next check.",
+        ": wpis czeka średnio pół odstępu do następnego sprawdzenia.",
+    ),
+    (
+        "reduces this roughly to half the new interval.",
+        "skraca to mniej więcej do połowy nowego odstępu.",
+    ),
+    (
+        "limits, backoff or 429s after being fetched.",
+        "(lub backoff albo 429) po pobraniu.",
+    ),
     ("Adaptive polling", "Adaptacyjne sprawdzanie"),
     (
         "Feeds that post often are checked more often (never less often than the channel's “Check every”). Off = every feed is checked at its channel's interval.",
@@ -814,6 +883,131 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 None => format!("{} min", &c[1]),
             }
         }),
+        rule(r"^· last event: (.+) · observed since (.+)$", |c| {
+            format!(
+                "· ostatnie zdarzenie: {} · obserwowane od {}",
+                translate_text(&c[1]).unwrap_or_else(|| c[1].to_string()),
+                &c[2]
+            )
+        }),
+        rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
+            format!("Diagnostyka XFeedera — {} (UTC)", &c[1])
+        }),
+        rule(
+            r"^Generated (.+?) · recorder running since (.+?) · events today: (\d+) · dropped: (\d+)$",
+            |c| {
+                format!(
+                    "Wygenerowano {} · rejestrator działa od {} · zdarzenia dziś: {} · odrzucone: {}",
+                    &c[1], &c[2], &c[3], &c[4]
+                )
+            },
+        ),
+        rule(
+            r"^Sends: (\d+) \(failed (\d+)\), send p50 (.+), p90 (.+)$",
+            |c| {
+                format!(
+                    "Wysłane: {} (nieudane {}), wysyłka p50 {}, p90 {}",
+                    &c[1], &c[2], &c[3], &c[4]
+                )
+            },
+        ),
+        rule(
+            r"^Rate limited \(429\): (\d+) times, waited p50 (.+), total (.+)$",
+            |c| {
+                format!(
+                    "Limit zapytań (429): {} razy, czekanie p50 {}, łącznie {}",
+                    &c[1], &c[2], &c[3]
+                )
+            },
+        ),
+        rule(r"^XFeeder RSS: p50 (.+) MB, max (.+) MB$", |c| {
+            format!("Pamięć XFeedera (RSS): p50 {} MB, max {} MB", &c[1], &c[2])
+        }),
+        rule(
+            r"^Child processes \(Scrapling/Chromium\), PSS: p50 (.+) MB, max (.+) MB$",
+            |c| {
+                format!(
+                    "Procesy potomne (Scrapling/Chromium), PSS: p50 {} MB, max {} MB",
+                    &c[1], &c[2]
+                )
+            },
+        ),
+        rule(r"^Average CPU of XFeeder today: (.+)$", |c| {
+            format!("Średnie CPU XFeedera dziś: {}", &c[1])
+        }),
+        rule(r"^: (\d+) fetches, p50 (.+), p90 (.+), max (.+)$", |c| {
+            format!(
+                ": {} pobrań, p50 {}, p90 {}, max {}",
+                &c[1], &c[2], &c[3], &c[4]
+            )
+        }),
+        rule(r"^blocked attempts: (\d+), failed attempts: (\d+)$", |c| {
+            format!("zablokowane próby: {}, nieudane próby: {}", &c[1], &c[2])
+        }),
+        rule(
+            r"^Detection is (\d+)% of the median delay \(p50 (.+) min\)\. It is driven by$",
+            |c| {
+                format!(
+                    "Wykrycie to {}% mediany opóźnienia (p50 {} min). Zależy od",
+                    &c[1], &c[2]
+                )
+            },
+        ),
+        rule(
+            r"^(.+): interval (\d+) min, median publication → Discord (.+) min\. Lowering$",
+            |c| {
+                format!(
+                    "{}: odstęp {} min, mediana publikacja → Discord {} min. Zmniejszenie",
+                    &c[1], &c[2], &c[3]
+                )
+            },
+        ),
+        rule(
+            r"^(\S+) answers 304 Not Modified to (\d+)% of checks: polling it more often is cheap\.$",
+            |c| {
+                format!(
+                    "{} odpowiada 304 Not Modified na {}% sprawdzeń: częstsze sprawdzanie jest tanie.",
+                    &c[1], &c[2]
+                )
+            },
+        ),
+        rule(
+            r"^(\S+) sends no ETag/Last-Modified: every check downloads the whole feed\.$",
+            |c| {
+                format!(
+                    "{} nie wysyła ETag/Last-Modified: każde sprawdzenie pobiera cały feed.",
+                    &c[1]
+                )
+            },
+        ),
+        rule(
+            r"^(\S+) takes (.+) s per fetch \(p50\)( through the browser)?; it delays the rest of its channel\.$",
+            |c| {
+                format!(
+                    "{} potrzebuje {} s na pobranie (p50){}; opóźnia resztę swojego kanału.",
+                    &c[1],
+                    &c[2],
+                    if c.get(3).is_some() {
+                        " przez przeglądarkę"
+                    } else {
+                        ""
+                    }
+                )
+            },
+        ),
+        rule(
+            r"^Discord rate-limited (\d+) sends \(total wait (.+) s\); all channels share one webhook, so bursts queue behind each other\.$",
+            |c| {
+                format!(
+                    "Discord ograniczył {} wysyłek (łącznie {} s czekania); wszystkie kanały dzielą jeden webhook, więc serie czekają jedna za drugą.",
+                    &c[1], &c[2]
+                )
+            },
+        ),
+        rule(r"^Queue p90 is (.+) min: entries wait for$", |c| {
+            format!("Kolejka p90 to {} min: wpisy czekają przez limity", &c[1])
+        }),
+        rule(r"^× (\d+): (.+)$", |c| format!("× {}: {}", &c[1], &c[2])),
         rule(r"^Feed (.+)$", |c| format!("Feed {}", &c[1])),
         rule(r"^Test (.+)$", |c| format!("Test {}", &c[1])),
         rule(
@@ -1014,6 +1208,21 @@ mod tests {
             test.contains("892 ms (pobranie 260 ms, parsowanie 8 ms, sprawdzenie obrazka 46 ms)"),
             "{test}"
         );
+        let report = to_polish(&crate::dashboard::ui::summary_html_for_tests(
+            "# XFeeder diagnostics — 2026-11-21 (UTC)\n\nGenerated 2026-11-21 04:01:39 UTC · recorder running since 2026-11-21 03:59 UTC · events today: 785 · dropped: 0\n\n## Hints\n\n- Detection is 40% of the median delay (p50 3.1 min). It is driven by `TimeChecker`: an entry waits on average half an interval before the next check.\n- Queue p90 is 2.0 min: entries wait for `RequestSend` limits, backoff or 429s after being fetched.\n\n## Discord\n\n- Rate limited (429): 0 times, waited p50 –, total –\n",
+        ));
+        for expected in [
+            "Diagnostyka XFeedera — 2026-11-21 (UTC)",
+            "zdarzenia dziś: 785",
+            "Wykrycie to 40% mediany opóźnienia (p50 3.1 min). Zależy od",
+            ": wpis czeka średnio pół odstępu do następnego sprawdzenia.",
+            "Kolejka p90 to 2.0 min: wpisy czekają przez limity",
+            "(lub backoff albo 429) po pobraniu.",
+            "Limit zapytań (429): 0 razy",
+            ">Wskazówki<",
+        ] {
+            assert!(report.contains(expected), "{expected}\n{report}");
+        }
         assert_eq!(plural(5, "a", "b", "c"), "c");
         assert_eq!(plural(13, "a", "b", "c"), "c");
         assert_eq!(plural(23, "a", "b", "c"), "b");

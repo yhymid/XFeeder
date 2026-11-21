@@ -3385,14 +3385,14 @@ fn settings_secret(server: &Server, req: &Req) -> Response {
 fn advanced(server: &Server, req: &Req, text: Option<&str>, notice: Option<String>) -> Response {
     let current = read_text(&server.paths.config);
     let body = format!(
-        "{}<p class=\"notice warn\">This is the raw config.json. It may contain webhook URLs and tokens: do not share screenshots of this page.</p>\
+        "{}{}<section id=\"config\"><h2>config.json</h2><p class=\"notice warn\">This is the raw config.json. It may contain webhook URLs and tokens: do not share screenshots of this page.</p>\
          <form method=\"post\" action=\"/advanced\" class=\"stack\">{}{}\
-         <div class=\"row\">{}<button>Validate and save</button><a href=\"/advanced\">Discard changes</a></div></form>{}",
+         <div class=\"row\">{}<button>Validate and save</button><a href=\"/advanced\">Discard changes</a></div></form></section>",
         notice.unwrap_or_default(),
+        env_form(server, None, None),
         hidden("rev", &revision(&current)),
         textarea("config.json", "config", text.unwrap_or(&current), 32, ""),
         checkbox("Save despite warnings", "accept", false),
-        env_form(server, None, None),
     );
     page(
         req,

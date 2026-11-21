@@ -243,3 +243,4 @@ ul.feeds { columns: 2; margin: 0.5rem 0 0; padding-left: 1.25rem; font-size: 0.8
 @media (prefers-reduced-motion: reduce) {
   *, *::before { transition: none !important; }
 }
+section > h2:first-child { margin-top: 0; }

@@ -1089,10 +1089,47 @@ async fn feed_test(server: &Server, req: &Req<'_>) -> Response {
 fn posts_page(server: &Server, req: &Req) -> Response {
     let config = read_json(&server.paths.config);
     let labels = channel_labels(server, &config);
-    let posts = recent_posts(server, 200);
+    let all = recent_posts(server, 2000);
+    let channel = req.q("channel");
+    let query = req.q("q").trim().to_lowercase();
+    let mut channels: Vec<(String, String)> = all
+        .iter()
+        .map(|p| p.channel.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|key| {
+            let name = labels.get(&key).cloned().unwrap_or_else(|| key.clone());
+            (key, name)
+        })
+        .collect();
+    channels.sort_by_key(|a| a.1.to_lowercase());
+    let posts: Vec<_> = all
+        .into_iter()
+        .filter(|p| channel.is_empty() || p.channel == channel)
+        .filter(|p| {
+            query.is_empty()
+                || js::to_string_or_empty(&p.entry["title"])
+                    .to_lowercase()
+                    .contains(&query)
+                || js::to_string_or_empty(&p.entry["link"])
+                    .to_lowercase()
+                    .contains(&query)
+        })
+        .take(200)
+        .collect();
     let mut body = String::from(
         "<p class=\"muted\">Posts sent to Discord (newest first). “Rebuild” edits the message in the current layout; nothing new is posted.</p>",
     );
+    body.push_str(&filter_form(
+        "/posts",
+        &[],
+        &[("channel", "All channels", channels, channel)],
+        &query,
+    ));
+    if posts.is_empty() && (!channel.is_empty() || !query.is_empty()) {
+        body.push_str("<p class=\"muted\">Nothing matches.</p>");
+        return page(req, StatusCode::OK, "Posts", &body);
+    }
     if posts.is_empty() {
         body.push_str("<p class=\"muted\">No posts recorded yet (posts are recorded since version 3.0 beta).</p>");
         return page(req, StatusCode::OK, "Posts", &body);
@@ -1109,9 +1146,7 @@ fn posts_page(server: &Server, req: &Req) -> Response {
             "<tr><td title=\"{}\">{}</td><td>{}</td><td>{}{}</td><td><form method=\"post\" action=\"/posts/rerender\" class=\"inline\">{}<button class=\"link\">Rebuild</button></form></td></tr>",
             esc(&time),
             esc(&ago(&time)),
-            esc(labels
-                .get(&post.channel)
-                .map_or(post.channel.as_str(), String::as_str)),
+            post_channel(&labels, post),
             if link.starts_with("http") {
                 format!(
                     "<a href=\"{}\" rel=\"noreferrer\">{}</a>",
@@ -1220,9 +1255,7 @@ fn posts_table(posts: &[crate::sent::Record], labels: &HashMap<String, String>) 
             "<tr><td title=\"{}\">{}</td><td>{}</td><td>{title_html}{merged}</td></tr>",
             esc(&time),
             esc(&ago(&time)),
-            esc(labels
-                .get(&post.channel)
-                .map_or(post.channel.as_str(), String::as_str)),
+            post_channel(labels, post),
         );
     }
     out.push_str("</tbody></table>");
@@ -1476,6 +1509,29 @@ fn counter_label(name: &str) -> &str {
 }
 
 /// Events that are routine and hidden unless asked for.
+/// Channel name of a post, linking to that channel's posts.
+fn post_channel(labels: &HashMap<String, String>, post: &crate::sent::Record) -> String {
+    format!(
+        "<a href=\"/posts?channel={}\">{}</a>",
+        esc(&enc(&post.channel)),
+        esc(labels
+            .get(&post.channel)
+            .map_or(post.channel.as_str(), String::as_str))
+    )
+}
+
+/// Name linking to the activity of that channel or feed.
+fn filter_link(key: &str, id: &str, name: &str) -> String {
+    if id.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<a href=\"/activity?{key}={}\">{}</a>",
+        esc(&enc(id)),
+        esc(name)
+    )
+}
+
 /// Status as a small badge: word plus colour, never colour alone.
 fn status_badge(status: &str) -> String {
     let (class, label) = match status {
@@ -1550,8 +1606,16 @@ fn activity_table(activity: &Value, names: &HashMap<String, String>) -> String {
             esc(item["event"].as_str().unwrap_or("")),
             esc(event_label(item["event"].as_str().unwrap_or(""))),
             status_badge(item["status"].as_str().unwrap_or("")),
-            esc(&name_of(names, item["channel"].as_str().unwrap_or(""))),
-            esc(&name_of(names, item["source"].as_str().unwrap_or(""))),
+            filter_link(
+                "channel",
+                item["channel"].as_str().unwrap_or(""),
+                &name_of(names, item["channel"].as_str().unwrap_or(""))
+            ),
+            filter_link(
+                "feed",
+                item["source"].as_str().unwrap_or(""),
+                &name_of(names, item["source"].as_str().unwrap_or(""))
+            ),
             esc(item["target"].as_str().unwrap_or("")),
             item["durationMs"].as_f64().map_or(String::new(), ms),
             item["details"]["httpStatus"]
@@ -1572,11 +1636,34 @@ fn activity(server: &Server, req: &Req) -> Response {
     let mut data = structured_activity(&server.paths.config, 2000);
     let status = req.q("status");
     let kind = req.q("type");
-    let everything = req.q("view") == "all";
+    let channel = req.q("channel");
+    let feed = req.q("feed");
+    let query = req.q("q").trim().to_lowercase();
+    let config = read_json(&server.paths.config);
+    let names = activity_names(&config);
+    // A channel, feed or text filter shows every matching event.
+    let everything =
+        req.q("view") == "all" || !channel.is_empty() || !feed.is_empty() || !query.is_empty();
     if let Some(items) = data["items"].as_array_mut() {
         items.retain(|i| {
+            let text = |key: &str| {
+                let id = i[key].as_str().unwrap_or("");
+                names.get(id).map_or(id, String::as_str).to_lowercase()
+            };
             (status.is_empty() || i["status"] == json!(status))
                 && (kind.is_empty() || i["type"] == json!(kind))
+                && (channel.is_empty() || i["channel"] == json!(channel))
+                && (feed.is_empty() || i["source"] == json!(feed))
+                && (query.is_empty()
+                    || [
+                        event_label(i["event"].as_str().unwrap_or("")).to_lowercase(),
+                        i["event"].as_str().unwrap_or("").to_lowercase(),
+                        text("channel"),
+                        text("source"),
+                        js::to_string_or_empty(&i["details"]["errorCode"]).to_lowercase(),
+                    ]
+                    .iter()
+                    .any(|t| t.contains(&query)))
                 && (everything
                     || !status.is_empty()
                     || !kind.is_empty()
@@ -1618,9 +1705,75 @@ fn activity(server: &Server, req: &Req) -> Response {
         );
     }
     body.push_str("</p>");
-    let config = read_json(&server.paths.config);
-    body.push_str(&activity_table(&data, &activity_names(&config)));
-    html(StatusCode::OK, layout(req, "Activity", &body, Some(30)))
+    body.push_str(&filter_form(
+        "/activity",
+        &[("status", status), ("type", kind), ("view", req.q("view"))],
+        &[
+            (
+                "channel",
+                "All channels",
+                named_options(&names, "channel:"),
+                channel,
+            ),
+            ("feed", "All feeds", named_options(&names, "feed:"), feed),
+        ],
+        &query,
+    ));
+    body.push_str(&activity_table(&data, &names));
+    // Auto-refresh only while nothing is being searched.
+    let refresh = (channel.is_empty() && feed.is_empty() && query.is_empty()).then_some(30);
+    html(StatusCode::OK, layout(req, "Activity", &body, refresh))
+}
+
+/// (id, name) pairs of one kind from the activity name map, by name.
+fn named_options(names: &HashMap<String, String>, prefix: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = names
+        .iter()
+        .filter(|(id, _)| id.starts_with(prefix))
+        .map(|(id, name)| (id.clone(), name.clone()))
+        .collect();
+    out.sort_by_key(|a| a.1.to_lowercase());
+    out
+}
+
+/// Select of a filter bar: (parameter, "all" label, (value, label) options, current).
+type FilterSelect<'a> = (&'a str, &'a str, Vec<(String, String)>, &'a str);
+
+/// GET filter bar: selects, a search box and the kept parameters.
+fn filter_form(
+    action: &str,
+    keep: &[(&str, &str)],
+    selects: &[FilterSelect],
+    query: &str,
+) -> String {
+    let mut out = format!("<form method=\"get\" action=\"{action}\" class=\"row filters\">");
+    for (name, value) in keep.iter().filter(|(_, v)| !v.is_empty()) {
+        out.push_str(&hidden(name, value));
+    }
+    for (name, all, options, current) in selects {
+        let _ = write!(
+            out,
+            "<select name=\"{name}\" aria-label=\"{}\"><option value=\"\">{}</option>",
+            esc(all),
+            esc(all)
+        );
+        for (value, label) in options {
+            let _ = write!(
+                out,
+                "<option value=\"{}\"{}>{}</option>",
+                esc(value),
+                if value == current { " selected" } else { "" },
+                esc(label)
+            );
+        }
+        out.push_str("</select>");
+    }
+    let _ = write!(
+        out,
+        "<input type=\"search\" name=\"q\" value=\"{}\" placeholder=\"Search\" aria-label=\"Search\"><button>Filter</button><a href=\"{action}\">Clear</a></form>",
+        esc(query)
+    );
+    out
 }
 
 // --------------------------------------------------------------- channels --

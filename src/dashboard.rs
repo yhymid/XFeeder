@@ -879,6 +879,17 @@ impl Server {
                     .to_lowercase(),
             );
         }
+        // Bound to loopback, a loopback name with another port is an SSH
+        // tunnel (local port ≠ server port). Only literal loopback names are
+        // accepted, so DNS rebinding through a foreign host name still fails.
+        if is_loopback(&self.host)
+            && !authorities.contains(&host_header)
+            && host_header
+                .rsplit_once(':')
+                .is_some_and(|(h, p)| locals.iter().any(|l| l == h) && p.parse::<u16>().is_ok())
+        {
+            authorities.push(host_header.clone());
+        }
         let expected_origin: Vec<String> = if self.public_origin.is_empty() {
             authorities.iter().map(|a| format!("http://{a}")).collect()
         } else {
@@ -1643,9 +1654,15 @@ mod tests {
         let mut builder = Request::builder()
             .method(method)
             .uri(path)
-            .header(header::HOST, "127.0.0.1:3000")
+            .header(
+                header::HOST,
+                extra
+                    .iter()
+                    .find(|(k, _)| *k == "host")
+                    .map_or("127.0.0.1:3000", |(_, v)| *v),
+            )
             .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
-        for (k, v) in extra {
+        for (k, v) in extra.iter().filter(|(k, _)| *k != "host") {
             builder = builder.header(*k, *v);
         }
         let response = server
@@ -1748,6 +1765,35 @@ mod tests {
             body.contains("HOOK") && !body.contains("S3cr3tXYZ"),
             "secret values are never rendered"
         );
+
+        // Through an SSH tunnel on another local port: loopback names only.
+        let tunnel = [
+            ("cookie", auth[0].1),
+            ("host", "localhost:3930"),
+            ("origin", "http://localhost:3930"),
+        ];
+        let (status, _, _) = call(&server, Method::GET, "/", "", &tunnel).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _, _) = call(&server, Method::POST, "/lang", "to=pl", &tunnel).await;
+        assert_ne!(status, StatusCode::FORBIDDEN);
+        for (host, origin) in [
+            ("evil.example:3930", "http://evil.example:3930"),
+            (
+                "127.0.0.1.evil.example:3000",
+                "http://127.0.0.1.evil.example:3000",
+            ),
+            ("localhost:3930", "http://localhost:3931"),
+        ] {
+            let (status, _, _) = call(
+                &server,
+                Method::POST,
+                "/settings/general",
+                "rev=x",
+                &[("cookie", auth[0].1), ("host", host), ("origin", origin)],
+            )
+            .await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{host} {origin}");
+        }
 
         // Every page renders in Polish too.
         let polish = format!("{}; xf_lang=pl", auth[0].1);

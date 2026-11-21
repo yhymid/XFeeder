@@ -590,6 +590,33 @@ Obiekt `Discord` w kanale:
 }
 ```
 
+### 6.1 GitHub API jako źródło (`Auth.GitHubToken`)
+
+Feedy Atom na github.com dają commity jednej gałęzi (i są aktualne), ale feed aktywności
+konta (`github.com/LOGIN.atom`) bierze dane z „events” GitHuba, które potrafią być
+**kilka dni do tyłu**. API GitHuba daje bez opóźnienia to, czego feedy nie mają. Adres API
+wpisujesz jak zwykły feed:
+
+| Adres | Co wysyła |
+|-------|-----------|
+| `https://api.github.com/repos/WŁAŚCICIEL/REPO/commits?sha=GAŁĄŹ` | commity (też z prywatnych repo) |
+| `https://api.github.com/repos/WŁAŚCICIEL/REPO/issues?state=all&sort=created` | issue i pull requesty |
+| `https://api.github.com/user/issues?filter=all&state=all&sort=created` | issue i PR ze wszystkich Twoich repo (wymaga tokena) |
+| `https://api.github.com/repos/WŁAŚCICIEL/REPO/pulls?state=all&sort=created&direction=desc` | tylko pull requesty |
+| `https://api.github.com/repos/WŁAŚCICIEL/REPO/releases` | wydania (bez szkiców) |
+| `https://api.github.com/repos/WŁAŚCICIEL/REPO/branches` | nowe gałęzie |
+| `https://api.github.com/repos/WŁAŚCICIEL/REPO/tags` | nowe tagi |
+
+```json
+"Auth": { "GitHubToken": "${GITHUB_TOKEN}" }
+```
+
+Token (w `.env`: `GITHUB_TOKEN=...`) jest wysyłany **tylko** do api.github.com. Daje limit
+5000 zapytań na godzinę zamiast 60 oraz dostęp do prywatnych repo. XFeeder wyłącznie czyta
+(GET), więc wystarczy token fine-grained z uprawnieniami *Read-only* (Contents, Issues,
+Pull requests, Metadata). Niezmienione odpowiedzi (HTTP 304) nie zużywają limitu. Token
+jest maskowany w logach. Bez tokena publiczne repo też działają, w granicach 60 zapytań/h.
+
 ## 7. `Proxy`
 
 | Parametr  | Domyślnie | Co robi |

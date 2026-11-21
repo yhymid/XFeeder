@@ -10,6 +10,12 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- GitHub REST API URLs work as feeds: commits (also of private repos), issues and pull
+  requests (one repo or all of yours via `/user/issues`), releases, new branches and tags.
+  The account activity Atom feed comes from GitHub's events, which lagged two days in a
+  test; the API is current. `Auth.GitHubToken` (`${GITHUB_TOKEN}`) is sent only to
+  api.github.com (5000 requests/h instead of 60, private repos); requests are read-only,
+  never go through the browser, and GitHub tokens are masked in logs.
 - `Settings.SteamMerge` (off by default): one Discord post per game update. Whichever of
   the SteamDB build and the Steam announcement arrives first is posted at once; the other,
   within `WindowHours` (12) for the same app in the same channel, edits that post (announcement

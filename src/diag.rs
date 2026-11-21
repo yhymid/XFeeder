@@ -121,6 +121,9 @@ pub fn sanitize_text(value: &str) -> String {
     let text =
         re(&BEARER, r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+").replace_all(&text, "Bearer [REDACTED]");
     let text = re(&BOT, r"(?i)\b(bot\d+:)[A-Za-z0-9_-]{20,}").replace_all(&text, "${1}[REDACTED]");
+    static GITHUB: OnceLock<Regex> = OnceLock::new();
+    let text = re(&GITHUB, r"\b(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}")
+        .replace_all(&text, "[REDACTED GITHUB TOKEN]");
     let text =
         re(&TG, r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b").replace_all(&text, "[REDACTED TELEGRAM TOKEN]");
     re(

@@ -11,6 +11,7 @@ mod diag;
 mod diagnostics;
 mod feed;
 mod filter;
+mod github_api;
 mod http;
 mod js;
 mod parsers;

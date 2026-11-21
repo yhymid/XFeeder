@@ -425,6 +425,74 @@ impl Ctx<'_> {
         }))
     }
 
+    async fn with_github_api(
+        &self,
+        url: &str,
+        validator: Option<&(String, String)>,
+    ) -> Result<Download, Stop> {
+        let mut headers = crate::github_api::headers(&self.config.root);
+        if let Some((etag, modified)) = validator {
+            if !etag.is_empty() {
+                headers.push(("if-none-match".into(), etag.clone()));
+            }
+            if !modified.is_empty() {
+                headers.push(("if-modified-since".into(), modified.clone()));
+            }
+        }
+        let result = http::get(http::Get {
+            url,
+            headers,
+            cancel: self.cancel,
+            timeout_ms: None,
+        })
+        .await;
+        match result {
+            Ok(response) => {
+                let left = header(&response.headers, "x-ratelimit-remaining");
+                expert(
+                    "github.api",
+                    json!({ "url": url, "status": response.status, "rateRemaining": left }),
+                );
+                if left.parse::<u32>().is_ok_and(|n| n < 50) {
+                    crate::warn!(
+                        "GitHub",
+                        "API limit almost used up ({left} requests left this hour); set Auth.GitHubToken or check fewer URLs"
+                    );
+                }
+                Ok(Download {
+                    ok: true,
+                    status: Some(response.status),
+                    not_modified: response.status == 304,
+                    data: if response.status == 304 {
+                        String::new()
+                    } else {
+                        response.body
+                    },
+                    headers: response.headers,
+                    ..Default::default()
+                })
+            }
+            Err(HttpError::Cancelled) => Err(Stop::Cancelled),
+            Err(error) => {
+                let status = error.status();
+                let limited = error.response().is_some_and(|r| {
+                    matches!(r.status, 403 | 429)
+                        && header(&r.headers, "x-ratelimit-remaining") == "0"
+                });
+                Ok(Download {
+                    status,
+                    reason: Some(if limited {
+                        "HTTP_RATE_LIMITED"
+                    } else {
+                        "HTTP_ERROR"
+                    }),
+                    error: Some(crate::diag::sanitize_text(&error.to_string())),
+                    ..Default::default()
+                })
+            }
+        }
+    }
+
     async fn download_direct(
         &self,
         url: &str,
@@ -445,6 +513,10 @@ impl Ctx<'_> {
                     ..Default::default()
                 });
             }
+        }
+        // GitHub API: own headers and token, never through a browser.
+        if crate::github_api::is_api(url) {
+            return self.with_github_api(url, validator).await;
         }
         let public_only = self.config.network.public_only();
         let (cfg, runtime) = self.scrapling();

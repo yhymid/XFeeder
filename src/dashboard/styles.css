@@ -48,10 +48,10 @@ header {
   height: 52px; padding: 0 1.25rem;
   background: rgb(0 0 0 / 0.92); border-bottom: 1px solid var(--line);
 }
-header .brand { font-weight: 600; font-size: 1rem; color: var(--text-strong); letter-spacing: -0.01em; text-decoration: none; }
+header .brand { flex: 1 1 0; font-weight: 600; font-size: 1rem; color: var(--text-strong); letter-spacing: -0.01em; text-decoration: none; }
 header .brand:hover { text-decoration: none; }
 header nav {
-  order: 2; display: flex; gap: 0.125rem; flex: 1; min-width: 0;
+  order: 2; display: flex; gap: 0.125rem; flex: 0 1 auto; min-width: 0;
   overflow-x: auto; scrollbar-width: none; white-space: nowrap;
 }
 header nav::-webkit-scrollbar { display: none; }
@@ -62,7 +62,7 @@ header nav a {
 }
 header nav a:hover { color: var(--text); background: var(--hover); text-decoration: none; }
 header nav a[aria-current="page"] { color: var(--text-strong); background: var(--raised); }
-header .lang { order: 3; font-size: 0.8125rem; color: var(--muted); white-space: nowrap; }
+header .lang { order: 3; flex: 1 1 0; text-align: right; font-size: 0.8125rem; color: var(--muted); white-space: nowrap; }
 header .lang a { color: var(--muted); text-decoration: none; }
 header .lang a:hover { color: var(--text); }
 header .lang strong { color: var(--text); font-weight: 600; }
@@ -234,6 +234,7 @@ ul.feeds { columns: 2; margin: 0.5rem 0 0; padding-left: 1.25rem; font-size: 0.8
 @media (max-width: 640px) {
   header { gap: 0.75rem; padding: 0 0.75rem; }
   header .brand { display: none; }
+  header .lang { flex: none; margin-left: auto; }
   main { padding: 1.25rem 0.875rem 2.5rem; }
   h1 { font-size: 1.3125rem; }
   .card strong { font-size: 1.375rem; }

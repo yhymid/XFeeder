@@ -1515,9 +1515,9 @@ fn counter_label(name: &str) -> &str {
 /// text). `bars` are (label shown under the bar or "", hover text, value).
 fn bar_chart(bars: &[(String, String, u64)], label: &str) -> String {
     let max = bars.iter().map(|b| b.2).max().unwrap_or(0).max(1);
-    let (w, h, top, bottom) = (bars.len().max(1) as f64 * 24.0, 120.0, 14.0, 18.0);
+    let (w, h, top, bottom) = (bars.len().max(1) as f64 * 24.0, 150.0, 18.0, 20.0);
     let mut out = format!(
-        "<svg class=\"chart\" viewBox=\"0 0 {w} {}\" preserveAspectRatio=\"none\" role=\"img\" aria-label=\"{}\">",
+        "<svg class=\"chart\" viewBox=\"0 0 {w} {}\" role=\"img\" aria-label=\"{}\">",
         h + bottom,
         esc(label)
     );
@@ -1589,7 +1589,7 @@ fn charts_html(posts: &[crate::sent::Record], labels: &HashMap<String, String>) 
         chrono::DateTime::from_timestamp_millis(ms)
             .map(|d| d.with_timezone(&chrono::Local).date_naive())
     };
-    let mut days: Vec<(String, String, u64)> = (0..30)
+    let days: Vec<(String, String, u64)> = (0..30)
         .rev()
         .map(|back| {
             let day = today - chrono::Duration::days(back);
@@ -1608,10 +1608,6 @@ fn charts_html(posts: &[crate::sent::Record], labels: &HashMap<String, String>) 
             )
         })
         .collect();
-    // Start at the first day with a post, so a new install is not mostly empty.
-    if let Some(first) = days.iter().position(|d| d.2 > 0) {
-        days.drain(..first.min(23));
-    }
     let week_ago = chrono::Utc::now().timestamp_millis() - 7 * 86_400_000;
     let mut per_channel: HashMap<String, u64> = HashMap::new();
     for post in posts.iter().filter(|p| p.sent_at >= week_ago) {

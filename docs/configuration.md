@@ -836,7 +836,7 @@ xfeeder --version | --help
 | `--config`, `--cache` | Another location of `config.json` and `cache.json` (default: the current folder). |
 | `preview <URL>` | Shows what XFeeder reads from a feed (title, author, date, image, link, text) and how long the download, parsing and image check take. Sends and saves nothing; uses Scrapling, the solver and the proxy from `config.json`. `--bench 10` measures 10 times (min/median/p95/max), `--profile news` checks all feeds of a profile, `--json` gives output for scripts. |
 | `rerender` | Rebuilds Discord posts already sent in the current layout, by editing the messages through their webhook (sends nothing new). Uses `sent.json` (next to `cache.json`, written since this version: message ID and entry content, no webhook URLs), so older posts stay as they are. Without `--apply` it only lists what it would change. `--channel channels11#11` limits it to a channel, `--hours 24` to the last hours, `--limit` (50) to the newest posts. |
-| `dashboard --data-dir` | Starts the web dashboard for a folder with `config.json`. Default `http://127.0.0.1:3000`. English or Polish: the EN · PL switch in the top right corner (remembered in a cookie). It controls only a worker it started itself; a systemd worker is handled with `systemctl`. |
+| `dashboard --data-dir` | Starts the web dashboard for a folder with `config.json`. Default `http://127.0.0.1:3000`. English or Polish: the EN · PL switch in the top right corner (remembered in a cookie). It controls only a worker it started itself; a systemd worker is handled with `systemctl`. All pages: [dashboard guide](dashboard.md). |
 
 ```sh
 XFEEDER_DASHBOARD_PASSWORD='a-strong-password' ./xfeeder dashboard --data-dir /opt/xfeeder
@@ -854,6 +854,7 @@ Variables can be set in the system or in `.env`.
 | `XFEEDER_DASHBOARD_HOST` / `_PORT` | Dashboard address and port (default `127.0.0.1:3000`). |
 | `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` | The dashboard's public address behind a reverse proxy, e.g. `https://feeds.example.com`. |
 | `XFEEDER_DASHBOARD_SESSION_TTL_HOURS` | How long a login lasts (default 12 h). |
+| `XFEEDER_SERVICE_UNIT` | systemd unit whose journal the dashboard's Logs page shows (default `xfeeder`). |
 
 ## 12. Checking the config and common problems
 

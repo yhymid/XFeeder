@@ -6,7 +6,7 @@ Forty-three related projects (two rounds) were reviewed for features worth bring
 XFeeder. This page records what was taken, what is a candidate and what was
 rejected, so the review does not have to be repeated.
 
-## Implemented in 3.0.0-alpha.1
+## Implemented in 3.0
 
 | Feature | Source of the idea | Notes |
 |---|---|---|
@@ -17,6 +17,13 @@ rejected, so the review does not have to be repeated.
 | Channel `Filters` (include/exclude, regex, fields, case, max age) | FeedCord `PostFilters` (substring + `label:`), RSSHub `filter`/`filterout`/`filter_case_sensitive`/`filter_time` | Category matching covers FeedCord's `label:`. |
 | Charset detection (header, `<?xml encoding>`, `<meta charset>`) | feedparser `encodings.py` | Fixed garbled ISO-8859-2/windows-1250 text. |
 | Scrapling 0.5 compatibility, `solve_cloudflare` forwarded | Scrapling `docs/migrating-to-v0.5.md` | 0.5 removed `DynamicSession`; CDP moved to `RemoteSession`. |
+| Reuse of a Cloudflare clearance cookie (`Scrapling.ReuseClearance`) | XFeeder measurement (plain HTTP with the browser's cookie and User-Agent) | Temporary, off by default; `false` restores the browser path. |
+| Per-feed adaptive interval (`Settings.AdaptivePolling`) | XFeeder diagnostics (delay was almost all `TimeChecker` wait) | Never slower than `TimeChecker`. |
+| Editing sent posts (`sent.json`, `xfeeder rerender`) | – | Rebuilds Discord posts in the current layout. |
+| Steam + SteamDB in one post (`Settings.SteamMerge`) | – | The second source edits the first post. |
+| GitHub REST API as a source (`Auth.GitHubToken`) | – | 5000 requests/h, private repos, read-only. |
+| `xfeeder preview` and feed profiles | – | What a feed gives, timings, snapshot tests. |
+| Dashboard: logs, charts, channel page, webhook check, delivery history with *Forget*, *Check now*, feeds with problems | – | See [dashboard guide](dashboard.md). Covers part of the failing-feeds candidate below, without disabling feeds. |
 
 ## Candidates
 
@@ -33,7 +40,7 @@ rejected, so the review does not have to be repeated.
 | Image proxy for hotlink-protected images | rsstt-img-relay | Only needed if Telegram/Discord fail to load images from some sites. Optional `ImageProxy` URL prefix. Small. |
 | OPML import/export in the dashboard | rss-to-telegram-worker, FreshRSS | Bulk add feeds (e.g. from plenaryapp/awesome-rss-feeds). Medium (dashboard UI). |
 | `og:image` lookup for entries without an image | FeedCord `ImageParserService` | One extra request per entry; opt-in per channel. Small. |
-| Disable a feed after N consecutive failures and report it in the dashboard | rss-to-telegram-worker (10 failures), FeedCord `EnableAutoRemove` | XFeeder already has a circuit breaker; a visible "failing feeds" list is the missing part. Small. |
+| Disable a feed after N consecutive failures | rss-to-telegram-worker (10 failures), FeedCord `EnableAutoRemove` | The circuit breaker and the dashboard's "Feeds with problems" list exist; automatic disabling does not. Small. |
 | `rsshub://route` shorthand with a configurable instance | RSSHub, RSSWorker | Convenience for sites without feeds. Small. |
 | Reddit as a source (OAuth, `.json`) | discord-feed-bot | Reddit RSS is rate-limited for anonymous clients. Medium. |
 | Mastodon/Misskey timelines | cf-fedi-timeline-rss-worker | Public Mastodon accounts already have `/@user.rss`; only home timelines need the API. Low priority. |

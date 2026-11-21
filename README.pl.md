@@ -40,7 +40,8 @@
 - **Bez restartów.** Zmiany w `config.json` i `.env` działają same.
 - **Pokazuje, co jest wolne.** Diagnostyka 24/7 mierzy czas od publikacji do Discorda
   i podpowiada, co zmienić.
-- **Panel WWW** do edycji kanałów i ustawień, bez JavaScriptu.
+- **Panel WWW** bez JavaScriptu: kanały, posty, logi, wykresy i diagnostyka; edycja
+  ustawień, sprawdzenie kanału od razu albo ponowne wysłanie wpisu.
 
 **Źródła:** RSS, Atom, JSON Feed, kanały YouTube, GitHub (commity, issue, pull requesty,
 wydania, gałęzie), newsy ze Steama i SteamDB, każda strona, która linkuje swój feed, kanały Discorda.
@@ -49,7 +50,8 @@ wydania, gałęzie), newsy ze Steama i SteamDB, każda strona, która linkuje sw
 ## Szybki start
 
 ```sh
-cargo build --release                 # plik: target/release/xfeeder
+cargo build --release
+cp target/release/xfeeder .
 cp config.json.example config.json
 cp .env.example .env                  # tu wpisujesz adresy webhooków i tokeny
 ./xfeeder --check-config              # sprawdzenie configu
@@ -75,9 +77,11 @@ Najmniejszy działający `config.json`:
 | | |
 |---|---|
 | [Konfiguracja](docs/configuration.pl.md) | Ustawienie łatwe → średnie → trudne (Cloudflare) i opis każdej opcji |
+| [Dashboard](docs/dashboard.pl.md) | Każda strona panelu WWW, dostęp przez SSH, bezpieczeństwo |
 | [Wdrożenie](docs/deployment.pl.md) | Budowanie na serwerze i uruchamianie przez systemd ([pliki unit](deploy/systemd)) |
 | [Scrapling](scrapling/README.pl.md) | Instalacja przeglądarki dla stron blokujących boty |
 | [Architektura](docs/architecture.pl.md) | Jak zorganizowany jest kod |
+| [Plan rozwoju](docs/roadmap.pl.md) | Co wzięto z podobnych projektów i co może dojść |
 | [Lista zmian](CHANGELOG.md) | Co się zmieniło, z pomiarami (po angielsku) |
 
 Aktualizacja z 2.x: zostaw `config.json`, `.env` i `cache.json` i uruchom `xfeeder` w tym

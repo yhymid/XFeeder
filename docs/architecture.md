@@ -3,8 +3,9 @@
 **English** · [Polski](architecture.pl.md)
 
 One binary, two modes: the **worker** (default) and the **dashboard**
-(`xfeeder dashboard`). They never share memory; the dashboard edits files and
-reads the worker's telemetry snapshots.
+(`xfeeder dashboard`). They never share memory; the dashboard edits
+`config.json`/`.env`, reads the worker's telemetry snapshots, `sent.json` and the
+journal, and leaves requests for the worker in `requests/`.
 
 ```
 config.json + .env ──► config ──► app (scheduler) ──► feed pipeline ──► deliver
@@ -14,6 +15,8 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
                                      │
                                      ▼
               config.json.{network,activity}-runtime.json ◄── dashboard (axum)
+                                                                   │
+              app (every 30 s tick) ◄── requests/*.json ◄──────────┘  Check now, Forget
 ```
 
 ## Modules (`src/`)
@@ -34,7 +37,9 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 | `diagnostics.rs` | Optional always-on recorder: JSON-lines event files and a periodic Markdown latency report (`Settings.Diagnostics`). |
 | `telemetry.rs` | Bounded, pseudonymised activity events and metrics, published every 2 s for the dashboard. |
 | `dashboard.rs` | JSON API, password sessions, Host/Origin checks, `If-Match` revisions, worker control. |
-| `dashboard/ui.rs` | Server-rendered HTML pages and form posts (no JavaScript; CSP `default-src 'none'`), revision-checked saves. |
+| `dashboard/ui.rs` | Server-rendered HTML pages and form posts (no JavaScript; CSP `default-src 'none'`), revision-checked saves, SVG charts, journal reader, read-only Discord webhook check. |
+| `dashboard/i18n.rs` | English → Polish translation of finished HTML (exact strings and patterns), chosen by the `xf_lang` cookie. |
+| `requests.rs` | Dashboard → worker requests: one JSON file per request in `requests/`, applied by the scheduler on each tick (`Check`, `Forget`). |
 | `adaptive.rs` | Optional per-feed check interval from entry dates (`Settings.AdaptivePolling`), never longer than `TimeChecker`. |
 | `clearance.rs` | Temporary, optional reuse of a Cloudflare clearance cookie from the browser (`Scrapling.ReuseClearance`). |
 | `github_api.rs` | GitHub REST API list endpoints as feeds; token only for api.github.com. |
@@ -42,6 +47,7 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 | `steam_merge.rs` | One post per game update: a Steam announcement and its SteamDB build edit each other's post (`Settings.SteamMerge`). |
 | `preview.rs`, `rerender.rs` | `xfeeder preview` (what a feed gives, timings, benchmarks) and `xfeeder rerender` (rebuild sent posts). |
 | `profile_tests.rs` | Snapshot tests on saved production feeds (`profiles/`). |
+| `build.rs` (crate root) | Embeds the short git commit (`XFEEDER_GIT_COMMIT`) shown on the dashboard. |
 | `text.rs`, `js.rs`, `diag.rs` | HTML/entity/date helpers and link normalisation, JavaScript-compatible value semantics, redacting logger. |
 
 ## Delivery identity and cache
@@ -84,6 +90,9 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
   capped at 8 intervals or 1 hour.
 - With `Settings.AdaptivePolling` a channel wakes up for its earliest due feed
   and fetches only the feeds that are due.
+- On each tick the worker applies waiting dashboard requests: *Check now*
+  makes a channel due at once, *Forget* removes one id from a bucket (deferred
+  while that channel is running) and saves `cache.json`.
 - `MaxConcurrentChannels > 1` runs different channels in parallel.
 - On SIGTERM/SIGINT no new channel starts; running ones get
   `network.shutdownGraceMs` to finish, then are cancelled. A second signal

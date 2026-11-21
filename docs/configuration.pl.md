@@ -834,7 +834,7 @@ xfeeder --version | --help
 | `--config`, `--cache` | Inne położenie `config.json` i `cache.json` (domyślnie bieżący folder). |
 | `preview <URL>` | Pokazuje, co XFeeder odczyta z feedu (tytuł, autor, data, obrazek, link, tekst) i ile trwa pobranie, parsowanie i sprawdzenie obrazka. Nic nie wysyła i nie zapisuje; używa Scraplinga, solvera i proxy z `config.json`. `--bench 10` mierzy 10 razy (min/mediana/p95/max), `--profile news` sprawdza wszystkie feedy profilu, `--json` daje wynik dla skryptów. |
 | `rerender` | Przebudowuje wysłane już posty Discorda w aktualnym wyglądzie, edytując wiadomości przez ich webhook (nic nowego nie wysyła). Korzysta z `sent.json` (obok `cache.json`, zapisywany od tej wersji: ID wiadomości i treść wpisu, bez adresów webhooków), więc starsze posty zostają bez zmian. Bez `--apply` tylko wypisuje, co by zmienił. `--channel channels11#11` ogranicza do kanału, `--hours 24` do ostatnich godzin, `--limit` (50) do najnowszych postów. |
-| `dashboard --data-dir` | Uruchamia panel WWW dla folderu z `config.json`. Domyślnie `http://127.0.0.1:3000`. Po angielsku albo po polsku: przełącznik EN · PL w prawym górnym rogu (zapamiętywany w ciasteczku). Steruje tylko workerem, którego sam uruchomił; worker z systemd obsługuje `systemctl`. |
+| `dashboard --data-dir` | Uruchamia panel WWW dla folderu z `config.json`. Domyślnie `http://127.0.0.1:3000`. Po angielsku albo po polsku: przełącznik EN · PL w prawym górnym rogu (zapamiętywany w ciasteczku). Steruje tylko workerem, którego sam uruchomił; worker z systemd obsługuje `systemctl`. Wszystkie strony: [przewodnik po dashboardzie](dashboard.pl.md). |
 
 ```sh
 XFEEDER_DASHBOARD_PASSWORD='silne-hasło' ./xfeeder dashboard --data-dir /opt/xfeeder
@@ -852,6 +852,7 @@ Zmienne można ustawić w systemie albo w `.env`.
 | `XFEEDER_DASHBOARD_HOST` / `_PORT` | Adres i port dashboardu (domyślnie `127.0.0.1:3000`). |
 | `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` | Publiczny adres dashboardu za reverse proxy, np. `https://feeds.example.com`. |
 | `XFEEDER_DASHBOARD_SESSION_TTL_HOURS` | Jak długo trwa zalogowanie (domyślnie 12 h). |
+| `XFEEDER_SERVICE_UNIT` | Usługa systemd, której dziennik pokazuje strona Logi w dashboardzie (domyślnie `xfeeder`). |
 
 ## 12. Sprawdzanie configu i częste problemy
 

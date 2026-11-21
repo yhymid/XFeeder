@@ -40,7 +40,8 @@
 - **No restarts.** Changes to `config.json` and `.env` apply on their own.
 - **Shows what is slow.** 24/7 diagnostics measure the delay from publication to Discord and
   suggest what to change.
-- **Web dashboard** to edit channels and settings, with no JavaScript.
+- **Web dashboard** with no JavaScript: channels, posts, logs, charts and diagnostics;
+  edit settings, check a channel now or let an entry be posted again.
 
 **Sources:** RSS, Atom, JSON Feed, YouTube channels, GitHub (commits, issues, pull requests,
 releases, branches), Steam and SteamDB news, any page that links its feed, Discord channels.
@@ -50,7 +51,8 @@ topics).
 ## Quick start
 
 ```sh
-cargo build --release                 # binary: target/release/xfeeder
+cargo build --release
+cp target/release/xfeeder .
 cp config.json.example config.json
 cp .env.example .env                  # webhook URLs and tokens go here
 ./xfeeder --check-config              # validate
@@ -76,9 +78,11 @@ The smallest working `config.json`:
 | | |
 |---|---|
 | [Configuration guide](docs/configuration.md) | Easy → medium → hard (Cloudflare) setup, and every setting explained |
+| [Dashboard](docs/dashboard.md) | Every page of the web dashboard, access over SSH, security |
 | [Deployment](docs/deployment.md) | Building on a server and running under systemd ([unit files](deploy/systemd)) |
 | [Scrapling](scrapling/README.md) | Installing the browser for sites that block bots |
 | [Architecture](docs/architecture.md) | How the code is organised |
+| [Roadmap](docs/roadmap.md) | What was taken from similar projects and what may come next |
 | [Changelog](CHANGELOG.md) | What changed, with measurements |
 
 Upgrading from 2.x: keep `config.json`, `.env` and `cache.json` and start `xfeeder` in the

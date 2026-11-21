@@ -3,8 +3,9 @@
 [English](architecture.md) · **Polski**
 
 Jeden plik wykonywalny, dwa tryby: **worker** (domyślny) i **dashboard**
-(`xfeeder dashboard`). Nie dzielą pamięci; dashboard edytuje pliki i czyta zrzuty
-telemetrii workera.
+(`xfeeder dashboard`). Nie dzielą pamięci; dashboard edytuje `config.json`/`.env`,
+czyta zrzuty telemetrii workera, `sent.json` i dziennik systemd, a prośby dla workera
+zostawia w `requests/`.
 
 ```
 config.json + .env ──► config ──► app (harmonogram) ──► potok feedów ──► wysyłka
@@ -14,6 +15,8 @@ config.json + .env ──► config ──► app (harmonogram) ──► potok 
                                      │
                                      ▼
               config.json.{network,activity}-runtime.json ◄── dashboard (axum)
+                                                                   │
+              app (co takt 30 s) ◄── requests/*.json ◄─────────────┘  Sprawdź teraz, Zapomnij
 ```
 
 ## Moduły (`src/`)
@@ -34,7 +37,9 @@ config.json + .env ──► config ──► app (harmonogram) ──► potok 
 | `diagnostics.rs` | Opcjonalny stały rejestrator: pliki zdarzeń JSON-lines i okresowy raport opóźnień w Markdown (`Settings.Diagnostics`). |
 | `telemetry.rs` | Ograniczone, pseudonimizowane zdarzenia aktywności i metryki, publikowane co 2 s dla dashboardu. |
 | `dashboard.rs` | API JSON, sesje z hasłem, sprawdzanie Host/Origin, rewizje `If-Match`, sterowanie workerem. |
-| `dashboard/ui.rs` | Strony HTML renderowane po stronie serwera i formularze (bez JavaScriptu; CSP `default-src 'none'`), zapis ze sprawdzaniem rewizji. |
+| `dashboard/ui.rs` | Strony HTML renderowane po stronie serwera i formularze (bez JavaScriptu; CSP `default-src 'none'`), zapis ze sprawdzaniem rewizji, wykresy SVG, odczyt dziennika, sprawdzanie webhooków Discorda tylko do odczytu. |
+| `dashboard/i18n.rs` | Tłumaczenie gotowego HTML z angielskiego na polski (dokładne teksty i wzorce), wybierane ciasteczkiem `xf_lang`. |
+| `requests.rs` | Prośby dashboardu do workera: jeden plik JSON na prośbę w `requests/`, wykonywany przez harmonogram w każdym takcie (`Check`, `Forget`). |
 | `adaptive.rs` | Opcjonalny interwał na feed liczony z dat wpisów (`Settings.AdaptivePolling`), nigdy dłuższy niż `TimeChecker`. |
 | `clearance.rs` | Tymczasowe, opcjonalne ponowne użycie ciasteczka Cloudflare z przeglądarki (`Scrapling.ReuseClearance`). |
 | `github_api.rs` | Listy z REST API GitHuba jako feedy; token tylko dla api.github.com. |
@@ -42,6 +47,7 @@ config.json + .env ──► config ──► app (harmonogram) ──► potok 
 | `steam_merge.rs` | Jeden post na aktualizację gry: ogłoszenie Steam i build SteamDB edytują wspólny post (`Settings.SteamMerge`). |
 | `preview.rs`, `rerender.rs` | `xfeeder preview` (co daje feed, czasy, benchmarki) i `xfeeder rerender` (przebudowa wysłanych postów). |
 | `profile_tests.rs` | Testy migawkowe na zapisanych feedach z produkcji (`profiles/`). |
+| `build.rs` (główny folder) | Wpisuje krótki commit gita (`XFEEDER_GIT_COMMIT`) pokazywany w dashboardzie. |
 | `text.rs`, `js.rs`, `diag.rs` | Pomocnicze funkcje HTML, encji i dat oraz normalizacja linków, semantyka wartości zgodna z JavaScriptem, logger maskujący sekrety. |
 
 ## Tożsamość wpisu i cache
@@ -82,6 +88,10 @@ Układ `cache.json` (bez zmian od 2.x):
   8 interwałów albo 1 godzina.
 - Z `Settings.AdaptivePolling` kanał budzi się dla feedu, który najwcześniej ma termin,
   i pobiera tylko feedy, którym termin minął.
+- W każdym takcie worker wykonuje czekające prośby z dashboardu: *Sprawdź
+  teraz* od razu oznacza kanał do sprawdzenia, *Zapomnij* usuwa jeden
+  identyfikator z kubełka (odkładane, gdy kanał akurat pracuje) i zapisuje
+  `cache.json`.
 - `MaxConcurrentChannels > 1` uruchamia różne kanały równolegle.
 - Po SIGTERM/SIGINT żaden nowy kanał nie startuje; trwające dostają
   `network.shutdownGraceMs` na dokończenie, potem są przerywane. Drugi sygnał przerywa

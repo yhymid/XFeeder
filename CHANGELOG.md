@@ -10,6 +10,25 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- Dashboard channel page (click a channel): destination, interval, posts in the last 7
+  days, remembered entries, a posts-per-day chart, feeds and recent posts. **Check now**
+  makes the worker check the channel on its next tick; **Delivery history** lists the
+  entries the channel remembers, and **Forget** lets one of them be posted again. Both go
+  to the running worker as small request files in `requests/` (applied every 30 s, never
+  by editing `cache.json` from the dashboard).
+- Dashboard Logs page: the last 200–5000 lines of the worker's journal
+  (`journalctl -u xfeeder`, unit from `XFEEDER_SERVICE_UNIT`), newest first, with a
+  warnings/errors filter and search; secrets are removed.
+- Dashboard System section in Diagnostics: version and git commit (`build.rs`), worker PID
+  and uptime, worker and dashboard memory, the GitHub API rate limit and data file sizes.
+- Dashboard charts (posts per day for 30 days, posts per channel for 7 days, plain SVG),
+  filters on Posts (channel, text) and Activity (channel, feed, text), and a read-only
+  Discord webhook check (webhook name and channel; a deleted webhook is shown) on the
+  channel list and channel page.
+- `.env` editor in the dashboard's Advanced page, above `config.json`; the
+  `XFEEDER_DASHBOARD_*` lines are hidden and kept, the previous file is saved as `.env.bak`.
+- Dashboard guide (`docs/dashboard.md`, `docs/dashboard.pl.md`) and a table of every file
+  in the data directory in the deployment guide.
 - Dashboard: feed pages (where a feed is used, its real interval, health, browser use,
   saved clearance, last entries) with a "Test now" button, a Posts page with a per-post
   "Rebuild", feeds with problems on the overview, and Settings switches for adaptive
@@ -154,6 +173,13 @@ feed state are read as before, so an existing installation switches over in plac
 - Discord webhook sends log the created message and channel id.
 
 ### Changed
+- Dashboard look: black (AMOLED) theme, centred header and pages, status badges; the
+  footer and the refresh link are gone.
+- The `xfeeder-dashboard` systemd unit is tied to the worker (`PartOf=`,
+  `WantedBy=xfeeder.service`): it starts at boot with `xfeeder` and stops and restarts
+  with it. Reinstall the unit file and run `systemctl reenable xfeeder-dashboard` to switch.
+- The dashboard accepts any port on `127.0.0.1`/`localhost`/`[::1]`, so an SSH tunnel can
+  use another local port.
 - Scheduler: due channels start at once, one after another (up to
   `MaxConcurrentChannels`), instead of one channel per 30-second tick. With 10 channels a
   due channel could wait up to 5 minutes; a full pass of all 10 now takes about 7 s.

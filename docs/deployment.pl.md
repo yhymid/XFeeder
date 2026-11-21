@@ -20,8 +20,25 @@ install -m 0755 target/release/xfeeder /usr/local/bin/xfeeder   # albo zostaw na
 ## Folder z danymi
 
 Trzymaj `config.json`, `.env` i `cache.json` razem, czytelne tylko dla użytkownika
-usługi (`chmod 600`). Worker tworzy tam też `cache.feeds.json`, `sent.json`, pliki
-telemetrii `*.runtime.json` i, jeśli Scrapling jest zainstalowany, folder `scrapling/`.
+usługi (`chmod 600`). Wszystko inne XFeeder tworzy tam sam:
+
+| Plik | Kto zapisuje | Co zawiera |
+|---|---|---|
+| `config.json` | Ty, dashboard | Kanały i ustawienia ([przewodnik konfiguracji](configuration.pl.md)). |
+| `.env` | Ty, dashboard | Adresy webhooków, tokeny i inne sekrety. |
+| `cache.json` | worker | Historia wysyłek: które wpisy każdy cel już dostał. **Rób kopię.** Bez niej każdy feed zaczyna od nowa: jego obecne wpisy są oznaczane jako widziane (poza najnowszymi `FirstRunSend`). |
+| `cache.feeds.json` | worker | Stan feedów: walidatory (ETag, Last-Modified), ostatnia kopia, kondycja. Można usunąć. |
+| `sent.json` | worker | ID wiadomości i wpisy 2000 najnowszych postów na Discordzie, do edycji (`rerender`, `SteamMerge`). Bez adresów webhooków. |
+| `clearance.json` | worker | Zapisane ciasteczka Cloudflare (`Scrapling.ReuseClearance`). Usuń, żeby zapomnieć wszystkie. |
+| `config.json.*-runtime.json` | worker | Migawki telemetrii dla dashboardu, nadpisywane co 2 s. |
+| `requests/` | dashboard | Prośby czekające na workera (Sprawdź teraz, Zapomnij); opróżniany co 30 s. |
+| `diagnostics/` | worker | Pliki zdarzeń i raporty (`Settings.Diagnostics`). |
+| `scrapling/` | worker, Ty | Skrypt przeglądarki i jego `.venv` ([Scrapling](../scrapling/README.pl.md)). |
+| `config.json.bak`, `.env.bak` | dashboard | Poprzednia wersja po zapisie z dashboardu. |
+| `*.corrupt-*` | worker | Kopia pliku stanu, którego nie dało się odczytać. Zob. niżej. |
+
+Gdy `cache.json` nie da się odczytać, worker kopiuje go do `cache.json.corrupt-<sha256>` i
+nie startuje, żeby nic nie poszło dwa razy. Przywróć dobrą kopię i uruchom go ponownie.
 
 ## systemd
 
@@ -40,25 +57,31 @@ Uruchamiaj dokładnie **jednego** workera na jeden `cache.json`.
 
 ### Dashboard
 
-Usługa dashboardu nasłuchuje na `127.0.0.1:3000` serwera. Bez
-`XFEEDER_DASHBOARD_PASSWORD` odmawia adresu innego niż lokalny, więc jest
-dostępna tylko przez SSH. Ze swojego komputera:
+```sh
+sudo cp deploy/systemd/xfeeder-dashboard.service.example /etc/systemd/system/xfeeder-dashboard.service
+sudoedit /etc/systemd/system/xfeeder-dashboard.service   # te same ścieżki i User= co worker
+sudo usermod -aG systemd-journal xfeeder                 # opcjonalnie: strona Logi czyta dziennik
+sudo systemctl daemon-reload
+sudo systemctl enable --now xfeeder-dashboard
+```
+
+Usługa dashboardu jest przypięta do workera (`PartOf=` i `WantedBy=xfeeder.service`):
+po włączeniu startuje przy starcie systemu razem z `xfeeder` oraz zatrzymuje się i
+restartuje razem z nim. Czyta `config.json` i `.env` z katalogu danych, więc uruchamiaj
+ją jako ten sam użytkownik co worker. Widzi workera uruchomionego przez systemd i zamiast
+przycisków start/stop pokazuje polecenie `systemctl`.
+
+Usługa nasłuchuje na `127.0.0.1:3000` serwera. Bez `XFEEDER_DASHBOARD_PASSWORD` odmawia
+adresu innego niż lokalny, więc jest dostępna tylko przez SSH. Ze swojego komputera:
 
 ```sh
-SSH_KEY=~/.ssh/moj_klucz scripts/dashboard-tunnel.sh user@serwer
+SSH_KEY=~/.ssh/moj_klucz scripts/dashboard-tunnel.sh user@serwer        # port lokalny 3000
+SSH_KEY=~/.ssh/moj_klucz scripts/dashboard-tunnel.sh user@serwer 8080   # inny port lokalny
 # Dashboard: http://127.0.0.1:3000/  (Ctrl+C zamyka)
 ```
 
-Tunel działa na pierwszym planie; po zamknięciu nic nie zostaje uruchomione.
-Dashboard czyta `config.json` i `.env` z katalogu danych, więc uruchamiaj go
-jako ten sam użytkownik co worker. Widzi workera uruchomionego przez systemd i
-zamiast przycisków start/stop pokazuje polecenie `systemctl`.
-
-Usługa dashboardu jest przypięta do workera (`PartOf=` i
-`WantedBy=xfeeder.service`): włącz ją raz przez
-`sudo systemctl enable xfeeder-dashboard`, a od tej pory startuje przy starcie
-systemu oraz zatrzymuje się i restartuje razem z `xfeeder`. Po aktualizacji
-pliku binarnego wystarczy `sudo systemctl restart xfeeder`.
+Tunel działa na pierwszym planie; po zamknięciu nic nie zostaje uruchomione. Wszystko,
+co potrafi dashboard, opisuje [przewodnik po dashboardzie](dashboard.pl.md).
 
 ## Sprawdzenie przed startem
 
@@ -73,8 +96,9 @@ pokazać tylko naprawdę nowe wpisy.
 ## Aktualizacja
 
 ```sh
+cp cache.json cache.json.before-update           # w folderze z danymi
 git pull && cargo build --release --locked
-sudo systemctl restart xfeeder
+sudo install -m 0755 target/release/xfeeder /usr/local/bin/xfeeder
+sudo systemctl restart xfeeder                   # restartuje też dashboard
+journalctl -u xfeeder -n 50
 ```
-
-Przed aktualizacją zrób kopię `cache.json`.

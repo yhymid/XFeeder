@@ -10,6 +10,12 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- Dashboard: feed pages (where a feed is used, its real interval, health, browser use,
+  saved clearance, last entries) with a "Test now" button, a Posts page with a per-post
+  "Rebuild", feeds with problems on the overview, and Settings switches for adaptive
+  polling, SteamMerge, ReuseClearance and Telegram defaults.
+- `scripts/dashboard-tunnel.sh`: open a server's loopback-only dashboard through SSH in the
+  foreground, leaving nothing running after Ctrl+C.
 - Dashboard overview and activity: newest posts (from `sent.json`) and recent problems
   instead of routine events, channel and feed names instead of hashes, plain counter names,
   the systemctl command instead of buttons that cannot act on a systemd worker, one-click

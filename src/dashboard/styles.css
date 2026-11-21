@@ -113,3 +113,4 @@ details { margin: 0.5rem 0; }
 details summary { cursor: pointer; color: var(--muted); }
 ul.feeds { columns: 2; margin: 0.4rem 0; font-size: 0.9rem; }
 @media (max-width: 800px) { ul.feeds { columns: 1; } }
+form.stack + form.stack, form.stack + section { margin-top: 1.5rem; }

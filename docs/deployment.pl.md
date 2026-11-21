@@ -38,6 +38,23 @@ journalctl -u xfeeder -f
 
 Uruchamiaj dokładnie **jednego** workera na jeden `cache.json`.
 
+### Dashboard
+
+Usługa dashboardu nasłuchuje na `127.0.0.1:3000` serwera. Bez
+`XFEEDER_DASHBOARD_PASSWORD` odmawia adresu innego niż lokalny, więc jest
+dostępna tylko przez SSH. Ze swojego komputera:
+
+```sh
+SSH_KEY=~/.ssh/moj_klucz scripts/dashboard-tunnel.sh user@serwer
+# Dashboard: http://127.0.0.1:3000/  (Ctrl+C zamyka)
+```
+
+Tunel działa na pierwszym planie; po zamknięciu nic nie zostaje uruchomione.
+Dashboard czyta `config.json` i `.env` z katalogu danych, więc uruchamiaj go
+jako ten sam użytkownik co worker. Widzi workera uruchomionego przez systemd i
+zamiast przycisków start/stop pokazuje polecenie `systemctl`. Po aktualizacji
+pliku binarnego zrestartuj obie usługi.
+
 ## Sprawdzenie przed startem
 
 ```sh

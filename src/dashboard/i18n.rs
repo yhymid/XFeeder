@@ -476,6 +476,18 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("Logs", "Logi"),
+    ("Search", "Szukaj"),
+    ("Lines", "Linie"),
+    ("Show", "Pokaż"),
+    ("Level", "Poziom"),
+    ("Message", "Wiadomość"),
+    ("Info", "Info"),
+    ("Nothing matches.", "Nic nie pasuje."),
+    (
+        "The dashboard user needs read access to the journal (group adm or systemd-journal). A worker started from this dashboard logs to its own output instead.",
+        "Użytkownik dashboardu potrzebuje dostępu do dziennika (grupa adm albo systemd-journal). Worker uruchomiony z tego dashboardu loguje na swoje wyjście.",
+    ),
     (
         "This is the raw .env with every secret in plain text (webhook URLs, tokens, cookies): do not share screenshots of this page.",
         "To surowy .env ze wszystkimi sekretami jawnym tekstem (adresy webhooków, tokeny, ciasteczka): nie udostępniaj zrzutów ekranu tej strony.",
@@ -961,6 +973,17 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 )
             },
         ),
+        rule(r"^(\d+) lines$", |c| format!("{} linii", &c[1])),
+        rule(r"^(\d+) of the last (\d+) lines of$", |c| {
+            format!("{} z ostatnich {} linii z", &c[1], &c[2])
+        }),
+        rule(r"^, newest first\. Secrets are redacted\.$", |_| {
+            ", od najnowszych. Sekrety są ukryte.".to_string()
+        }),
+        rule(r"^The journal of$", |_| {
+            "Nie można odczytać dziennika".to_string()
+        }),
+        rule(r"^cannot be read: (.*)$", |c| format!(": {}", &c[1])),
         rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
             format!("Diagnostyka XFeedera — {} (UTC)", &c[1])
         }),

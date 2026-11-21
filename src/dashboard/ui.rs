@@ -141,11 +141,12 @@ fn redirect_with_cookie(to: &str, cookie: &str) -> Response {
         .expect("response")
 }
 
-const NAV: [(&str, &str); 7] = [
+const NAV: [(&str, &str); 8] = [
     ("/", "Overview"),
     ("/channels", "Channels"),
     ("/posts", "Posts"),
     ("/activity", "Activity"),
+    ("/logs", "Logs"),
     ("/diagnostics", "Diagnostics"),
     ("/settings", "Settings"),
     ("/advanced", "Advanced"),
@@ -476,6 +477,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/config/remove-section") => remove_section(server, req),
         (true, "/channels/duplicate") => channel_duplicate(server, req),
         (false, "/activity") => activity(server, req),
+        (false, "/logs") => logs_page(req).await,
         (false, "/feed") => feed_page(server, req),
         (true, "/feed/test") => feed_test(server, req).await,
         (false, "/posts") => posts_page(server, req),
@@ -592,6 +594,189 @@ fn channel_labels(server: &Server, config: &Value) -> HashMap<String, String> {
         labels.insert(channel.cache_key.clone(), channel.label());
     }
     labels
+}
+
+// ------------------------------------------------------------------- logs --
+
+/// systemd unit of the worker (`XFEEDER_SERVICE_UNIT`, default `xfeeder`).
+fn service_unit() -> String {
+    std::env::var("XFEEDER_SERVICE_UNIT")
+        .ok()
+        .filter(|u| {
+            !u.is_empty()
+                && u.len() <= 64
+                && u.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "@._-".contains(c))
+        })
+        .unwrap_or_else(|| "xfeeder".into())
+}
+
+struct LogLine {
+    at: i64,
+    level: &'static str,
+    text: String,
+}
+
+/// Last `lines` journal messages of the worker unit, newest first, with
+/// secrets redacted. Needs read access to the journal (group adm or
+/// systemd-journal); no sudo.
+async fn read_journal(unit: &str, lines: usize) -> Result<Vec<LogLine>, String> {
+    let child = tokio::process::Command::new("journalctl")
+        .args([
+            "-u",
+            unit,
+            "-n",
+            &lines.to_string(),
+            "--no-pager",
+            "-o",
+            "json",
+        ])
+        .args(["--output-fields=MESSAGE,PRIORITY"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output();
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), child)
+        .await
+        .map_err(|_| "journalctl took longer than 10 s.".to_string())?
+        .map_err(|e| format!("Cannot run journalctl: {e}"))?;
+    if !output.status.success() {
+        return Err(sanitize_text(
+            String::from_utf8_lossy(&output.stderr).trim(),
+        ));
+    }
+    let mut out: Vec<LogLine> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|entry| {
+            let text = entry["MESSAGE"].as_str()?.to_string();
+            let at = entry["__REALTIME_TIMESTAMP"]
+                .as_str()
+                .and_then(|t| t.parse::<i64>().ok())
+                .unwrap_or(0)
+                / 1000;
+            let lower = text.to_ascii_lowercase();
+            let priority = entry["PRIORITY"]
+                .as_str()
+                .and_then(|p| p.parse::<u8>().ok())
+                .unwrap_or(6);
+            let level = if priority <= 3 || lower.contains("][error]") || lower.contains("panicked")
+            {
+                "error"
+            } else if priority == 4 || lower.contains("][warn]") {
+                "warning"
+            } else {
+                "info"
+            };
+            Some(LogLine {
+                at,
+                level,
+                text: sanitize_text(&text),
+            })
+        })
+        .collect();
+    out.reverse();
+    Ok(out)
+}
+
+async fn logs_page(req: &Req<'_>) -> Response {
+    let unit = service_unit();
+    let level = req.q("level");
+    let query = req.q("q").trim().to_lowercase();
+    let lines = req
+        .q("lines")
+        .parse::<usize>()
+        .unwrap_or(500)
+        .clamp(50, 5000);
+    let mut body = String::new();
+    let pill = |label: &str, value: &str| {
+        format!(
+            "<a class=\"pill{}\" href=\"/logs?level={}&amp;q={}&amp;lines={lines}\">{}</a>",
+            if level == value { " on" } else { "" },
+            esc(&enc(value)),
+            esc(&enc(&query)),
+            esc(label)
+        )
+    };
+    let _ = write!(
+        body,
+        "<form method=\"get\" action=\"/logs\" class=\"row filters\">{}{}{}\
+         <input type=\"search\" name=\"q\" value=\"{}\" placeholder=\"Search\" aria-label=\"Search\">{}\
+         <select name=\"lines\" aria-label=\"Lines\">{}</select><button>Show</button></form>",
+        pill("All", ""),
+        pill("Warnings and errors", "warning"),
+        pill("Errors", "error"),
+        esc(&query),
+        hidden("level", level),
+        [200, 500, 2000, 5000]
+            .iter()
+            .map(|n| format!(
+                "<option value=\"{n}\"{}>{n} lines</option>",
+                if *n == lines { " selected" } else { "" }
+            ))
+            .collect::<String>(),
+    );
+    match read_journal(&unit, lines).await {
+        Err(message) => {
+            let _ = write!(
+                body,
+                "<p class=\"notice warn\">The journal of <code>{}</code> cannot be read: {}</p><p class=\"muted\">The dashboard user needs read access to the journal (group adm or systemd-journal). A worker started from this dashboard logs to its own output instead.</p>",
+                esc(&unit),
+                esc(&message)
+            );
+        }
+        Ok(entries) => {
+            let shown: Vec<&LogLine> = entries
+                .iter()
+                .filter(|l| match level {
+                    "error" => l.level == "error",
+                    "warning" => l.level != "info",
+                    _ => true,
+                })
+                .filter(|l| query.is_empty() || l.text.to_lowercase().contains(&query))
+                .collect();
+            let _ = write!(
+                body,
+                "<p class=\"muted\">{} of the last {} lines of <code>journalctl -u {}</code>, newest first. Secrets are redacted.</p>",
+                shown.len(),
+                entries.len(),
+                esc(&unit)
+            );
+            if shown.is_empty() {
+                body.push_str("<p class=\"muted\">Nothing matches.</p>");
+            } else {
+                body.push_str("<table class=\"logs\"><thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead><tbody>");
+                for line in shown {
+                    let time = chrono::DateTime::from_timestamp_millis(line.at)
+                        .map(|d| {
+                            d.with_timezone(&chrono::Local)
+                                .format("%H:%M:%S")
+                                .to_string()
+                        })
+                        .unwrap_or_default();
+                    let full = chrono::DateTime::from_timestamp_millis(line.at)
+                        .map(|d| d.to_rfc3339())
+                        .unwrap_or_default();
+                    let _ = write!(
+                        body,
+                        "<tr class=\"{}\"><td title=\"{}\">{}</td><td>{}</td><td class=\"msg\">{}</td></tr>",
+                        if line.level == "info" { "" } else { line.level },
+                        esc(&full),
+                        esc(&time),
+                        status_badge(if line.level == "info" {
+                            "info"
+                        } else {
+                            line.level
+                        }),
+                        esc(&line.text)
+                    );
+                }
+                body.push_str("</tbody></table>");
+            }
+        }
+    }
+    page(req, StatusCode::OK, "Logs", &body)
 }
 
 // ------------------------------------------------------------------ feeds --
@@ -1297,6 +1482,7 @@ fn status_badge(status: &str) -> String {
         "success" | "ok" => ("ok", "OK"),
         "warning" => ("warn", "Warning"),
         "error" => ("bad", "Error"),
+        "info" => ("", "Info"),
         "" => return String::new(),
         other => ("", other),
     };

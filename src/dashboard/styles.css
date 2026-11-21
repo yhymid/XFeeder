@@ -244,3 +244,8 @@ ul.feeds { columns: 2; margin: 0.5rem 0 0; padding-left: 1.25rem; font-size: 0.8
   *, *::before { transition: none !important; }
 }
 section > h2:first-child { margin-top: 0; }
+.filters { margin-bottom: 1rem; }
+.filters input[type="search"] { width: auto; flex: 1 1 14rem; }
+.filters select { width: auto; }
+table.logs td.msg { font: 0.8125rem/1.5 var(--mono); overflow-wrap: anywhere; color: var(--text); }
+table.logs td { padding-top: 0.3125rem; padding-bottom: 0.3125rem; }

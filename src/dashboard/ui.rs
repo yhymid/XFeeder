@@ -1290,6 +1290,18 @@ fn counter_label(name: &str) -> &str {
 }
 
 /// Events that are routine and hidden unless asked for.
+/// Status as a small badge: word plus colour, never colour alone.
+fn status_badge(status: &str) -> String {
+    let (class, label) = match status {
+        "success" | "ok" => ("ok", "OK"),
+        "warning" => ("warn", "Warning"),
+        "error" => ("bad", "Error"),
+        "" => return String::new(),
+        other => ("", other),
+    };
+    format!("<span class=\"badge {class}\">{}</span>", esc(label))
+}
+
 /// Readable name of an activity event (the raw name stays in the tooltip).
 fn event_label(event: &str) -> &str {
     match event {
@@ -1338,7 +1350,7 @@ fn activity_table(activity: &Value, names: &HashMap<String, String>) -> String {
         })
     };
     let mut out = String::from(
-        "<table><thead><tr><th>Time</th><th>Event</th><th>Status</th><th>Channel</th><th>Feed</th><th>Target</th><th>Duration</th><th>HTTP</th><th>Items</th><th>Error</th></tr></thead><tbody>",
+        "<table><thead><tr><th>Time</th><th>Event</th><th>Status</th><th>Channel</th><th>Feed</th><th>Target</th><th class=\"num\">Duration</th><th class=\"num\">HTTP</th><th class=\"num\">Items</th><th>Error</th></tr></thead><tbody>",
     );
     for item in &items {
         let time = item["time"].as_str().unwrap_or("");
@@ -1350,7 +1362,7 @@ fn activity_table(activity: &Value, names: &HashMap<String, String>) -> String {
             esc(&ago(time)),
             esc(item["event"].as_str().unwrap_or("")),
             esc(event_label(item["event"].as_str().unwrap_or(""))),
-            esc(item["status"].as_str().unwrap_or("")),
+            status_badge(item["status"].as_str().unwrap_or("")),
             esc(&name_of(names, item["channel"].as_str().unwrap_or(""))),
             esc(&name_of(names, item["source"].as_str().unwrap_or(""))),
             esc(item["target"].as_str().unwrap_or("")),

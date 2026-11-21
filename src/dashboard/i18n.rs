@@ -476,6 +476,7 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("Warning", "Ostrzeżenie"),
     ("Feed check started", "Start sprawdzania feedu"),
     ("Feed checked", "Feed sprawdzony"),
     ("Feed unchanged (304)", "Feed bez zmian (304)"),

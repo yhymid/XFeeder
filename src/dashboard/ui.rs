@@ -16,9 +16,9 @@ use axum::response::Response;
 use serde_json::{Map, Value, json};
 
 use super::{
-    Server, network_runtime, public_metrics, read_activity, read_json, read_text, replace_secret,
-    reserved_secret, revision, runtime_channels, secret_status, structured_activity, validation,
-    worker_ready, write_private,
+    Server, VERSION, network_runtime, public_metrics, read_activity, read_json, read_text,
+    replace_secret, reserved_secret, revision, runtime_channels, secret_status,
+    structured_activity, validation, worker_ready, write_private,
 };
 use crate::config;
 use crate::diag::sanitize_text;
@@ -2752,6 +2752,134 @@ fn summary_html(markdown: &str) -> String {
     out
 }
 
+fn bytes(n: u64) -> String {
+    match n {
+        n if n >= 1 << 30 => format!("{:.1} GB", n as f64 / (1u64 << 30) as f64),
+        n if n >= 1 << 20 => format!("{:.1} MB", n as f64 / (1u64 << 20) as f64),
+        n if n >= 1 << 10 => format!("{:.0} KB", n as f64 / 1024.0),
+        n => format!("{n} B"),
+    }
+}
+
+/// Resident memory of a process from /proc (Linux), in bytes.
+fn rss_of(pid: u32) -> Option<u64> {
+    std::fs::read_to_string(format!("/proc/{pid}/status"))
+        .ok()?
+        .lines()
+        .find_map(|l| l.strip_prefix("VmRSS:"))
+        .and_then(|v| v.split_whitespace().next()?.parse::<u64>().ok())
+        .map(|kb| kb * 1024)
+}
+
+fn dir_size(path: &Path) -> u64 {
+    std::fs::read_dir(path)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.metadata().ok())
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// Version, worker process, GitHub API limit and data file sizes.
+fn system_html(server: &Server) -> String {
+    let runtime = read_json(&crate::telemetry::runtime_path(&server.paths.config));
+    let pid = runtime["pid"].as_u64().and_then(|p| u32::try_from(p).ok());
+    let alive = pid.filter(|p| Path::new(&format!("/proc/{p}")).exists());
+    let started = alive
+        .and_then(|p| std::fs::metadata(format!("/proc/{p}")).ok())
+        .and_then(|m| m.modified().ok())
+        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339());
+    let installed = std::env::current_exe()
+        .ok()
+        .and_then(|e| std::fs::metadata(e).ok())
+        .and_then(|m| m.modified().ok())
+        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339());
+    let github = &runtime["github"];
+    let github = match (github["remaining"].as_u64(), github["limit"].as_u64()) {
+        (Some(left), Some(limit)) => {
+            let reset = github["reset"].as_i64().unwrap_or(0) - chrono::Utc::now().timestamp();
+            format!(
+                "{left} / {limit} left{}",
+                if reset > 0 {
+                    format!(", resets in {} min", reset / 60 + 1)
+                } else {
+                    String::new()
+                }
+            )
+        }
+        _ => "–".into(),
+    };
+    let base = server.paths.config.parent().unwrap_or(Path::new("."));
+    let mut files: Vec<(String, u64)> = [
+        "cache.json",
+        "cache.feeds.json",
+        "sent.json",
+        "clearance.json",
+    ]
+    .iter()
+    .filter_map(|n| {
+        std::fs::metadata(base.join(n))
+            .ok()
+            .map(|m| (n.to_string(), m.len()))
+    })
+    .collect();
+    let config = read_json(&server.paths.config);
+    files.push((
+        "diagnostics/".into(),
+        dir_size(&server.diagnostics_dir(&config)),
+    ));
+    let mut out = String::from("<section><h2>System</h2><div class=\"cards\">");
+    let mut card = |label: &str, value: String, sub: String| {
+        let _ = write!(
+            out,
+            "<div class=\"card\"><span>{}</span><strong>{}</strong><small>{}</small></div>",
+            esc(label),
+            esc(&value),
+            esc(&sub)
+        );
+    };
+    card(
+        "Version",
+        VERSION.to_string(),
+        format!(
+            "commit {} · installed {}",
+            env!("XFEEDER_GIT_COMMIT"),
+            installed.as_deref().map_or("–".into(), ago)
+        ),
+    );
+    card(
+        "Worker",
+        alive.map_or("not running".into(), |p| format!("PID {p}")),
+        started
+            .as_deref()
+            .map_or("–".into(), |t| format!("started {}", ago(t))),
+    );
+    card(
+        "Memory",
+        alive.and_then(rss_of).map_or("–".into(), bytes),
+        format!(
+            "dashboard {}",
+            rss_of(std::process::id()).map_or("–".into(), bytes)
+        ),
+    );
+    card("GitHub API", github, "requests this hour".into());
+    out.push_str(
+        "</div><table><thead><tr><th>Data file</th><th class=\"num\">Size</th></tr></thead><tbody>",
+    );
+    for (name, size) in files {
+        let _ = write!(
+            out,
+            "<tr><td><code>{}</code></td><td class=\"num\">{}</td></tr>",
+            esc(&name),
+            bytes(size)
+        );
+    }
+    out.push_str("</tbody></table></section>");
+    out
+}
+
 fn diagnostics(server: &Server, req: &Req) -> Response {
     let config = read_json(&server.paths.config);
     let dir = server.diagnostics_dir(&config);
@@ -2776,8 +2904,10 @@ fn diagnostics(server: &Server, req: &Req) -> Response {
             .cmp(&a.0[a.0.find('-').unwrap_or(0)..])
             .then(b.0.cmp(&a.0))
     });
-    let mut body = format!(
-        "<p class=\"muted\">Recorder: <strong>{}</strong> · folder <code>{}</code>. Enable or tune it in <a href=\"/settings\">Settings</a>; the worker must be restarted to apply.</p>",
+    let mut body = system_html(server);
+    let _ = write!(
+        body,
+        "<h2>Recorder</h2><p class=\"muted\">Recorder: <strong>{}</strong> · folder <code>{}</code>. Enable or tune it in <a href=\"/settings\">Settings</a>; the worker must be restarted to apply.</p>",
         if enabled { "enabled" } else { "disabled" },
         esc(&dir.display().to_string())
     );

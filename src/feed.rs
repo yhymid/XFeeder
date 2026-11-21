@@ -449,6 +449,18 @@ impl Ctx<'_> {
         match result {
             Ok(response) => {
                 let left = header(&response.headers, "x-ratelimit-remaining");
+                if let (Ok(remaining), Ok(limit)) = (
+                    left.parse::<u64>(),
+                    header(&response.headers, "x-ratelimit-limit").parse::<u64>(),
+                ) {
+                    crate::telemetry::github_rate(
+                        remaining,
+                        limit,
+                        header(&response.headers, "x-ratelimit-reset")
+                            .parse()
+                            .unwrap_or(0),
+                    );
+                }
                 expert(
                     "github.api",
                     json!({ "url": url, "status": response.status, "rateRemaining": left }),

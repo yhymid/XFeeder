@@ -52,6 +52,13 @@ struct State {
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
+/// Last GitHub API rate limit seen: (remaining, limit, reset unix seconds).
+static GITHUB: Mutex<Option<(u64, u64, i64)>> = Mutex::new(None);
+
+pub fn github_rate(remaining: u64, limit: u64, reset: i64) {
+    *GITHUB.lock().expect("lock") = Some((remaining, limit, reset));
+}
+
 pub fn enable() {
     ENABLED.store(true, Ordering::Relaxed);
     *STATE.lock().expect("lock") = Some(State::default());
@@ -321,6 +328,9 @@ impl Publisher {
             "configSignature": network_signature(&config),
             "workerReady": ready,
             "metrics": network_metrics(stopping),
+            "github": GITHUB.lock().expect("lock").map(|(remaining, limit, reset)| {
+                json!({ "remaining": remaining, "limit": limit, "reset": reset })
+            }),
         });
         let _ = crate::state::write_atomic(
             &runtime_path(&self.config_path),

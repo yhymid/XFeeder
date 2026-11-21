@@ -476,6 +476,15 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    ("System", "System"),
+    ("Recorder", "Rejestrator"),
+    ("Version", "Wersja"),
+    ("Memory", "Pamięć"),
+    ("GitHub API", "API GitHuba"),
+    ("requests this hour", "zapytań w tej godzinie"),
+    ("not running", "nie działa"),
+    ("Data file", "Plik danych"),
+    ("Size", "Rozmiar"),
     ("Logs", "Logi"),
     ("Search", "Szukaj"),
     ("Lines", "Linie"),
@@ -984,6 +993,32 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "Nie można odczytać dziennika".to_string()
         }),
         rule(r"^cannot be read: (.*)$", |c| format!(": {}", &c[1])),
+        rule(r"^commit (\S+) · installed (.+)$", |c| {
+            format!(
+                "commit {} · zainstalowany {}",
+                &c[1],
+                translate_text(&c[2]).unwrap_or_else(|| c[2].to_string())
+            )
+        }),
+        rule(r"^started (.+)$", |c| {
+            format!(
+                "uruchomiony {}",
+                translate_text(&c[1]).unwrap_or_else(|| c[1].to_string())
+            )
+        }),
+        rule(r"^dashboard (\S+ \S+)$", |c| format!("dashboard {}", &c[1])),
+        rule(
+            r"^(\d+) / (\d+) left(?:, resets in (\d+) min)?$",
+            |c| match c.get(3) {
+                Some(m) => format!(
+                    "zostało {} / {}, odnowienie za {} min",
+                    &c[1],
+                    &c[2],
+                    m.as_str()
+                ),
+                None => format!("zostało {} / {}", &c[1], &c[2]),
+            },
+        ),
         rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
             format!("Diagnostyka XFeedera — {} (UTC)", &c[1])
         }),

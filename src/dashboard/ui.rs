@@ -489,6 +489,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/settings/secret") => settings_secret(server, req),
         (false, "/advanced") => advanced(server, req, None, None),
         (true, "/advanced") => advanced_save(server, req),
+        (true, "/advanced/env") => env_save(server, req),
         _ => page(
             req,
             StatusCode::NOT_FOUND,
@@ -3386,11 +3387,12 @@ fn advanced(server: &Server, req: &Req, text: Option<&str>, notice: Option<Strin
     let body = format!(
         "{}<p class=\"notice warn\">This is the raw config.json. It may contain webhook URLs and tokens: do not share screenshots of this page.</p>\
          <form method=\"post\" action=\"/advanced\" class=\"stack\">{}{}\
-         <div class=\"row\">{}<button>Validate and save</button><a href=\"/advanced\">Discard changes</a></div></form>",
+         <div class=\"row\">{}<button>Validate and save</button><a href=\"/advanced\">Discard changes</a></div></form>{}",
         notice.unwrap_or_default(),
         hidden("rev", &revision(&current)),
         textarea("config.json", "config", text.unwrap_or(&current), 32, ""),
         checkbox("Save despite warnings", "accept", false),
+        env_form(server, None, None),
     );
     page(
         req,
@@ -3402,6 +3404,131 @@ fn advanced(server: &Server, req: &Req, text: Option<&str>, notice: Option<Strin
         "Advanced",
         &body,
     )
+}
+
+/// `.env` without the reserved lines (dashboard password, PATH, …), which
+/// are never shown or changed from the browser.
+fn env_split(text: &str) -> (String, Vec<String>) {
+    let mut visible = String::new();
+    let mut reserved = Vec::new();
+    for line in text.lines() {
+        let key = line.split_once('=').map(|(k, _)| k.trim());
+        if key.is_some_and(|k| !k.starts_with('#') && reserved_secret(k)) {
+            reserved.push(line.to_string());
+        } else {
+            visible.push_str(line);
+            visible.push('\n');
+        }
+    }
+    (visible, reserved)
+}
+
+fn env_form(server: &Server, text: Option<&str>, notice: Option<String>) -> String {
+    let current = read_text(&server.paths.env);
+    let (visible, reserved) = env_split(&current);
+    format!(
+        "<section id=\"env\"><h2>.env</h2>{}<p class=\"notice warn\">This is the raw .env with every secret in plain text (webhook URLs, tokens, cookies): do not share screenshots of this page.</p>\
+         <form method=\"post\" action=\"/advanced/env\" class=\"stack\">{}{}{}\
+         <div class=\"row\"><button>Save .env</button><a href=\"/advanced\">Discard changes</a></div></form></section>",
+        notice.unwrap_or_default(),
+        hidden("env_rev", &revision(&current)),
+        textarea(
+            ".env",
+            "env",
+            text.unwrap_or(&visible),
+            visible.lines().count().clamp(6, 30) as u32 + 1,
+            "One NAME=value per line; # starts a comment. The worker picks up changed values on its next cycle. The previous file is kept as .env.bak."
+        ),
+        if reserved.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<small>{} reserved line(s) (XFEEDER_DASHBOARD_*, PATH, …) are kept as they are and not shown.</small>",
+                reserved.len()
+            )
+        },
+    )
+}
+
+fn env_page(server: &Server, req: &Req, text: &str, message: &str) -> Response {
+    let notice = format!("<p class=\"notice error\">{}</p>", esc(message));
+    page(
+        req,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Advanced",
+        &env_form(server, Some(text), Some(notice)),
+    )
+}
+
+fn env_save(server: &Server, req: &Req) -> Response {
+    let current = read_text(&server.paths.env);
+    let posted = req.f("env").replace("\r\n", "\n");
+    if req.f("env_rev") != revision(&current) {
+        return env_page(
+            server,
+            req,
+            &posted,
+            ".env changed since this page was opened. Copy your changes and try again.",
+        );
+    }
+    for (number, line) in posted.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, _)) = line.split_once('=') else {
+            return env_page(
+                server,
+                req,
+                &posted,
+                &format!("Line {}: expected NAME=value.", number + 1),
+            );
+        };
+        let key = key.trim_end();
+        if !crate::config::valid_env_key(key) {
+            return env_page(
+                server,
+                req,
+                &posted,
+                &format!(
+                    "Line {}: “{key}” is not a valid name (letters, digits, _).",
+                    number + 1
+                ),
+            );
+        }
+        if reserved_secret(key) {
+            return env_page(
+                server,
+                req,
+                &posted,
+                &format!(
+                    "Line {}: {key} is reserved and cannot be set here.",
+                    number + 1
+                ),
+            );
+        }
+    }
+    let (_, reserved) = env_split(&current);
+    let mut next = posted.trim_end().to_string();
+    if !reserved.is_empty() {
+        next.push_str("\n\n");
+        next.push_str(&reserved.join("\n"));
+    }
+    next.push('\n');
+    if next == current {
+        return redirect("/advanced", ".env unchanged.", false);
+    }
+    if !current.is_empty() {
+        let _ = write_private(&server.paths.env.with_extension("bak"), &current);
+    }
+    match write_private(&server.paths.env, &next) {
+        Ok(()) => redirect(
+            "/advanced",
+            ".env saved (previous file in .env.bak).",
+            false,
+        ),
+        Err(e) => env_page(server, req, &posted, &sanitize_text(&e.to_string())),
+    }
 }
 
 fn advanced_save(server: &Server, req: &Req) -> Response {

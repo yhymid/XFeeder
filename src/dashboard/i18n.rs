@@ -476,6 +476,24 @@ const EXACT: &[(&str, &str)] = &[
     ),
     ("(+ SteamDB)", "(+ SteamDB)"),
     ("Checked every", "Sprawdzany co"),
+    (
+        "This is the raw .env with every secret in plain text (webhook URLs, tokens, cookies): do not share screenshots of this page.",
+        "To surowy .env ze wszystkimi sekretami jawnym tekstem (adresy webhooków, tokeny, ciasteczka): nie udostępniaj zrzutów ekranu tej strony.",
+    ),
+    ("Save .env", "Zapisz .env"),
+    (
+        "One NAME=value per line; # starts a comment. The worker picks up changed values on its next cycle. The previous file is kept as .env.bak.",
+        "Jedna para NAZWA=wartość na linię; # zaczyna komentarz. Worker wczyta zmienione wartości w następnym obiegu. Poprzedni plik zostaje jako .env.bak.",
+    ),
+    (
+        ".env changed since this page was opened. Copy your changes and try again.",
+        ".env zmienił się od otwarcia tej strony. Skopiuj swoje zmiany i spróbuj ponownie.",
+    ),
+    (".env unchanged.", ".env bez zmian."),
+    (
+        ".env saved (previous file in .env.bak).",
+        ".env zapisany (poprzedni plik w .env.bak).",
+    ),
     ("Warning", "Ostrzeżenie"),
     ("Feed check started", "Start sprawdzania feedu"),
     ("Feed checked", "Feed sprawdzony"),
@@ -913,6 +931,36 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             )
         }),
         rule(r"^(\d+) d$", |c| format!("{} dni", &c[1])),
+        rule(
+            r"^(\d+) reserved line\(s\) \(XFEEDER_DASHBOARD_\*, PATH, …\) are kept as they are and not shown\.$",
+            |c| {
+                format!(
+                    "Zastrzeżone linie ({}: XFEEDER_DASHBOARD_*, PATH, …) zostają bez zmian i nie są pokazywane.",
+                    &c[1]
+                )
+            },
+        ),
+        rule(r"^Line (\d+): expected NAME=value\.$", |c| {
+            format!("Linia {}: oczekiwano NAZWA=wartość.", &c[1])
+        }),
+        rule(
+            r"^Line (\d+): “(.+)” is not a valid name \(letters, digits, _\)\.$",
+            |c| {
+                format!(
+                    "Linia {}: „{}” nie jest poprawną nazwą (litery, cyfry, _).",
+                    &c[1], &c[2]
+                )
+            },
+        ),
+        rule(
+            r"^Line (\d+): (\S+) is reserved and cannot be set here\.$",
+            |c| {
+                format!(
+                    "Linia {}: {} jest zastrzeżona i nie można jej tu ustawić.",
+                    &c[1], &c[2]
+                )
+            },
+        ),
         rule(r"^XFeeder diagnostics — (\S+) \(UTC\)$", |c| {
             format!("Diagnostyka XFeedera — {} (UTC)", &c[1])
         }),

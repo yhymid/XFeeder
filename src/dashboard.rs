@@ -1795,6 +1795,53 @@ mod tests {
             assert_eq!(status, StatusCode::FORBIDDEN, "{host} {origin}");
         }
 
+        // .env in Advanced: reserved lines stay hidden and untouched.
+        std::fs::write(
+            dir.join(".env"),
+            "HOOK=https://discord.com/api/webhooks/1/S3cr3tXYZ\nXFEEDER_DASHBOARD_PASSWORD=pw\n",
+        )
+        .unwrap();
+        let (_, _, body) = call(&server, Method::GET, "/advanced", "", &auth).await;
+        assert!(body.contains("HOOK=") && !body.contains("XFEEDER_DASHBOARD_PASSWORD=pw"));
+        let env_rev = revision(&std::fs::read_to_string(dir.join(".env")).unwrap());
+        let (status, _, body) = call(
+            &server,
+            Method::POST,
+            "/advanced/env",
+            &format!("env_rev={env_rev}&env=XFEEDER_DASHBOARD_PASSWORD%3Dx"),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("reserved"));
+        let (status, _, body) = call(
+            &server,
+            Method::POST,
+            "/advanced/env",
+            &format!("env_rev={env_rev}&env=not+a+line"),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let (status, _, _) = call(
+            &server,
+            Method::POST,
+            "/advanced/env",
+            &format!("env_rev={env_rev}&env=HOOK%3Dhttps%3A%2F%2Fdiscord.com%2Fapi%2Fwebhooks%2F1%2FS3cr3tXYZ%0D%0A%23+note%0D%0ANEW_ONE%3D1"),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".env")).unwrap(),
+            "HOOK=https://discord.com/api/webhooks/1/S3cr3tXYZ\n# note\nNEW_ONE=1\n\nXFEEDER_DASHBOARD_PASSWORD=pw\n"
+        );
+        assert!(
+            !std::fs::read_to_string(dir.join(".env.bak"))
+                .unwrap()
+                .contains("NEW_ONE")
+        );
+
         // Saved clearances: listed without the cookie, forgotten one by one.
         std::fs::write(
             dir.join("clearance.json"),

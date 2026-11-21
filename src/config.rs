@@ -25,7 +25,7 @@ fn strip_quotes(value: &str) -> &str {
     value
 }
 
-fn valid_env_key(key: &str) -> bool {
+pub fn valid_env_key(key: &str) -> bool {
     let mut chars = key.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')

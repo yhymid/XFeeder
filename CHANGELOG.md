@@ -10,6 +10,10 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- Dashboard in English or Polish: an EN · PL switch in the header (cookie `xf_lang`, works
+  on the login page too). Pages are still built in English and translated in one pass
+  (whole text nodes and `placeholder`/`title`/`aria-label` only, with Polish plural forms);
+  channel names, feed titles, URLs and the config JSON are never changed.
 - Documentation in English and Polish: every page is `NAME.md` (English) with
   `NAME.pl.md` (Polish), linked to each other at the top. The configuration guide, until
   now only in Polish, has an English version; the Scrapling README and anti-bot guide,

@@ -835,7 +835,7 @@ xfeeder --version | --help
 | `--config`, `--cache` | Another location of `config.json` and `cache.json` (default: the current folder). |
 | `preview <URL>` | Shows what XFeeder reads from a feed (title, author, date, image, link, text) and how long the download, parsing and image check take. Sends and saves nothing; uses Scrapling, the solver and the proxy from `config.json`. `--bench 10` measures 10 times (min/median/p95/max), `--profile news` checks all feeds of a profile, `--json` gives output for scripts. |
 | `rerender` | Rebuilds Discord posts already sent in the current layout, by editing the messages through their webhook (sends nothing new). Uses `sent.json` (next to `cache.json`, written since this version: message ID and entry content, no webhook URLs), so older posts stay as they are. Without `--apply` it only lists what it would change. `--channel channels11#11` limits it to a channel, `--hours 24` to the last hours, `--limit` (50) to the newest posts. |
-| `dashboard --data-dir` | Starts the web dashboard for a folder with `config.json`. Default `http://127.0.0.1:3000`. It controls only a worker it started itself; a systemd worker is handled with `systemctl`. |
+| `dashboard --data-dir` | Starts the web dashboard for a folder with `config.json`. Default `http://127.0.0.1:3000`. English or Polish: the EN · PL switch in the top right corner (remembered in a cookie). It controls only a worker it started itself; a systemd worker is handled with `systemctl`. |
 
 ```sh
 XFEEDER_DASHBOARD_PASSWORD='a-strong-password' ./xfeeder dashboard --data-dir /opt/xfeeder

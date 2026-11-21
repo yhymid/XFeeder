@@ -5,6 +5,7 @@
 
 #![allow(clippy::result_large_err)]
 
+mod i18n;
 mod ui;
 
 use std::collections::{HashMap, HashSet};

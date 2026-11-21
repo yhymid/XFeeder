@@ -163,6 +163,34 @@ fn layout(req: &Req, title: &str, body: &str, refresh: Option<u32>) -> String {
         let _ = write!(out, "<meta http-equiv=\"refresh\" content=\"{seconds}\">");
     }
     out.push_str("</head><body><header><a class=\"brand\" href=\"/\">XFeeder</a>");
+    let lang = super::i18n::from_headers(req.headers);
+    // Language switch: the current page in the other language (without
+    // the one-time ok/error notice).
+    let mut query: Vec<String> = req
+        .query
+        .iter()
+        .filter(|(k, _)| !matches!(k.as_str(), "ok" | "error"))
+        .map(|(k, v)| format!("{}={}", enc(k), enc(v)))
+        .collect();
+    query.sort();
+    let back = enc(&if query.is_empty() {
+        req.path.to_string()
+    } else {
+        format!("{}?{}", req.path, query.join("&"))
+    });
+    let _ = write!(
+        out,
+        "<span class=\"lang\" aria-label=\"Language\">{}</span>",
+        [("en", "EN"), ("pl", "PL")]
+            .iter()
+            .map(|(code, label)| if *code == lang.code() {
+                format!("<strong>{label}</strong>")
+            } else {
+                format!("<a href=\"/lang?to={code}&amp;back={back}\" lang=\"{code}\">{label}</a>")
+            })
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
     if req.authorized {
         out.push_str("<nav>");
         for (href, label) in NAV {
@@ -200,6 +228,9 @@ fn layout(req: &Req, title: &str, body: &str, refresh: Option<u32>) -> String {
         out,
         "<footer>XFeeder v{VERSION} · Rust · no JavaScript</footer></body></html>"
     );
+    if lang == super::i18n::Lang::Pl {
+        return super::i18n::to_polish(&out);
+    }
     out
 }
 
@@ -395,6 +426,15 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
     match (req.method, req.path) {
         (&Method::GET, "/styles.css") => return asset("text/css; charset=utf-8", STYLES),
         (&Method::GET, "/favicon.svg") => return asset("image/svg+xml", FAVICON),
+        // A display preference, not a state change: allowed before login.
+        (&Method::GET, "/lang") => {
+            let lang = if req.q("to") == "pl" { "pl" } else { "en" };
+            let cookie = format!(
+                "{}={lang}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000",
+                super::i18n::COOKIE
+            );
+            return redirect_with_cookie(super::i18n::safe_back(req.q("back")), &cookie);
+        }
         _ => {}
     }
     let post = *req.method == Method::POST;

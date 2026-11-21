@@ -7,7 +7,7 @@
 **Newsy, aktualizacje gier, commity i filmy na Discordzie i Telegramie w chwili, gdy się pojawią.**
 
 ![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust)
-![Version](https://img.shields.io/badge/version-3.0%20beta-blue)
+![Version](https://img.shields.io/badge/version-3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 </div>
@@ -48,6 +48,9 @@ wydania, gałęzie), newsy ze Steama i SteamDB, każda strona, która linkuje sw
 **Cele:** webhooki Discorda (kanały i wątki forum), Telegram (czaty, kanały, tematy).
 
 ## Szybki start
+
+Najprościej: pobierz `XFeeder.zip` z [Releases](https://github.com/yhymid/XFeeder/releases/latest),
+rozpakuj i postępuj według `Instruction.pl.md` w środku (gotowy plik dla Linuksa x86_64). Ze źródeł:
 
 ```sh
 cargo build --release

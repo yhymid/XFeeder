@@ -17,7 +17,7 @@
     "cookie": "${DISCORD_COOKIE}"
   },
   "Telegram": {
-    "Enabled": true,
+    "Enabled": false,
     "BotToken": "${TELEGRAM_BOT_TOKEN}",
     "ChatID": "${TELEGRAM_CHAT_ID}",
     "MessageThreadID": null,
@@ -30,7 +30,7 @@
     "Url": "http://127.0.0.1:8080"
   },
   "Scrapling": {
-    "Enabled": true,
+    "Enabled": false,
     "ForceGlobal": false,
     "AutoFallback": false,
     "FallbackStatusCodes": [

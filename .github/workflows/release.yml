@@ -1,0 +1,66 @@
+name: Release
+
+# Builds the ready-to-run XFeeder.zip (static musl binary) and creates a
+# DRAFT release for the given version. Publishing the draft is done by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version and tag, e.g. 3.0 (must match a CHANGELOG.md heading)"
+        required: true
+      name:
+        description: "Release name after the version, e.g. Rust Update"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-musl
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+          rustup toolchain install stable --profile minimal --target "$TARGET"
+          rustup default stable
+      - name: Build static binary
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo build --release --locked --target "$TARGET"
+      - name: Check binary
+        run: |
+          bin="target/$TARGET/release/xfeeder"
+          file "$bin"
+          file "$bin" | grep -Eq 'static(-pie)? linked'
+          "$bin" --version | grep -qx "xfeeder $(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          tmp=$(mktemp -d)
+          cp config.json.example "$tmp/config.json"
+          cp .env.example "$tmp/.env"
+          (cd "$tmp" && "$OLDPWD/$bin" --check-config)
+      - name: Package
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          scripts/package-release.sh "target/$TARGET/release/xfeeder" XFeeder.zip
+          sha256sum XFeeder.zip > SHA256SUMS
+          cat SHA256SUMS
+          scripts/release-notes.sh "$VERSION" > notes.md
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          NAME: ${{ inputs.name }}
+        run: |
+          gh release create "$VERSION" XFeeder.zip SHA256SUMS \
+            --draft --target "$GITHUB_SHA" \
+            --title "$VERSION - $NAME" --notes-file notes.md

@@ -3,13 +3,17 @@
 Releases are cut by hand when enough has changed. Each release on GitHub uses the matching
 section below as its description.
 
-## 3.0 Beta - Unreleased
+## 3.0 - Rust Update (2026-11-21)
 
 XFeeder is written in Rust now: one binary (`xfeeder`, `xfeeder dashboard`), no Node.js,
 npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.json` and the
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- Ready-to-run release package `XFeeder.zip`: a static Linux x86_64 binary (`XFeeder`, no
+  glibc version requirement), `Instruction.md` / `Instruction.pl.md`, `config.json.example`,
+  `.env.example`, systemd units, `dashboard-tunnel.sh` and the Scrapling requirements. Built
+  by the `Release` workflow (`scripts/package-release.sh`).
 - Dashboard channel page (click a channel): destination, interval, posts in the last 7
   days, remembered entries, a posts-per-day chart, feeds and recent posts. **Check now**
   makes the worker check the channel on its next tick; **Delivery history** lists the
@@ -173,6 +177,8 @@ feed state are read as before, so an existing installation switches over in plac
 - Discord webhook sends log the created message and channel id.
 
 ### Changed
+- `config.json.example` starts with Telegram and Scrapling off, and `.env.example` has no
+  active dashboard password, so the examples run as they are with only a webhook filled in.
 - Dashboard look: black (AMOLED) theme, centred header and pages, status badges; the
   footer and the refresh link are gone.
 - The `xfeeder-dashboard` systemd unit is tied to the worker (`PartOf=`,

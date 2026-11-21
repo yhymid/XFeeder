@@ -7,7 +7,7 @@
 **News, game updates, commits and videos delivered to Discord and Telegram the moment they are found.**
 
 ![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust)
-![Version](https://img.shields.io/badge/version-3.0%20beta-blue)
+![Version](https://img.shields.io/badge/version-3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 </div>
@@ -49,6 +49,9 @@ releases, branches), Steam and SteamDB news, any page that links its feed, Disco
 topics).
 
 ## Quick start
+
+The easiest way: download `XFeeder.zip` from [Releases](https://github.com/yhymid/XFeeder/releases/latest),
+unzip it and follow `Instruction.md` inside (a ready-to-run Linux x86_64 binary). From source:
 
 ```sh
 cargo build --release

@@ -533,7 +533,9 @@ fn public_event(raw: &Value) -> Option<Value> {
     Some(json!({
         "id": raw["id"].as_u64().unwrap_or(0), "time": time, "event": kind, "type": source,
         "status": if fail { "error" } else if warn { "warning" } else { "success" },
-        "channel": channel, "source": "", "target": raw["destination"].as_str().unwrap_or(""),
+        "channel": channel,
+        "source": raw["sourceId"].as_str().filter(|c| c.len() == 16 && c.bytes().all(|b| b.is_ascii_hexdigit())).map_or(String::new(), |c| format!("feed:{c}")),
+        "target": raw["destination"].as_str().unwrap_or(""),
         "durationMs": raw["durationMs"].as_u64(), "message": kind.replace('.', " "), "dryRun": raw["dryRun"] == json!(true),
         "details": { "event": kind, "httpStatus": raw["httpStatus"].as_u64(), "itemCount": raw["itemCount"].as_u64(), "errorCode": raw["errorCode"] },
     }))

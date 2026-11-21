@@ -375,6 +375,10 @@ impl Server {
         if original.contains("\r\n") {
             text = text.replace('\n', "\r\n");
         }
+        // One step back is always available: config.json.bak.
+        if !original.is_empty() {
+            let _ = write_private(&self.paths.config.with_extension("json.bak"), original);
+        }
         write_private(&self.paths.config, &text).map_err(|e| Problems {
             errors: vec![sanitize_text(&e.to_string())],
             warnings: Vec::new(),
@@ -466,6 +470,7 @@ pub(super) async fn handle(server: &Server, req: &Req<'_>) -> Response {
         (true, "/channels/save") => channel_save(server, req),
         (false, "/channels/delete") => channel_delete_confirm(server, req),
         (true, "/channels/delete") => channel_delete(server, req),
+        (true, "/config/remove-section") => remove_section(server, req),
         (true, "/channels/duplicate") => channel_duplicate(server, req),
         (false, "/activity") => activity(server, req),
         (false, "/diagnostics") => diagnostics(server, req),
@@ -525,6 +530,97 @@ fn login(server: &Server, req: &Req) -> Response {
 
 // --------------------------------------------------------------- overview --
 
+/// Telemetry stores channels and feeds as the first 16 hex characters of
+/// their SHA-256; the dashboard has the config, so it can name them again.
+fn pseudonym(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(text.as_bytes()))[..16].to_string()
+}
+
+/// `channel:<id>` / `feed:<id>` → channel label / short feed URL.
+fn activity_names(config: &Value) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    for channel in runtime_channels(config) {
+        let label = channel.label();
+        names.insert(format!("channel:{}", pseudonym(&label)), label);
+        for url in &channel.feeds {
+            names.insert(format!("feed:{}", pseudonym(url)), short_url(url));
+        }
+    }
+    names
+}
+
+/// `host/path` without the scheme, shortened in the middle.
+fn short_url(url: &str) -> String {
+    let text = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.");
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= 60 {
+        text.to_string()
+    } else {
+        format!(
+            "{}…{}",
+            chars[..30].iter().collect::<String>(),
+            chars[chars.len() - 25..].iter().collect::<String>()
+        )
+    }
+}
+
+/// Newest posts from `sent.json` (newest first).
+fn recent_posts(server: &Server, limit: usize) -> Vec<crate::sent::Record> {
+    let path = crate::sent::path_for(&server.paths.cache);
+    let mut records: Vec<crate::sent::Record> = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    records.reverse();
+    records.truncate(limit);
+    records
+}
+
+fn posts_table(posts: &[crate::sent::Record], labels: &HashMap<String, String>) -> String {
+    if posts.is_empty() {
+        return "<p class=\"muted\">No posts recorded yet (posts are recorded since version 3.0 beta).</p>".into();
+    }
+    let mut out = String::from(
+        "<table><thead><tr><th>Time</th><th>Channel</th><th>Entry</th></tr></thead><tbody>",
+    );
+    for post in posts {
+        let time = chrono::DateTime::from_timestamp_millis(post.sent_at)
+            .map(|d| d.to_rfc3339())
+            .unwrap_or_default();
+        let title = js::to_string_or_empty(&post.entry["title"]);
+        let link = js::to_string_or_empty(&post.entry["link"]);
+        let title_html = if link.starts_with("https://") || link.starts_with("http://") {
+            format!(
+                "<a href=\"{}\" rel=\"noreferrer\">{}</a>",
+                esc(&link),
+                esc(&title)
+            )
+        } else {
+            esc(&title)
+        };
+        let merged = if post.entry["merged"].is_object() {
+            " <small>(+ SteamDB)</small>"
+        } else {
+            ""
+        };
+        let _ = write!(
+            out,
+            "<tr><td title=\"{}\">{}</td><td>{}</td><td>{title_html}{merged}</td></tr>",
+            esc(&time),
+            esc(&ago(&time)),
+            esc(labels
+                .get(&post.channel)
+                .map_or(post.channel.as_str(), String::as_str)),
+        );
+    }
+    out.push_str("</tbody></table>");
+    out
+}
+
 async fn overview(server: &Server, req: &Req<'_>) -> Response {
     let text = read_text(&server.paths.config);
     let config: Value = serde_json::from_str(&text).unwrap_or_else(|_| json!({}));
@@ -537,7 +633,7 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
         let mut worker = server.worker.lock().await;
         server.worker_status(&mut worker).await
     };
-    let activity = structured_activity(&server.paths.config, 15);
+    let activity = structured_activity(&server.paths.config, 2000);
     let summary = &activity["summary"];
     let problems = server.problems(&config);
     let cache = read_json(&server.paths.cache);
@@ -582,27 +678,49 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
         esc(summary["health"].as_str().unwrap_or("unknown")),
     );
 
-    body.push_str("<section><h2>Worker control</h2><div class=\"row\">");
-    for (action, label) in [("start", "Start"), ("restart", "Restart"), ("stop", "Stop")] {
-        let _ = write!(
-            body,
-            "<form method=\"post\" action=\"/worker\">{}<button{}>{label}</button></form>",
-            hidden("action", action),
-            if action == "stop" {
-                " class=\"danger\""
-            } else {
-                ""
-            }
+    let external = status["externalWorker"] == json!(true) && status["managed"] != json!(true);
+    if external {
+        body.push_str(
+            "<section><h2>Worker control</h2><p class=\"muted\">The worker runs as a systemd service (or another process), so it is not controlled from here. Restart it with <code>sudo systemctl restart xfeeder</code>; configuration changes are picked up without a restart.</p></section>",
         );
-    }
-    body.push_str(
+    } else {
+        body.push_str("<section><h2>Worker control</h2><div class=\"row\">");
+        for (action, label) in [("start", "Start"), ("restart", "Restart"), ("stop", "Stop")] {
+            let _ = write!(
+                body,
+                "<form method=\"post\" action=\"/worker\">{}<button{}>{label}</button></form>",
+                hidden("action", action),
+                if action == "stop" {
+                    " class=\"danger\""
+                } else {
+                    ""
+                }
+            );
+        }
+        body.push_str(
         "</div><small>Only a worker started here can be stopped or restarted here; a systemd service is managed with systemctl.</small></section>",
     );
+    }
 
     if !problems.errors.is_empty() || !problems.warnings.is_empty() {
+        let mut buttons = String::new();
+        for name in unsupported_sections(&problems) {
+            let _ = write!(
+                buttons,
+                "<form method=\"post\" action=\"/config/remove-section\" class=\"inline\">{}{}<button class=\"danger\">Remove the section “{}”</button></form> ",
+                hidden("name", &name),
+                hidden("rev", &revision(&text)),
+                esc(&name)
+            );
+        }
+        if !buttons.is_empty() {
+            buttons = format!(
+                "<p class=\"row\">{buttons}<small>The previous config is kept as config.json.bak.</small></p>"
+            );
+        }
         let _ = write!(
             body,
-            "<section><h2>Configuration</h2>{}</section>",
+            "<section><h2>Configuration</h2>{}{buttons}</section>",
             problems_html(&problems, false)
         );
     }
@@ -615,15 +733,15 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
                 let _ = write!(
                     rows,
                     "<tr><td>{}</td><td class=\"num\">{n}</td></tr>",
-                    esc(&name.replace('_', " "))
+                    esc(counter_label(name))
                 );
             }
         }
-        for target in ["webhook", "telegram"] {
+        for (target, label) in [("webhook", "Discord posts"), ("telegram", "Telegram posts")] {
             let d = &metrics["counters"]["delivery_total"][target];
             let _ = write!(
                 rows,
-                "<tr><td>{target} deliveries</td><td class=\"num\">{} ok / {} failed</td></tr>",
+                "<tr><td>{label}</td><td class=\"num\">{} ok / {} failed</td></tr>",
                 d["success"], d["error"]
             );
         }
@@ -634,7 +752,7 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
                 let _ = write!(
                     durations,
                     "<tr><td>{}</td><td class=\"num\">{count}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td></tr>",
-                    esc(&name.replace('_', " ")),
+                    esc(counter_label(name)),
                     ms(d["sum"].as_f64().unwrap_or(0.0) / count),
                     d["min"].as_f64().map_or("–".into(), ms),
                     d["max"].as_f64().map_or("–".into(), ms),
@@ -643,17 +761,32 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
         }
         let _ = write!(
             body,
-            "<section class=\"split\"><div><h2>Counters</h2><table><tbody>{rows}</tbody></table></div>\
+            "<section class=\"split\"><div><h2>Since the worker started</h2><table><tbody>{rows}</tbody></table></div>\
              <div><h2>Durations</h2><table><thead><tr><th>Stage</th><th>count</th><th>avg</th><th>min</th><th>max</th></tr></thead><tbody>{durations}</tbody></table>\
              <small>Updated {}</small></div></section>",
             esc(&data["updatedAt"].as_str().map_or("–".into(), ago))
         );
     }
 
+    let names = activity_names(&config);
+    let labels: HashMap<String, String> = runtime_channels(&config)
+        .into_iter()
+        .map(|c| (c.cache_key.clone(), c.label()))
+        .collect();
     let _ = write!(
         body,
-        "<section><h2>Recent activity</h2>{}<p><a href=\"/activity\">All activity →</a></p></section>",
-        activity_table(&activity)
+        "<section><h2>Recent posts</h2>{}</section>",
+        posts_table(&recent_posts(server, 10), &labels)
+    );
+    let mut problems_feed = activity.clone();
+    if let Some(items) = problems_feed["items"].as_array_mut() {
+        items.retain(|i| i["status"] != json!("success"));
+        items.truncate(10);
+    }
+    let _ = write!(
+        body,
+        "<section><h2>Recent problems</h2>{}<p><a href=\"/activity\">All activity →</a></p></section>",
+        activity_table(&problems_feed, &names)
     );
     let refresh = req
         .q("refresh")
@@ -672,6 +805,56 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
     html(StatusCode::OK, layout(req, "Overview", &body, refresh))
 }
 
+/// Sections the worker reports as not executed.
+fn unsupported_sections(problems: &Problems) -> Vec<String> {
+    problems
+        .warnings
+        .iter()
+        .filter_map(|w| {
+            w.strip_prefix("Unsupported configuration section \"")
+                .and_then(|rest| rest.split_once('"'))
+                .map(|(name, _)| name.to_string())
+        })
+        .collect()
+}
+
+fn remove_section(server: &Server, req: &Req) -> Response {
+    let text = read_text(&server.paths.config);
+    if stale(req, &revision(&text)) {
+        return redirect("/", STALE, true);
+    }
+    let Ok(mut config) = serde_json::from_str::<Value>(&text) else {
+        return redirect(
+            "/",
+            "config.json is not valid JSON; fix it in Advanced.",
+            true,
+        );
+    };
+    let name = req.f("name");
+    // Only a section the worker itself reports as unsupported.
+    if !unsupported_sections(&server.problems(&config))
+        .iter()
+        .any(|n| n == name)
+    {
+        return redirect(
+            "/",
+            "This section is used; it can only be removed in Advanced.",
+            true,
+        );
+    }
+    if let Some(root) = config.as_object_mut() {
+        root.remove(name);
+    }
+    match server.store(&config, &text, true) {
+        Ok(()) => redirect(
+            "/",
+            &format!("Section “{name}” removed (previous config in config.json.bak)."),
+            false,
+        ),
+        Err(problems) => redirect("/", &problems.errors.join(" "), true),
+    }
+}
+
 async fn worker(server: &Server, req: &Req<'_>) -> Response {
     let action = req.f("action");
     if !matches!(action, "start" | "stop" | "restart") {
@@ -685,7 +868,32 @@ async fn worker(server: &Server, req: &Req<'_>) -> Response {
 
 // --------------------------------------------------------------- activity --
 
-fn activity_table(activity: &Value) -> String {
+/// Technical counter and duration names, as shown.
+fn counter_label(name: &str) -> &str {
+    match name {
+        "feed_fetch_total" => "Feed checks",
+        "feed_fetch_error_total" => "Failed checks",
+        "feed_not_modified_total" => "Unchanged (HTTP 304)",
+        "items_parsed_total" => "Entries read",
+        "scrapling_fallback_total" => "Fetched through the browser",
+        "feed_fetch_duration_ms" => "Feed download",
+        "channel_run_duration_ms" => "Channel round",
+        "delivery_duration_ms" => "Sending a post",
+        other => other,
+    }
+}
+
+/// Events that are routine and hidden unless asked for.
+const ROUTINE: [&str; 6] = [
+    "feed.fetch.started",
+    "feed.fetch.completed",
+    "feed.not_modified",
+    "feed.parse.completed",
+    "channel.started",
+    "channel.completed",
+];
+
+fn activity_table(activity: &Value, names: &HashMap<String, String>) -> String {
     let items = activity["items"].as_array().cloned().unwrap_or_default();
     if activity["available"] != json!(true) {
         return "<p class=\"muted\">No activity recorded yet (the worker writes it while running).</p>".into();
@@ -693,23 +901,28 @@ fn activity_table(activity: &Value) -> String {
     if items.is_empty() {
         return "<p class=\"muted\">No events.</p>".into();
     }
+    let name_of = |names: &HashMap<String, String>, id: &str| -> String {
+        names.get(id).cloned().unwrap_or_else(|| {
+            id.trim_start_matches("channel:")
+                .trim_start_matches("feed:")
+                .to_string()
+        })
+    };
     let mut out = String::from(
-        "<table><thead><tr><th>Time</th><th>Event</th><th>Status</th><th>Channel</th><th>Target</th><th>Duration</th><th>HTTP</th><th>Items</th><th>Error</th></tr></thead><tbody>",
+        "<table><thead><tr><th>Time</th><th>Event</th><th>Status</th><th>Channel</th><th>Feed</th><th>Target</th><th>Duration</th><th>HTTP</th><th>Items</th><th>Error</th></tr></thead><tbody>",
     );
     for item in &items {
         let time = item["time"].as_str().unwrap_or("");
         let _ = write!(
             out,
-            "<tr class=\"{}\"><td title=\"{}\">{}</td><td>{}</td><td>{}</td><td><code>{}</code></td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td>{}</td></tr>",
+            "<tr class=\"{}\"><td title=\"{}\">{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td class=\"num\">{}</td><td>{}</td></tr>",
             esc(item["status"].as_str().unwrap_or("")),
             esc(time),
             esc(&ago(time)),
             esc(item["event"].as_str().unwrap_or("")),
             esc(item["status"].as_str().unwrap_or("")),
-            esc(item["channel"]
-                .as_str()
-                .unwrap_or("")
-                .trim_start_matches("channel:")),
+            esc(&name_of(names, item["channel"].as_str().unwrap_or(""))),
+            esc(&name_of(names, item["source"].as_str().unwrap_or(""))),
             esc(item["target"].as_str().unwrap_or("")),
             item["durationMs"].as_f64().map_or(String::new(), ms),
             item["details"]["httpStatus"]
@@ -730,10 +943,15 @@ fn activity(server: &Server, req: &Req) -> Response {
     let mut data = structured_activity(&server.paths.config, 2000);
     let status = req.q("status");
     let kind = req.q("type");
+    let everything = req.q("view") == "all";
     if let Some(items) = data["items"].as_array_mut() {
         items.retain(|i| {
             (status.is_empty() || i["status"] == json!(status))
                 && (kind.is_empty() || i["type"] == json!(kind))
+                && (everything
+                    || !status.is_empty()
+                    || !kind.is_empty()
+                    || !ROUTINE.contains(&i["event"].as_str().unwrap_or("")))
         });
         items.truncate(limit);
     }
@@ -751,13 +969,15 @@ fn activity(server: &Server, req: &Req) -> Response {
     );
     body.push_str("<p class=\"row\">");
     for (label, query) in [
-        ("All", ""),
+        ("Important", ""),
+        ("All", "view=all"),
         ("Errors", "status=error"),
         ("Deliveries", "type=delivery"),
         ("Fetches", "type=fetch"),
         ("Worker", "type=worker"),
     ] {
-        let current = (query.is_empty() && status.is_empty() && kind.is_empty())
+        let current = (query.is_empty() && status.is_empty() && kind.is_empty() && !everything)
+            || (query == "view=all" && everything)
             || (!query.is_empty()
                 && (query == format!("status={status}") || query == format!("type={kind}")));
         let _ = write!(
@@ -769,7 +989,8 @@ fn activity(server: &Server, req: &Req) -> Response {
         );
     }
     body.push_str("</p>");
-    body.push_str(&activity_table(&data));
+    let config = read_json(&server.paths.config);
+    body.push_str(&activity_table(&data, &activity_names(&config)));
     html(StatusCode::OK, layout(req, "Activity", &body, Some(30)))
 }
 

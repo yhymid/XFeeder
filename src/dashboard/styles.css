@@ -74,6 +74,9 @@ td.actions { white-space: nowrap; display: flex; gap: 0.8rem; align-items: cente
 .scroll { overflow-x: auto; margin-bottom: 1rem; }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
 .split.wide { grid-template-columns: 240px 1fr; }
+.split > * { min-width: 0; }
+.scroll td, .scroll th { overflow-wrap: anywhere; }
+.inline { display: inline; }
 @media (max-width: 800px) { .split, .split.wide { grid-template-columns: 1fr; } }
 .files ul { list-style: none; padding: 0; margin: 0; }
 .files li { padding: 0.2rem 0; }

@@ -442,6 +442,44 @@ const EXACT: &[(&str, &str)] = &[
     ),
     // Language switch
     ("Language", "Język"),
+    // Overview upgrade
+    (
+        "The worker runs as a systemd service (or another process), so it is not controlled from here. Restart it with",
+        "Worker działa jako usługa systemd (albo inny proces), więc nie jest sterowany stąd. Restart:",
+    ),
+    (
+        "; configuration changes are picked up without a restart.",
+        "; zmiany w konfiguracji działają bez restartu.",
+    ),
+    ("Since the worker started", "Od startu workera"),
+    ("Feed checks", "Sprawdzenia feedów"),
+    ("Failed checks", "Nieudane sprawdzenia"),
+    ("Unchanged (HTTP 304)", "Bez zmian (HTTP 304)"),
+    ("Entries read", "Odczytane wpisy"),
+    ("Fetched through the browser", "Pobrane przez przeglądarkę"),
+    ("Feed download", "Pobranie feedu"),
+    ("Channel round", "Obieg kanału"),
+    ("Sending a post", "Wysłanie posta"),
+    ("Discord posts", "Posty na Discordzie"),
+    ("Telegram posts", "Posty na Telegramie"),
+    ("Recent posts", "Ostatnie posty"),
+    ("Recent problems", "Ostatnie problemy"),
+    ("Entry", "Wpis"),
+    ("Feed", "Feed"),
+    ("Important", "Ważne"),
+    (
+        "No posts recorded yet (posts are recorded since version 3.0 beta).",
+        "Nie zapisano jeszcze postów (posty są zapisywane od wersji 3.0 beta).",
+    ),
+    (
+        "The previous config is kept as config.json.bak.",
+        "Poprzedni config zostaje jako config.json.bak.",
+    ),
+    (
+        "This section is used; it can only be removed in Advanced.",
+        "Ta sekcja jest używana; można ją usunąć tylko w zakładce Zaawansowane.",
+    ),
+    ("(+ SteamDB)", "(+ SteamDB)"),
 ];
 
 static TABLE: LazyLock<HashMap<&'static str, &'static str>> =
@@ -585,6 +623,24 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule(r"^Invalid JSON: (.*)$", |c| {
             format!("Niepoprawny JSON: {}", &c[1])
         }),
+        rule(r"^Updated (.+)$", |c| {
+            format!(
+                "Zaktualizowano {}",
+                translate_text(&c[1]).unwrap_or_else(|| c[1].to_string())
+            )
+        }),
+        rule(r"^Remove the section “(.+)”$", |c| {
+            format!("Usuń sekcję „{}”", &c[1])
+        }),
+        rule(
+            r"^Section “(.+)” removed \(previous config in config\.json\.bak\)\.$",
+            |c| {
+                format!(
+                    "Sekcja „{}” usunięta (poprzedni config w config.json.bak).",
+                    &c[1]
+                )
+            },
+        ),
         rule(r"^(.*), settings applied$", |c| {
             format!("{}, ustawienia zastosowane", &c[1])
         }),

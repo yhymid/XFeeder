@@ -790,6 +790,9 @@ impl Telegram {
 #[derive(Clone, Debug)]
 pub struct Channel {
     pub index: usize,
+    /// Position of the entry in its group (array index, or key order of a
+    /// named group), counting entries that were skipped.
+    pub position: usize,
     pub name: Option<String>,
     /// `Label`: the name shown in logs and the dashboard. Not part of the
     /// history key, so it can be changed freely.
@@ -1094,20 +1097,20 @@ pub fn collect_channels(root: &Value) -> Vec<Channel> {
     .cloned()
     .unwrap_or(Value::Object(Map::new()));
     let auth = auth_defaults(root);
-    let mut built: Vec<(String, Option<String>, Obj)> = Vec::new();
+    let mut built: Vec<(String, usize, Option<String>, Obj)> = Vec::new();
     for (key, value) in channel_groups(root) {
         match value {
             Value::Array(items) => {
-                for item in items {
+                for (position, item) in items.iter().enumerate() {
                     if let Some(channel) = build_from_shorthand(item, &defaults) {
-                        built.push((key.clone(), None, channel));
+                        built.push((key.clone(), position, None, channel));
                     }
                 }
             }
             Value::Object(map) => {
-                for (name, item) in map {
+                for (position, (name, item)) in map.iter().enumerate() {
                     if let Some(channel) = build_from_shorthand(item, &defaults) {
-                        built.push((key.clone(), Some(name.clone()), channel));
+                        built.push((key.clone(), position, Some(name.clone()), channel));
                     }
                 }
             }
@@ -1117,10 +1120,11 @@ pub fn collect_channels(root: &Value) -> Vec<Channel> {
     built
         .into_iter()
         .enumerate()
-        .map(|(index, (source_key, name, object))| {
+        .map(|(index, (source_key, position, name, object))| {
             let raw = Value::Object(object);
             let mut channel = Channel {
                 index,
+                position,
                 name,
                 display: js::trimmed_str(js::get(&raw, "Label"))
                     .filter(|l| !l.is_empty())
@@ -1333,6 +1337,28 @@ pub fn validate(raw: &Value, env: &Env) -> (Vec<String>, Vec<String>, Vec<Issue>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn position_is_the_place_in_the_group() {
+        let hook = "https://discord.com/api/webhooks/1/a";
+        let root = serde_json::json!({
+            "channels": [{ "Webhook": hook, "RSS": ["https://a.example/feed"] }, { "Webhook": hook, "RSS": "https://c.example/feed" }],
+            "channels2": { "x": { "Webhook": hook, "RSS": "https://b.example/feed" }, "y": { "Webhook": hook, "RSS": "https://d.example/feed" } }
+        });
+        let found: Vec<(String, usize, usize)> = collect_channels(&root)
+            .iter()
+            .map(|c| (c.source_key.clone(), c.index, c.position))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("channels".into(), 0, 0),
+                ("channels".into(), 1, 1),
+                ("channels2".into(), 2, 0),
+                ("channels2".into(), 3, 1)
+            ]
+        );
+    }
 
     #[test]
     fn dotenv_parsing() {

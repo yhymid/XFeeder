@@ -1492,7 +1492,7 @@ fn runtime_channel(server: &Server, group: &str, key: &str) -> Option<config::Ch
                 .get(group)
                 .is_some_and(Value::is_array) =>
         {
-            in_group.nth(index)
+            in_group.find(|c| c.position == index)
         }
         _ => in_group.find(|c| c.name.as_deref() == Some(key)),
     }
@@ -1611,7 +1611,9 @@ fn channels(server: &Server, req: &Req) -> Response {
             if object {
                 in_group.find(|c| c.name.as_deref() == Some(key.as_str()))
             } else {
-                key.parse::<usize>().ok().and_then(|i| in_group.nth(i))
+                key.parse::<usize>()
+                    .ok()
+                    .and_then(|i| in_group.find(|c| c.position == i))
             }
         };
         let (interval, last_post, status) = match runtime {

@@ -298,40 +298,11 @@ impl App {
         }
     }
 
-    /// Use the larger image chosen by `parsers::finish` only if it exists
-    /// (YouTube has no `maxresdefault` for some videos); otherwise go back to
-    /// the image the feed gave. One small ranged request per new entry.
     async fn with_working_image(&self, entry: &Value) -> Value {
-        let fallback = crate::js::get(entry, "imageFallback");
-        let (Some(fallback), Some(image)) = (
-            fallback.as_str(),
-            crate::js::get(entry, "enclosure").as_str(),
-        ) else {
-            return entry.clone();
-        };
         if self.dry_run {
             return entry.clone();
         }
-        let response = crate::http::get(crate::http::Get {
-            url: image,
-            headers: vec![("Range".into(), "bytes=0-1023".into())],
-            cancel: &self.cancel,
-            timeout_ms: Some(8_000),
-        })
-        .await;
-        let ok = response
-            .as_ref()
-            .is_ok_and(|r| (200..300).contains(&r.status));
-        expert(
-            "delivery.image.check",
-            json!({ "image": image, "ok": ok, "status": response.as_ref().ok().map(|r| r.status) }),
-        );
-        if ok {
-            return entry.clone();
-        }
-        let mut entry = entry.clone();
-        entry["enclosure"] = json!(fallback);
-        entry
+        crate::deliver::working_image(entry, &self.cancel).await.0
     }
 
     async fn deliver(

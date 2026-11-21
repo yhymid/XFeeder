@@ -12,6 +12,7 @@ mod filter;
 mod http;
 mod js;
 mod parsers;
+mod preview;
 mod scrapling;
 mod solver;
 mod state;
@@ -30,6 +31,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const HELP: &str = "Usage: xfeeder [run] [options]
        xfeeder dashboard [--data-dir DIR]
+       xfeeder preview <URL>... [--profile NAME] [--bench N]   (see xfeeder preview --help)
 
 Worker options:
   --dry-run       Simulate deliveries without persisting cache changes.
@@ -72,7 +74,8 @@ pub async fn shutdown_signal() -> &'static str {
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    if args.iter().any(|a| a == "--help" || a == "-h") {
+    let preview = args.first().map(String::as_str) == Some("preview");
+    if !preview && args.iter().any(|a| a == "--help" || a == "-h") {
         println!("{HELP}");
         return ExitCode::SUCCESS;
     }
@@ -85,6 +88,10 @@ fn main() -> ExitCode {
         .enable_all()
         .build()
         .expect("tokio runtime");
+    if preview {
+        args.remove(0);
+        return runtime.block_on(preview::run(args));
+    }
     if args.first().map(String::as_str) == Some("dashboard") {
         args.remove(0);
         return runtime.block_on(run_dashboard(args));

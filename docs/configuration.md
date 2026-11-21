@@ -774,6 +774,7 @@ TRAWL), uruchomiona osobno (zwykle w Dockerze).
 xfeeder [run] [--dry-run] [--once] [--check-config] [--debug-expert]
               [--config ŚCIEŻKA] [--cache ŚCIEŻKA]
 xfeeder dashboard [--data-dir FOLDER]
+xfeeder preview <URL>... [--profile NAZWA] [--items N] [--bench N] [--json]
 xfeeder --version | --help
 ```
 
@@ -784,6 +785,7 @@ xfeeder --version | --help
 | `--once` | Jeden obieg wszystkich kanałów i koniec. **Wysyła naprawdę**, chyba że razem z `--dry-run`. |
 | `--debug-expert` | Szczegółowe zdarzenia techniczne w logu (sekrety są ukryte). |
 | `--config`, `--cache` | Inne położenie `config.json` i `cache.json` (domyślnie bieżący folder). |
+| `preview <URL>` | Pokazuje, co XFeeder odczyta z feedu (tytuł, autor, data, obrazek, link, tekst) i ile trwa pobranie, parsowanie i sprawdzenie obrazka. Nic nie wysyła i nie zapisuje; używa Scraplinga, solvera i proxy z `config.json`. `--bench 10` mierzy 10 razy (min/mediana/p95/max), `--profile news` sprawdza wszystkie feedy profilu, `--json` daje wynik dla skryptów. |
 | `dashboard --data-dir` | Uruchamia panel WWW dla folderu z `config.json`. Domyślnie `http://127.0.0.1:3000`. Steruje tylko workerem, którego sam uruchomił; worker z systemd obsługuje `systemctl`. |
 
 ```sh

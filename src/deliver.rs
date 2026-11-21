@@ -563,6 +563,41 @@ async fn telegram_call(
     }
 }
 
+/// Use the larger image chosen by `parsers::finish` only if it exists
+/// (YouTube has no `maxresdefault` for some videos); otherwise go back to the
+/// image the feed gave. One small ranged request. Returns the entry to send
+/// and the HTTP status of the check (`None` when nothing was checked).
+pub async fn working_image(entry: &Value, cancel: &CancellationToken) -> (Value, Option<u16>) {
+    let (Some(fallback), Some(image)) = (
+        get(entry, "imageFallback").as_str(),
+        get(entry, "enclosure").as_str(),
+    ) else {
+        return (entry.clone(), None);
+    };
+    let response = http::get(http::Get {
+        url: image,
+        headers: vec![("Range".into(), "bytes=0-1023".into())],
+        cancel,
+        timeout_ms: Some(8_000),
+    })
+    .await;
+    let status = match &response {
+        Ok(r) => Some(r.status),
+        Err(e) => e.status().or(Some(0)),
+    };
+    let ok = status.is_some_and(|s| (200..300).contains(&s));
+    crate::diag::expert(
+        "delivery.image.check",
+        json!({ "image": image, "ok": ok, "status": status }),
+    );
+    if ok {
+        return (entry.clone(), status);
+    }
+    let mut entry = entry.clone();
+    entry["enclosure"] = json!(fallback);
+    (entry, status)
+}
+
 /// Photo to attach: the entry image (`enclosure`), when it is an http(s) URL.
 /// Profile pictures are not worth a photo message.
 fn telegram_photo(entry: &Value) -> Option<String> {

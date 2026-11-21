@@ -1,8 +1,8 @@
 //! Secret-safe logging. Every message that can contain a URL or provider text
 //! passes through `sanitize_text` before it reaches stdout/journald.
 
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use regex::Regex;
 use serde_json::Value;
@@ -10,6 +10,36 @@ use url::Url;
 
 static EXPERT: AtomicBool = AtomicBool::new(false);
 static LOGS: AtomicBool = AtomicBool::new(true);
+
+/// In-process event capture for `xfeeder preview`: timings of one fetch.
+static CAPTURE: Mutex<Option<Vec<(String, Value)>>> = Mutex::new(None);
+static CAPTURING: AtomicBool = AtomicBool::new(false);
+
+pub fn capture_start() {
+    *CAPTURE.lock().expect("capture lock") = Some(Vec::new());
+    CAPTURING.store(true, Ordering::Relaxed);
+}
+
+pub fn capture_take() -> Vec<(String, Value)> {
+    CAPTURE
+        .lock()
+        .expect("capture lock")
+        .as_mut()
+        .map(std::mem::take)
+        .unwrap_or_default()
+}
+
+pub fn capturing() -> bool {
+    CAPTURING.load(Ordering::Relaxed)
+}
+
+pub fn captured(event: &str, details: &Value) {
+    if capturing()
+        && let Some(events) = CAPTURE.lock().expect("capture lock").as_mut()
+    {
+        events.push((event.to_string(), details.clone()));
+    }
+}
 
 pub fn set_expert(enabled: bool) {
     EXPERT.store(enabled, Ordering::Relaxed);
@@ -171,6 +201,7 @@ pub fn emit(level: &str, scope: &str, message: &str, details: Option<&Value>) {
 /// Expert diagnostics: structured, redacted, only with `--debug-expert`.
 pub fn expert(event: &str, details: Value) {
     crate::telemetry::observe(event, &details);
+    captured(event, &details);
     let recording = crate::diagnostics::enabled();
     if !expert_enabled() && !recording {
         return;

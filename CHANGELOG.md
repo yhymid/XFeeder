@@ -10,6 +10,11 @@ npm or JavaScript anywhere. `config.json` (2.x and schema v2), `.env`, `cache.js
 feed state are read as before, so an existing installation switches over in place.
 
 ### Added
+- `xfeeder preview <URL>…`: shows what XFeeder reads from a feed (title, author, date,
+  image, link, text, hints such as "image: 3/10 entries") and how long download, parsing
+  and the image check take, through the same path as the worker (Scrapling, solver,
+  proxy from `config.json`) and without sending or saving anything. `--bench N` repeats
+  the fetch and prints min/median/p95/max per stage; `--json` for scripts.
 - Delivery history written by 2.x is reused (2.x and 3.0 compute the channel cache key
   differently; the existing key wins), so nothing is re-posted after the switch.
 - First check of a feed no longer replays it: when a destination has no history for a feed

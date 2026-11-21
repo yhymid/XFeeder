@@ -502,7 +502,7 @@ fn record_timing(
     headers_at: Option<Instant>,
     result: &Result<Response, HttpError>,
 ) {
-    if !crate::diagnostics::enabled() {
+    if !crate::diagnostics::enabled() && !crate::diag::capturing() {
         return;
     }
     let done = Instant::now();
@@ -536,6 +536,10 @@ fn record_timing(
     });
     if let Value::Object(map) = &mut payload {
         map.retain(|_, v| !v.is_null() && v.as_str() != Some(""));
+    }
+    crate::diag::captured("http.timing", &payload);
+    if !crate::diagnostics::enabled() {
+        return;
     }
     crate::diagnostics::record("http.timing", crate::diag::sanitize_value(&payload, "", 0));
     // Second-resolution Date header: only large differences are meaningful.

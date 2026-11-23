@@ -7,6 +7,7 @@
         "title": "Counter-Strike 2 Update",
         "link": "https://store.steampowered.com/news/app/730/view/694278269818634559",
         "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "imageFallback": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_hero.jpg",
         "isoDate": "2026-11-19T00:57:59.000Z",
         "text": "[ MAPS ]\nCobblestone\n• Fixed some walkable ledges in long A\n• Fixed map issue that was loading an empty skybox\n• Fixed an audio blocker issue by mid/A\n• Added a",
         "identity": "https://store.steampowered.com/news/app/730/view/694278269818634559"
@@ -15,6 +16,7 @@
         "title": "Counter-Strike 2 Update",
         "link": "https://store.steampowered.com/news/app/730/view/687522235410286587",
         "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "imageFallback": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_hero.jpg",
         "isoDate": "2026-11-17T23:40:07.000Z",
         "text": "[ SINGAPORE 2026 MAJOR ]\n• The PGL Singapore 2026 Major Hub is now available. Visit the hub to purchase tournament items, play the Pick'Em Challenge, and more.\n",
         "identity": "https://store.steampowered.com/news/app/730/view/687522235410286587"
@@ -31,6 +33,7 @@
         "title": "Counter-Strike 2 Update",
         "link": "https://store.steampowered.com/news/app/730/view/687522235410284761",
         "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "imageFallback": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_hero.jpg",
         "isoDate": "2026-11-11T23:03:20.000Z",
         "text": "[ ANIMATION ]\n• Fixed some cases of popping and glitching when switching weapons and reloading at extreme angles\n[ MISC ]\n• Fixed bot pathing issue in Retakes g",
         "identity": "https://store.steampowered.com/news/app/730/view/687522235410284761"
@@ -39,6 +42,7 @@
         "title": "Counter-Strike 2 Update",
         "link": "https://store.steampowered.com/news/app/730/view/694277000588690211",
         "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+        "imageFallback": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_hero.jpg",
         "isoDate": "2026-11-05T00:54:07.000Z",
         "text": "[ GAMEPLAY ]\n• Bomb defusal in Retakes mode will now instantly finish when there is sufficient time remaining in the round and no active utility remains to prev",
         "identity": "https://store.steampowered.com/news/app/730/view/694277000588690211"

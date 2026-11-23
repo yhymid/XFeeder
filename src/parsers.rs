@@ -272,12 +272,18 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
         } else if let Some(app) = &steam_app
             && !map.get("enclosure").is_some_and(truthy)
         {
+            // Both are guesses: newer apps keep their header under a hashed
+            // path (header.jpg answers 404), some have no library hero
+            // either. Delivery checks both and sends no image if neither
+            // exists (`imageFallbackCheck`).
+            let base =
+                format!("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app}");
+            map.insert("enclosure".into(), json!(format!("{base}/header.jpg")));
             map.insert(
-                "enclosure".into(),
-                json!(format!(
-                    "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app}/header.jpg"
-                )),
+                "imageFallback".into(),
+                json!(format!("{base}/library_hero.jpg")),
             );
+            map.insert("imageFallbackCheck".into(), json!(true));
         }
         // YouTube Shorts are vertical: use the vertical thumbnail (checked
         // before sending like every upgrade; regular videos keep 16:9).
@@ -1472,6 +1478,11 @@ mod tests {
             steam[0]["enclosure"],
             "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/header.jpg"
         );
+        assert_eq!(
+            steam[0]["imageFallback"],
+            "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_hero.jpg"
+        );
+        assert_eq!(steam[0]["imageFallbackCheck"], true);
     }
 
     #[test]

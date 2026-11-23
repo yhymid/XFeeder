@@ -701,6 +701,23 @@ pub async fn working_image(entry: &Value, cancel: &CancellationToken) -> (Value,
     ) else {
         return (entry.clone(), None);
     };
+    let (ok, status) = image_exists(image, cancel).await;
+    if ok {
+        return (entry.clone(), status);
+    }
+    let mut entry = entry.clone();
+    // A guessed fallback (Steam app art) is checked too; when it is missing
+    // as well, the post goes out without an image instead of a broken one.
+    if get(&entry, "imageFallbackCheck") == &json!(true) && !image_exists(fallback, cancel).await.0
+    {
+        entry["enclosure"] = Value::Null;
+        return (entry, status);
+    }
+    entry["enclosure"] = json!(fallback);
+    (entry, status)
+}
+
+async fn image_exists(image: &str, cancel: &CancellationToken) -> (bool, Option<u16>) {
     let response = http::get(http::Get {
         url: image,
         headers: vec![("Range".into(), "bytes=0-1023".into())],
@@ -717,12 +734,7 @@ pub async fn working_image(entry: &Value, cancel: &CancellationToken) -> (Value,
         "delivery.image.check",
         json!({ "image": image, "ok": ok, "status": status }),
     );
-    if ok {
-        return (entry.clone(), status);
-    }
-    let mut entry = entry.clone();
-    entry["enclosure"] = json!(fallback);
-    (entry, status)
+    (ok, status)
 }
 
 /// Photo to attach: the entry image (`enclosure`), when it is an http(s) URL.

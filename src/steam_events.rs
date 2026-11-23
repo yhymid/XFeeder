@@ -91,7 +91,7 @@ fn first_file(json_data: &Value, key: &str) -> Option<String> {
 }
 
 static IMG: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?is)\[img(?:\s+src=["']?([^"'\]]+)["']?)?\]([^\[]*)\[/img\]"#).unwrap()
+    Regex::new(r#"(?is)\[img(?:\s+src=["']?([^"'\]\s]+)["']?)?[^\]]*\]([^\[]*)\[/img\]"#).unwrap()
 });
 
 fn clan_url(text: &str) -> String {
@@ -103,7 +103,12 @@ fn clan_url(text: &str) -> String {
 /// HTML and the first image of the body.
 pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
     static URL_OPEN: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?i)\[url=["']?([^"'\]]+)["']?\]"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"(?i)\[url=\s*["']?([^"'\]\s]+)["']?[^\]]*\]"#).unwrap());
+    // A link card with no text: `[dynamiclink href="…"][/dynamiclink]`.
+    static DYNAMIC: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?is)\[dynamiclink\s+href=["']?([^"'\]\s]+)["']?[^\]]*\]\s*\[/dynamiclink\]"#)
+            .unwrap()
+    });
     static YOUTUBE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
             r#"(?is)\[previewyoutube=["']?([A-Za-z0-9_-]{6,})[^\]]*\]\s*\[/previewyoutube\]"#,
@@ -112,12 +117,12 @@ pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
     });
     static DROP: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
-            r"(?is)\[video[^\]]*\].*?\[/video\]|\[/?(carousel|noparse|expand|spoiler)[^\]]*\]",
+            r"(?is)\[video[^\]]*\].*?\[/video\]|\[/?(carousel|noparse|expand|spoiler|color|size|align)(?:[= ][^\]]*)?\]",
         )
         .unwrap()
     });
     static TAG: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)\[(/?)(p|b|i|u|strike|h1|h2|h3|h4|list|olist|\*|quote|code|c|hr|table|tr|th|td)\]")
+        Regex::new(r"(?i)\[(/?)(p|b|i|u|strike|h1|h2|h3|h4|h5|list|olist|\*|quote|code|c|hr|table|tr|th|td)(?:[= ][^\]]*)?\]")
             .unwrap()
     });
     // `\[` and `\]` are literal brackets; keep them out of the tag pass.
@@ -138,6 +143,7 @@ pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
         ""
     });
     let text = YOUTUBE.replace_all(&text, "<p>https://youtu.be/$1</p>");
+    let text = DYNAMIC.replace_all(&text, "<p>$1</p>");
     let text = DROP.replace_all(&text, "");
     let text = URL_OPEN.replace_all(&text, r#"<a href="$1">"#);
     let text = text.replace("[/url]", "</a>").replace("[/URL]", "</a>");
@@ -307,11 +313,33 @@ mod tests {
     #[test]
     fn bbcode_links_images_and_escapes() {
         let (html, image) = bbcode_to_html(
-            "[p]a < b & c[/p][url=\"https://x.test/?a=1&b=2\"]Link[/url][img src=\"https://i.test/1.png\"][/img][previewyoutube=\"ZF09w_v7Shw;full\"][/previewyoutube]",
+            "[p]a < b & c[/p][url= \"https://x.test/?a=1&b=2\"]Link[/url][img src=\"https://i.test/1.png\"][/img][previewyoutube=\"ZF09w_v7Shw;full\"][/previewyoutube]",
         );
         assert!(html.contains("a &lt; b &amp; c"));
         assert!(html.contains(r#"<a href="https://x.test/?a=1&amp;b=2">Link</a>"#));
         assert!(html.contains("https://youtu.be/ZF09w_v7Shw"));
         assert_eq!(image.as_deref(), Some("https://i.test/1.png"));
+    }
+
+    #[test]
+    fn bbcode_tags_with_attributes() {
+        // Seen in real posts (Total War, PUBG, Windrose, EA FC, …).
+        let body = r#"[p align="start"]Hey folks,[/p][p align="justify"]Patch [url="https://x.test/a" style="button"]notes[/url][/p][table equalcells="1" colwidth="50,50"][tr][td colwidth="50"]A[/td][/tr][/table][color=#3498db]Blue[/color][img src="https://i.test/2.png" style="button"][/img][dynamiclink href="https://store.steampowered.com/app/1"][/dynamiclink][quote=dev]Q[/quote]"#;
+        let (html, image) = bbcode_to_html(body);
+        assert!(!html.contains('['), "{html}");
+        assert!(
+            html.contains(r#"<a href="https://x.test/a">notes</a>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains("https://store.steampowered.com/app/1"),
+            "{html}"
+        );
+        assert_eq!(image.as_deref(), Some("https://i.test/2.png"));
+        let text = crate::text::html_to_text(&html);
+        assert!(
+            text.contains("Hey folks") && text.contains("Blue") && !text.contains("align"),
+            "{text}"
+        );
     }
 }

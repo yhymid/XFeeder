@@ -164,6 +164,9 @@ pub fn html_to_text(input: &str) -> String {
     } else {
         input.to_string()
     };
+    // WordPress feeds (blender.org) start every body with `<?xml encoding="utf-8"?>`.
+    static PI: OnceLock<Regex> = OnceLock::new();
+    let input = re(&PI, r"(?s)<\?.*?\?>").replace_all(&input, "");
     let marked = re(&LI, r"(?i)<li\b[^>]*>").replace_all(&input, "\n•\n");
     let text = strip_html(&marked)
         .replace(
@@ -611,5 +614,12 @@ mod tests {
     fn discord_timestamps() {
         assert_eq!(discord_time("2026-11-19T12:58:18.000Z"), "<t:1795093098:f>");
         assert_eq!(discord_time("nonsense"), "");
+    }
+
+    #[test]
+    fn processing_instructions_are_dropped() {
+        let text =
+            html_to_text(r#"<?xml encoding="utf-8"?><html><body><p>Blender 5.3</p></body></html>"#);
+        assert_eq!(text.trim(), "Blender 5.3");
     }
 }

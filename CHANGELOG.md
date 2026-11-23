@@ -29,6 +29,14 @@ section below as its description.
   are images; `media:group` and `itunes:image` are read too.
 - Category filters did not match Atom categories (`term`/`label`) or RSS categories with a
   `domain` attribute (GitHub Changelog): categories are plain text now.
+- Steam events: BBCode tags with attributes (`[p align="start"]`, `[url="…" style="…"]`,
+  `[img src="…" style="…"]`, table cells, colours, `[dynamiclink]`) were left in the text as
+  is. Checked against the last 10 posts of 202 games: none are left.
+- Steam posts without their own image used the app's `header.jpg`, which newer games no
+  longer have (broken image in Discord). XFeeder now checks it, tries the library hero
+  image next, and sends no image when neither exists.
+- WordPress feeds that start every body with `<?xml encoding="utf-8"?>` (blender.org)
+  showed it in the text.
 
 ## 3.0 - Rust Update (2026-11-21)
 

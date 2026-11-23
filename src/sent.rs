@@ -17,7 +17,7 @@ use serde_json::{Map, Value};
 const LIMIT: usize = 2_000;
 
 /// Entry fields kept for rebuilding a message.
-const FIELDS: [&str; 13] = [
+const FIELDS: [&str; 14] = [
     "title",
     "link",
     "sourceLink",
@@ -31,6 +31,7 @@ const FIELDS: [&str; 13] = [
     "guid",
     "categories",
     "merged",
+    "steamPics",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

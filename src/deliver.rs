@@ -168,8 +168,50 @@ fn attachments(entry: &Value, username: &Value) -> Vec<(Value, Value)> {
         .collect()
 }
 
+/// Markdown text of a Steam PICS entry, SteamDB-bot style: app name linking
+/// the changelist, the change number, then what changed.
+fn steam_pics_text(p: &Value) -> (String, Option<u32>) {
+    let s = |k: &str| js::to_string_or_empty(get(p, k)).trim().to_string();
+    // Markdown link text must not close the link early.
+    let clean = |t: String| t.replace(['[', ']'], "").replace('\n', " ");
+    let name = clean(s("name"));
+    let branch = clean(s("branch"));
+    let build = match (s("buildid"), s("buildLink")) {
+        (id, link) if !id.is_empty() && http_url(&json!(link)).is_some() => {
+            format!("[build {id}]({link})")
+        }
+        (id, _) if !id.is_empty() => format!("build {id}"),
+        _ => String::new(),
+    };
+    let (what, accent) = match s("kind").as_str() {
+        "Current" => (format!("Current public {build}"), Some(0x5865F2)),
+        "Build" => (format!("Depots (public, {build})"), Some(0x66C0F4)),
+        "Branch added" => (format!("Depots (Added {branch}, {build})"), Some(0x57F287)),
+        "Branch build" => (format!("Depots ({branch}, {build})"), Some(0xFEE75C)),
+        "Branch removed" => (format!("Depots (Removed {branch})"), Some(0xED4245)),
+        other => (clean(other.to_string()), None),
+    };
+    let mut lines = Vec::new();
+    match http_url(get(p, "changeLink")) {
+        Some(link) => lines.push(format!("### [{name}]({link})")),
+        None => lines.push(format!("### {name}")),
+    }
+    lines.push(format!("Changelist {}", s("change")));
+    lines.push(format!("Changed: **{what}**"));
+    let description = clean(s("description"));
+    if !description.is_empty() && description != branch {
+        lines.push(format!("-# {description}"));
+    }
+    let size = s("size");
+    if !size.is_empty() {
+        lines.push(format!("-# Public depots {size}"));
+    }
+    (lines.join("\n"), accent)
+}
+
 fn webhook_payload(entry: &Value) -> (Value, String) {
     let mut c = Container(Vec::new());
+    let mut accent: Option<u32> = None;
     let link = get(entry, "link");
     let title = get(entry, "title");
     let link_text = link.as_str().unwrap_or("");
@@ -256,6 +298,12 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         c.text(format!("👤 {} • 🕒 {timestamp}", js::to_string(&username)));
         c.button("Open", link);
         label = format!("Discord message from {}", js::to_string(&username));
+    } else if get(entry, "steamPics").is_object() && !truthy(get(entry, "merged")) {
+        let pics = get(entry, "steamPics");
+        let (text, color) = steam_pics_text(pics);
+        accent = color;
+        c.section(vec![text], get(pics, "thumbnail"));
+        label = js::to_string(js::or(&[title, link, &json!("(no title)")]));
     } else {
         let heading = format!(
             "📰 **{}**",
@@ -307,8 +355,12 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         }
         label = js::to_string(js::or(&[title, link, &json!("(no title)")]));
     }
+    let mut container = json!({ "type": 17, "components": c.0 });
+    if let Some(color) = accent {
+        container["accent_color"] = json!(color);
+    }
     (
-        json!({ "flags": COMPONENTS_V2, "components": [{ "type": 17, "components": c.0 }] }),
+        json!({ "flags": COMPONENTS_V2, "components": [container] }),
         label,
     )
 }
@@ -1098,6 +1150,55 @@ mod tests {
             "no big gallery image"
         );
         assert!(telegram_photo(&entry).is_none());
+    }
+
+    #[test]
+    fn steam_pics_entries_are_compact_like_steamdb_posts() {
+        let entry = json!({ "title": "Counter-Strike 2: new branch 1.42.0.0",
+            "link": "https://steamdb.info/app/730/depots/?branch=1.42.0.0",
+            "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/h/header.jpg",
+            "steamPics": { "name": "Counter-Strike 2", "appid": 730, "change": 41339549,
+                "changeLink": "https://steamdb.info/app/730/history/?changeid=41339549",
+                "kind": "Branch added", "branch": "1.42.0.0", "buildid": "26798866",
+                "buildLink": "https://steamdb.info/patchnotes/26798866/",
+                "description": "Game version 1.42.0.0 (20-Nov-2026)",
+                "thumbnail": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_600x900.jpg" } });
+        let (payload, label) = webhook_payload(&entry);
+        let container = &payload["components"][0];
+        assert_eq!(container["accent_color"], 0x57F287);
+        let parts = container["components"].as_array().unwrap();
+        assert_eq!(parts.len(), 1, "one section, no gallery, no button");
+        assert_eq!(parts[0]["type"], 9);
+        assert!(
+            parts[0]["accessory"]["media"]["url"]
+                .as_str()
+                .unwrap()
+                .ends_with("library_600x900.jpg")
+        );
+        let text = parts[0]["components"][0]["content"].as_str().unwrap();
+        assert_eq!(
+            text,
+            "### [Counter-Strike 2](https://steamdb.info/app/730/history/?changeid=41339549)\n\
+             Changelist 41339549\n\
+             Changed: **Depots (Added 1.42.0.0, [build 26798866](https://steamdb.info/patchnotes/26798866/))**\n\
+             -# Game version 1.42.0.0 (20-Nov-2026)"
+        );
+        assert_eq!(label, "Counter-Strike 2: new branch 1.42.0.0");
+        // Removed branch: red, no build link.
+        let mut removed = entry.clone();
+        removed["steamPics"]["kind"] = json!("Branch removed");
+        let (payload, _) = webhook_payload(&removed);
+        assert_eq!(payload["components"][0]["accent_color"], 0xED4245);
+        assert!(
+            payload
+                .to_string()
+                .contains("Changed: **Depots (Removed 1.42.0.0)**")
+        );
+        // Merged with an announcement: the normal layout.
+        let mut merged = entry;
+        merged["merged"] = json!({ "title": "x", "link": "https://steamdb.info/patchnotes/1/" });
+        let (payload, _) = webhook_payload(&merged);
+        assert!(payload["components"][0].get("accent_color").is_none());
     }
 
     #[test]

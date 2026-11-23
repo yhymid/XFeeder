@@ -340,6 +340,21 @@ fn header_image(flat: &BTreeMap<String, String>, appid: u32) -> Option<String> {
     })
 }
 
+/// The portrait library capsule (600×900), as on SteamDB's Discord posts.
+fn capsule_image(flat: &BTreeMap<String, String>, appid: u32) -> Option<String> {
+    let file = flat
+        .get("common/library_assets_full/library_capsule/image/english")?
+        .trim();
+    let safe = !file.is_empty()
+        && file
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
+        && !file.contains("..");
+    safe.then(|| {
+        format!("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/{file}")
+    })
+}
+
 fn human_delta(delta: i128) -> String {
     let sign = if delta < 0 { "-" } else { "+" };
     let bytes = delta.unsigned_abs() as f64;
@@ -383,6 +398,7 @@ struct Ctx<'a> {
     appid: u32,
     name: &'a str,
     image: Option<String>,
+    capsule: Option<String>,
     change: u64,
     now: i64,
 }
@@ -395,8 +411,23 @@ impl Ctx<'_> {
         link: String,
         when: i64,
         labels: [&str; 2],
+        detail: Value,
     ) -> Value {
+        // Structured copy for the compact Discord layout (`deliver.rs`).
+        let mut pics = json!({
+            "name": self.name,
+            "appid": self.appid,
+            "change": self.change,
+            "changeLink": self.history(),
+            "kind": labels[0],
+            "branch": labels[1],
+            "thumbnail": self.capsule.clone().or_else(|| self.image.clone()),
+        });
+        if let (Value::Object(base), Value::Object(extra)) = (&mut pics, detail) {
+            base.extend(extra);
+        }
         json!({
+            "steamPics": pics,
             "title": title,
             "link": link,
             "contentSnippet": text,
@@ -431,6 +462,7 @@ fn current_build(
         appid,
         name: &name,
         image: header_image(flat, appid),
+        capsule: capsule_image(flat, appid),
         change,
         now,
     };
@@ -445,6 +477,7 @@ fn current_build(
         format!("https://steamdb.info/patchnotes/{}/", public.buildid),
         public.updated,
         ["Build", "public"],
+        json!({ "kind": "Current", "buildid": public.buildid, "buildLink": format!("https://steamdb.info/patchnotes/{}/", public.buildid) }),
     ))
 }
 
@@ -472,6 +505,7 @@ pub fn diff(
         appid,
         name: &name,
         image: header_image(new, appid),
+        capsule: capsule_image(new, appid),
         change,
         now,
     };
@@ -481,15 +515,13 @@ pub fn diff(
     if let (Some(was), Some(now_public)) = (before.get("public"), after.get("public"))
         && was.buildid != now_public.buildid
     {
-        let size = match (public_size(old), public_size(new)) {
-            (Some(a), Some(b)) if a != b => {
-                format!(
-                    " Public depots {}.",
-                    human_delta(i128::from(b) - i128::from(a))
-                )
-            }
-            _ => String::new(),
+        let delta = match (public_size(old), public_size(new)) {
+            (Some(a), Some(b)) if a != b => Some(human_delta(i128::from(b) - i128::from(a))),
+            _ => None,
         };
+        let size = delta
+            .as_ref()
+            .map_or(String::new(), |d| format!(" Public depots {d}."));
         let link = format!("https://steamdb.info/patchnotes/{}/", now_public.buildid);
         out.events.push(ctx.entry(
             format!("{} update (build {})", ctx.name, now_public.buildid),
@@ -500,9 +532,10 @@ pub fn diff(
                 change,
                 ctx.history()
             ),
-            link,
+            link.clone(),
             now_public.updated,
             ["Build", "public"],
+            json!({ "buildid": now_public.buildid, "buildLink": link, "previous": was.buildid, "size": delta }),
         ));
     }
     for (branch, info) in &after {
@@ -518,6 +551,11 @@ pub fn diff(
         } else {
             format!(" \"{}\"", info.description)
         };
+        let detail = json!({
+            "buildid": info.buildid,
+            "buildLink": format!("https://steamdb.info/patchnotes/{}/", info.buildid),
+            "description": info.description,
+        });
         let mut entry = match before.get(branch) {
             None => ctx.entry(
                 format!("{}: new branch {branch}", ctx.name),
@@ -530,6 +568,7 @@ pub fn diff(
                 link,
                 info.updated,
                 ["Branch added", branch],
+                detail,
             ),
             Some(was) if was.buildid != info.buildid => ctx.entry(
                 format!("{}: branch {branch} build {}", ctx.name, info.buildid),
@@ -543,6 +582,7 @@ pub fn diff(
                 link,
                 info.updated,
                 ["Branch build", branch],
+                detail,
             ),
             Some(_) => continue,
         };
@@ -569,6 +609,7 @@ pub fn diff(
             ctx.history(),
             now,
             ["Branch removed", branch],
+            json!({ "buildid": info.buildid, "description": info.description }),
         );
         entry["identityKey"] = json!(format!(
             "steampics:{appid}:{branch}:removed:{}",

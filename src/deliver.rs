@@ -170,7 +170,7 @@ fn attachments(entry: &Value, username: &Value) -> Vec<(Value, Value)> {
 
 /// Markdown text of a Steam PICS entry, SteamDB-bot style: app name linking
 /// the changelist, the change number, then what changed.
-fn steam_pics_text(p: &Value) -> (String, Option<u32>) {
+fn steam_pics_text(p: &Value) -> (String, String, Option<u32>) {
     let s = |k: &str| js::to_string_or_empty(get(p, k)).trim().to_string();
     // Markdown link text must not close the link early.
     let clean = |t: String| t.replace(['[', ']'], "").replace('\n', " ");
@@ -192,10 +192,6 @@ fn steam_pics_text(p: &Value) -> (String, Option<u32>) {
         other => (clean(other.to_string()), None),
     };
     let mut lines = Vec::new();
-    match http_url(get(p, "changeLink")) {
-        Some(link) => lines.push(format!("### [{name}]({link})")),
-        None => lines.push(format!("### {name}")),
-    }
     lines.push(format!("Changelist {}", s("change")));
     lines.push(format!("Changed: **{what}**"));
     let description = clean(s("description"));
@@ -206,12 +202,41 @@ fn steam_pics_text(p: &Value) -> (String, Option<u32>) {
     if !size.is_empty() {
         lines.push(format!("-# Public depots {size}"));
     }
-    (lines.join("\n"), accent)
+    (name, lines.join("\n"), accent)
+}
+
+/// A Steam PICS entry as a classic embed, SteamDB-bot style. Not Components
+/// V2: its thumbnail keeps the portrait capsule's shape (V2 crops it square).
+/// Discord cannot turn such a message into a V2 one later, so SteamMerge
+/// never edits these posts (`steam_merge::find`).
+fn steam_pics_embed(entry: &Value, p: &Value) -> (Value, String) {
+    let (name, text, accent) = steam_pics_text(p);
+    let mut embed = json!({
+        "title": safe_text(&json!(name), 256),
+        "description": safe_text(&json!(text), 4000),
+    });
+    if let Some(link) = http_url(get(p, "changeLink")) {
+        embed["url"] = json!(link);
+    }
+    if let Some(color) = accent {
+        embed["color"] = json!(color);
+    }
+    if let Some(thumb) = http_url(get(p, "thumbnail")) {
+        embed["thumbnail"] = json!({ "url": thumb });
+    }
+    let label = js::to_string(js::or(&[
+        get(entry, "title"),
+        get(entry, "link"),
+        &json!("(no title)"),
+    ]));
+    (json!({ "embeds": [embed] }), label)
 }
 
 fn webhook_payload(entry: &Value) -> (Value, String) {
+    if get(entry, "steamPics").is_object() && !truthy(get(entry, "merged")) {
+        return steam_pics_embed(entry, get(entry, "steamPics"));
+    }
     let mut c = Container(Vec::new());
-    let mut accent: Option<u32> = None;
     let link = get(entry, "link");
     let title = get(entry, "title");
     let link_text = link.as_str().unwrap_or("");
@@ -298,12 +323,6 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         c.text(format!("👤 {} • 🕒 {timestamp}", js::to_string(&username)));
         c.button("Open", link);
         label = format!("Discord message from {}", js::to_string(&username));
-    } else if get(entry, "steamPics").is_object() && !truthy(get(entry, "merged")) {
-        let pics = get(entry, "steamPics");
-        let (text, color) = steam_pics_text(pics);
-        accent = color;
-        c.section(vec![text], get(pics, "thumbnail"));
-        label = js::to_string(js::or(&[title, link, &json!("(no title)")]));
     } else {
         let heading = format!(
             "📰 **{}**",
@@ -355,12 +374,8 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         }
         label = js::to_string(js::or(&[title, link, &json!("(no title)")]));
     }
-    let mut container = json!({ "type": 17, "components": c.0 });
-    if let Some(color) = accent {
-        container["accent_color"] = json!(color);
-    }
     (
-        json!({ "flags": COMPONENTS_V2, "components": [container] }),
+        json!({ "flags": COMPONENTS_V2, "components": [{ "type": 17, "components": c.0 }] }),
         label,
     )
 }
@@ -513,10 +528,12 @@ async fn webhook_call(
 /// Put the `Ping` line above the post and set `allowed_mentions`: only the
 /// configured mentions may notify, and only when `notify` (new posts).
 fn with_mention(mut payload: Value, mention: Option<&crate::ping::Mention>, notify: bool) -> Value {
-    if let Some(mention) = mention
-        && let Some(components) = payload["components"].as_array_mut()
-    {
-        components.insert(0, json!({ "type": 10, "content": mention.line }));
+    if let Some(mention) = mention {
+        if let Some(components) = payload["components"].as_array_mut() {
+            components.insert(0, json!({ "type": 10, "content": mention.line }));
+        } else if payload["embeds"].is_array() {
+            payload["content"] = json!(mention.line);
+        }
     }
     payload["allowed_mentions"] = match mention {
         Some(mention) if notify => mention.allowed.clone(),
@@ -534,9 +551,11 @@ pub async fn send_webhook(
 ) -> Result<Option<SentMessage>, SendError> {
     let url = webhook_url(webhook, thread, None)?;
     let (payload, label) = webhook_payload(entry);
-    if payload["components"][0]["components"]
-        .as_array()
-        .is_none_or(Vec::is_empty)
+    let empty_embeds = payload["embeds"].as_array().is_none_or(Vec::is_empty);
+    if empty_embeds
+        && payload["components"][0]["components"]
+            .as_array()
+            .is_none_or(Vec::is_empty)
     {
         return Err(SendError::Failed(
             "Components payload is empty after sanitization.".into(),
@@ -573,11 +592,12 @@ pub async fn edit_webhook(
     let (payload, label) = webhook_payload(entry);
     // The message already has the Components V2 flag; an edit sends only
     // the new components. Edits never ping.
-    let payload = with_mention(
-        json!({ "components": payload["components"] }),
-        mention,
-        false,
-    );
+    let body = if payload["embeds"].is_array() {
+        json!({ "embeds": payload["embeds"] })
+    } else {
+        json!({ "components": payload["components"] })
+    };
+    let payload = with_mention(body, mention, false);
     let started = std::time::Instant::now();
     let response = webhook_call(&url, &payload, true, &label, cancel).await?;
     crate::info!(
@@ -1156,7 +1176,6 @@ mod tests {
     fn steam_pics_entries_are_compact_like_steamdb_posts() {
         let entry = json!({ "title": "Counter-Strike 2: new branch 1.42.0.0",
             "link": "https://steamdb.info/app/730/depots/?branch=1.42.0.0",
-            "enclosure": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/h/header.jpg",
             "steamPics": { "name": "Counter-Strike 2", "appid": 730, "change": 41339549,
                 "changeLink": "https://steamdb.info/app/730/history/?changeid=41339549",
                 "kind": "Branch added", "branch": "1.42.0.0", "buildid": "26798866",
@@ -1164,22 +1183,24 @@ mod tests {
                 "description": "Game version 1.42.0.0 (20-Nov-2026)",
                 "thumbnail": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_600x900.jpg" } });
         let (payload, label) = webhook_payload(&entry);
-        let container = &payload["components"][0];
-        assert_eq!(container["accent_color"], 0x57F287);
-        let parts = container["components"].as_array().unwrap();
-        assert_eq!(parts.len(), 1, "one section, no gallery, no button");
-        assert_eq!(parts[0]["type"], 9);
+        // A classic embed: its thumbnail keeps the portrait shape.
+        assert!(payload.get("flags").is_none() && payload.get("components").is_none());
+        let embed = &payload["embeds"][0];
+        assert_eq!(embed["title"], "Counter-Strike 2");
+        assert_eq!(
+            embed["url"],
+            "https://steamdb.info/app/730/history/?changeid=41339549"
+        );
+        assert_eq!(embed["color"], 0x57F287);
         assert!(
-            parts[0]["accessory"]["media"]["url"]
+            embed["thumbnail"]["url"]
                 .as_str()
                 .unwrap()
                 .ends_with("library_600x900.jpg")
         );
-        let text = parts[0]["components"][0]["content"].as_str().unwrap();
         assert_eq!(
-            text,
-            "### [Counter-Strike 2](https://steamdb.info/app/730/history/?changeid=41339549)\n\
-             Changelist 41339549\n\
+            embed["description"],
+            "Changelist 41339549\n\
              Changed: **Depots (Added 1.42.0.0, [build 26798866](https://steamdb.info/patchnotes/26798866/))**\n\
              -# Game version 1.42.0.0 (20-Nov-2026)"
         );
@@ -1188,17 +1209,24 @@ mod tests {
         let mut removed = entry.clone();
         removed["steamPics"]["kind"] = json!("Branch removed");
         let (payload, _) = webhook_payload(&removed);
-        assert_eq!(payload["components"][0]["accent_color"], 0xED4245);
+        assert_eq!(payload["embeds"][0]["color"], 0xED4245);
         assert!(
             payload
                 .to_string()
                 .contains("Changed: **Depots (Removed 1.42.0.0)**")
         );
-        // Merged with an announcement: the normal layout.
+        // A ping line goes into `content` above the embed.
+        let mention = crate::ping::Mention {
+            line: "<@&1>".into(),
+            allowed: json!({ "roles": ["1"] }),
+        };
+        let pinged = with_mention(payload, Some(&mention), true);
+        assert_eq!(pinged["content"], "<@&1>");
+        // Merged with an announcement: the normal Components V2 layout.
         let mut merged = entry;
         merged["merged"] = json!({ "title": "x", "link": "https://steamdb.info/patchnotes/1/" });
         let (payload, _) = webhook_payload(&merged);
-        assert!(payload["components"][0].get("accent_color").is_none());
+        assert_eq!(payload["flags"], COMPONENTS_V2);
     }
 
     #[test]

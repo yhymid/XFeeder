@@ -20,7 +20,9 @@
 //! "Settings": { "SteamMerge": { "Enabled": true, "WindowHours": 12 } }
 //! ```
 //! `steampics://APPID` builds count as SteamDB builds; only their `Build`
-//! entries (new public build) join, branch entries stay their own posts.
+//! entries (new public build) join an announcement posted before them.
+//! A PICS post itself is a classic embed, which Discord cannot edit into the
+//! Components V2 layout, so an announcement arriving later is its own post.
 //!
 //! Off without the key or with `false`: every entry is its own post, as
 //! before.
@@ -157,7 +159,9 @@ pub fn find(
         .filter(|r| r.channel == channel_key && now_ms - r.sent_at <= merge.window_ms)
         .find(|r| {
             r.entry.get("merged").is_none()
-                && joinable(&r.source, &r.entry)
+                // A Steam PICS post is a classic embed: Discord cannot edit
+                // it into the announcement's Components V2 layout.
+                && !crate::steam_pics::is_url(r.source.trim())
                 && kind(&r.source).is_some_and(|(db, a)| db != is_db && a == app)
         })?;
     let (announcement, build) = if is_db {
@@ -275,12 +279,9 @@ mod tests {
         let posted = vec![record("5", STORE, announcement("Patch 1.2.3"), 2)];
         assert!(find(&posted, "ch", PICS, &pics("Build"), NOW, &m).is_some());
         assert!(find(&posted, "ch", PICS, &pics("Branch added"), NOW, &m).is_none());
-        let builds = vec![
-            record("1", PICS, pics("Build"), 2),
-            record("2", PICS, pics("Branch added"), 1),
-        ];
-        let (target, _) = find(&builds, "ch", STORE, &announcement("Update"), NOW, &m).unwrap();
-        assert_eq!(target.message_id, "1");
+        // Earlier PICS posts are embeds Discord cannot edit into V2: never targets.
+        let builds = vec![record("1", PICS, pics("Build"), 2)];
+        assert!(find(&builds, "ch", STORE, &announcement("Update"), NOW, &m).is_none());
     }
 
     #[test]

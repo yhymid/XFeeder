@@ -100,6 +100,24 @@ SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `pu
     Proton Experimental (1493710) came back as a garbled `AppID : 1715812046 … 1970` block in a batch run, so it is not usable this way.
   - **More games to watch: Steam's own top 100.** `https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/` (no key) lists the 100 most played AppIDs. On 2026-11-23, 32 of them were not on this page yet; all 32 showed builds anonymously. The XFeeder PICS test tracks 241 apps (this page + top 100 + the ✅ tools above).
   - **All 203 AppIDs of this page in one run: 94 s**, 3.7 MB of output, every AppID known.
+  - App art for posts: the portrait capsule (`common/library_assets_full/library_capsule/image/english` → `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/<APPID>/library_600x900.jpg`) and the 32×32 icon (`common/icon` hash → `https://shared.fastly.steamstatic.com/community_assets/images/apps/<APPID>/<hash>.jpg`); both 200 on 2026-11-23. Discord's Components V2 thumbnail crops a portrait image to a square, a classic embed thumbnail does not.
+
+## GameTracking: file-level changes of Valve games
+
+SteamDB's team runs [SteamTracking](https://github.com/SteamTracking) (the old `SteamDatabase/GameTracking-*` URLs redirect there). Every build of these games is committed with its changed files (manifests, `steam.inf`, schemas, strings), and SteamDB's own Discord posts them next to the build. The commits feed works for **Deadlock**, whose depots anonymous PICS hides. Checked on 2026-11-23 (20 entries per feed):
+
+| Game | Commits feed | Newest commit |
+|---|---|---|
+| Counter-Strike 2 | https://github.com/SteamTracking/GameTracking-CS2/commits/master.atom | 2026-11-20 |
+| Deadlock | https://github.com/SteamTracking/GameTracking-Deadlock/commits/master.atom | 2026-11-20 |
+| Dota 2 | https://github.com/SteamTracking/GameTracking-Dota2/commits/master.atom | 2026-11-21 |
+| Team Fortress 2 | https://github.com/SteamTracking/GameTracking-TF2/commits/master.atom | 2026-10-30 |
+| SteamVR | https://github.com/SteamTracking/GameTracking-SteamVR/commits/master.atom | 2026-11-19 |
+| Half-Life: Alyx | https://github.com/SteamTracking/GameTracking-HalfLifeAlyx/commits/master.atom | 2026-11-05 |
+
+- Also in the organisation: `GameTracking-Dota2Test`, `GameTracking-Artifact(-Beta)`, `GameTracking-Underlords(-Android)`, `SteamTracking` (Steam client and web files), `Protobufs`.
+- The commit title is the game's build number from `steam.inf` (CS2 `2000948`, Deadlock `6864`), then the file count and the first changed files.
+- SteamDB's Discord (`cs-updates`) colours a bare changelist yellow and a changelist with depot changes purple; it pings only for depot changes, and it also posts related hidden apps ("SteamDB Unknown App 2275500 / 2275530" next to CS2).
   - **Some apps show anonymous Steam only `common`**: no `depots`, so no builds or branches. On 2026-11-23: Deadlock (1422450), Risk of Rain 2 (632360), NARAKA: BLADEPOINT (1203220). Their change number still moves. SteamDB sees their builds because it logs in with an account that has access tokens, so for these games keep SteamDB's RSS or the store feed.
 - **Real CS2 History-tab data** (1835 changelists, 2023-03-18 → 2026-11-21, saved from a browser by the user):
   - `public` gets a new buildid about **110 times a year** (2 a week). Each time `buildid`, `timeupdated` and the depot `gid`/`size`/`download` change together, and the page shows the size delta (`+2.1 GiB`).

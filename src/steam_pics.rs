@@ -25,6 +25,10 @@
 //! `IgnoreBranches` (default `^dprp?$`, Valve's internal ones) are skipped.
 //! An AppID Steam does not know gives no data, never "removed".
 //!
+//! Some apps show anonymous Steam only `common` (Deadlock, Risk of Rain 2):
+//! no depots, no branches, so no entries; their change number still moves and
+//! is logged.
+//!
 //! Every change of an app's change number, noise included, is appended to
 //! `steam_pics.changes.jsonl` next to `cache.json` (`RawLog`, on by default),
 //! so a test channel collects the whole picture.
@@ -648,21 +652,22 @@ impl Runner {
                 && old_change != Some(app.change)
             {
                 let d = diff(app.appid, app.change, old, &app.flat, ignore, now);
-                if !d.raw.is_empty() {
-                    let total = d.raw.len();
-                    log.push(json!({
-                        "t": iso(now),
-                        "appid": app.appid,
-                        "name": app_name(&app.flat, app.appid),
-                        "changeOld": old_change,
-                        "changeNew": app.change,
-                        "events": d.events.iter().map(|e| e["categories"][0].clone()).collect::<Vec<_>>(),
-                        "changedKeys": total,
-                        "changes": d.raw.iter().take(RAW_CHANGES_MAX)
-                            .map(|(k, a, b)| json!({ "k": k, "old": a, "new": b }))
-                            .collect::<Vec<_>>(),
-                    }));
-                }
+                // Logged even with no visible change: for apps whose depots
+                // anonymous Steam hides (only `common`), a bare change number
+                // bump may be the only trace of a new build.
+                log.push(json!({
+                    "t": iso(now),
+                    "appid": app.appid,
+                    "name": app_name(&app.flat, app.appid),
+                    "changeOld": old_change,
+                    "changeNew": app.change,
+                    "depotsVisible": app.flat.keys().any(|k| k.starts_with("depots/")),
+                    "events": d.events.iter().map(|e| e["categories"][0].clone()).collect::<Vec<_>>(),
+                    "changedKeys": d.raw.len(),
+                    "changes": d.raw.iter().take(RAW_CHANGES_MAX)
+                        .map(|(k, a, b)| json!({ "k": k, "old": a, "new": b }))
+                        .collect::<Vec<_>>(),
+                }));
                 events.extend(d.events);
                 if events.len() > EVENTS_KEPT {
                     events.drain(..events.len() - EVENTS_KEPT);
@@ -1037,7 +1042,15 @@ mod tests {
             "https://steamdb.info/patchnotes/26900000/"
         );
         // Same change number again: nothing new.
-        assert!(runner.apply(next, None, 30).is_empty());
+        assert!(runner.apply(next.clone(), None, 30).is_empty());
+        assert_eq!(runner.items(730).len(), 2);
+        // A bare change number bump (hidden depots) is still logged.
+        let mut bump = next;
+        bump[0].change += 1;
+        let log = runner.apply(bump, None, 40);
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0]["changedKeys"], 0);
+        assert_eq!(log[0]["depotsVisible"], true);
         assert_eq!(runner.items(730).len(), 2);
     }
 

@@ -84,6 +84,8 @@ SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `pu
   - The output contains ANSI colour codes (`ESC[0m`), sometimes at the start of the `AppID :` line. Strip them before parsing.
   - The CS2 change number from SteamCMD (41339555) was the newest changelist on SteamDB's History tab, so the two agree.
   - A second check on 2026-11-23 with all 10 tracked apps plus one bogus AppID took **9.3 s**.
+  - **All 203 AppIDs of this page in one run: 94 s**, 3.7 MB of output, every AppID known.
+  - **Some apps show anonymous Steam only `common`**: no `depots`, so no builds or branches. On 2026-11-23: Deadlock (1422450), Risk of Rain 2 (632360), NARAKA: BLADEPOINT (1203220). Their change number still moves. SteamDB sees their builds because it logs in with an account that has access tokens, so for these games keep SteamDB's RSS or the store feed.
 - **Real CS2 History-tab data** (1835 changelists, 2023-03-18 → 2026-11-21, saved from a browser by the user):
   - `public` gets a new buildid about **110 times a year** (2 a week). Each time `buildid`, `timeupdated` and the depot `gid`/`size`/`download` change together, and the page shows the size delta (`+2.1 GiB`).
   - Version branches (`1.41.x`, `1.42.0.0`): in 2026, 42 were added, 42 removed and 39 changed. A new one usually appears together with the public update and replaces the previous pin.

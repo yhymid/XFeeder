@@ -80,6 +80,10 @@ SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `pu
   - `/usr/games/steamcmd` is already installed on the XFeeder VPS.
   - Each app's header line carries the PICS changelist: `AppID : 570, change number : 41321468/41321468, last change : …`. That is the same `#…` number as on SteamDB's History tab, so an unchanged number means nothing changed for that app.
   - **Works for any public AppID.** On 2026-11-23 it returned `public` buildids for Dota 2 (570), Apex Legends (1172470), Marvel Rivals (2767030), Baldur's Gate 3 (1086940, plus 2 old patch branches), HELLDIVERS 2 (553850), ELDEN RING (1245620) and Stardew Valley (413150, plus `legacy_1.5.6`, `legacy_1.6.8`, `compatibility` and `previous_version`). Most games expose only `public`. Version-pin branches like CS2's are a Valve habit.
+  - **A wrong or unknown AppID is not an error.** For `999999999` SteamCMD exits with 0 and prints `change number : <current global number>`, `last change : Thu Jan  1 00:00:00 1970` and an empty `{ }`. Treat "no `depots.branches.public`" as no data, never as "branch removed".
+  - The output contains ANSI colour codes (`ESC[0m`), sometimes at the start of the `AppID :` line. Strip them before parsing.
+  - The CS2 change number from SteamCMD (41339555) was the newest changelist on SteamDB's History tab, so the two agree.
+  - A second check on 2026-11-23 with all 10 tracked apps plus one bogus AppID took **9.3 s**.
 - **Real CS2 History-tab data** (1835 changelists, 2023-03-18 → 2026-11-21, saved from a browser by the user):
   - `public` gets a new buildid about **110 times a year** (2 a week). Each time `buildid`, `timeupdated` and the depot `gid`/`size`/`download` change together, and the page shows the size delta (`+2.1 GiB`).
   - Version branches (`1.41.x`, `1.42.0.0`): in 2026, 42 were added, 42 removed and 39 changed. A new one usually appears together with the public update and replaces the previous pin.

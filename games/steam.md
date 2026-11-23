@@ -58,6 +58,13 @@ SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `pu
   - `privatebranches` = 1 means that password branches exist; they are not listed.
   - Cost: one run for 8 apps took **8 s** on the VPS once SteamCMD had updated itself. The first run of the day downloads a 41 MB self-update (24 s).
   - `/usr/games/steamcmd` is already installed on the XFeeder VPS.
+  - Each app's header line carries the PICS changelist: `AppID : 570, change number : 41321468/41321468, last change : …`. That is the same `#…` number as on SteamDB's History tab, so an unchanged number means nothing changed for that app.
+  - **Works for any public AppID.** On 2026-11-23 it returned `public` buildids for Dota 2 (570), Apex Legends (1172470), Marvel Rivals (2767030), Baldur's Gate 3 (1086940, plus 2 old patch branches), HELLDIVERS 2 (553850), ELDEN RING (1245620) and Stardew Valley (413150, plus `legacy_1.5.6`, `legacy_1.6.8`, `compatibility` and `previous_version`). Most games expose only `public`. Version-pin branches like CS2's are a Valve habit.
+- **Real CS2 History-tab data** (1835 changelists, 2023-03-18 → 2026-11-21, saved from a browser by the user):
+  - `public` gets a new buildid about **110 times a year** (2 a week). Each time `buildid`, `timeupdated` and the depot `gid`/`size`/`download` change together, and the page shows the size delta (`+2.1 GiB`).
+  - Version branches (`1.41.x`, `1.42.0.0`): in 2026, 42 were added, 42 removed and 39 changed. A new one usually appears together with the public update and replaces the previous pin.
+  - Noise: `dpr`/`dprp` (internal, about 430 changes in 2023–2024, almost none since 2025), Timeline Markers Update (481), `review_percentage`, user tags, assets, trailers, screenshots.
+  - Rare but readable: Steam Deck / Steam Frame compatibility, supported languages, `ListOfDLC`, `MinClientVersion`.
 - What to track: a `public` buildid change = new build (link `https://steamdb.info/patchnotes/<buildid>/` for humans, `https://store.steampowered.com/news/app/<APPID>` for the official notes); a branch that appears or disappears = new beta / version pin; a non-public buildid change = beta update. Ignore everything else. Dedupe by `<appid>:<branch>:<buildid>`.
 
 ## Images

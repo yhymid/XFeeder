@@ -415,6 +415,7 @@ Which URLs work as a feed:
 | GitHub commits | `https://github.com/user/repo/commits/main.atom` |
 | GitHub issues, PRs, releases, branches | `https://api.github.com/repos/user/repo/releases`, see [6.1](#61-the-github-api-as-a-source-authgithubtoken) |
 | A game's Steam news | `https://store.steampowered.com/feeds/news/app/730` |
+| A game's Steam news, sorted into patches and news | `https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=730&count_before=0&count_after=10&lang_list=0`: same posts as the RSS (switching sends nothing twice), but every entry gets the category `Patch`, `Major update`, `Beta`, `Release` or `News`, and broadcasts are left out. Patches only: `"Filters": { "Include": ["Patch", "Major update"], "Fields": ["categories"] }`. The images come from the post itself. Steam does not document this address; the RSS above is the way back. |
 | A plain page | `https://example.com/blog`: XFeeder finds the feed given in `<link rel="alternate">`. Writing the feed URL directly is better, though: it saves one request. |
 
 A complete channel:

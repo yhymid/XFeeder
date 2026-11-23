@@ -1104,8 +1104,12 @@ impl Pipeline<'_> {
         let body = Body::new(dl.data.clone());
         // GitHub answers `[]` for a repository without releases, tags, …:
         // an empty feed, not an unknown format.
-        let empty_api = crate::github_api::is_api(url)
-            && matches!(&body.json, Some(Value::Array(items)) if items.is_empty());
+        let empty_api = (crate::github_api::is_api(url)
+            && matches!(&body.json, Some(Value::Array(items)) if items.is_empty()))
+            // Steam events with only broadcasts/streams: nothing to send, and
+            // the generic JSON parser must not turn the answer into entries.
+            || (crate::steam_events::answered(url, &body)
+                && crate::steam_events::parse(url, &body).is_empty());
         for (name, parser) in parsers::PARSERS.iter().filter(|_| !empty_api) {
             expert("feed.parser.begin", json!({ "url": url, "parser": name }));
             let items = parser(url, &body);

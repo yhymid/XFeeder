@@ -36,9 +36,10 @@ impl Body {
 
 pub type Parser = fn(&str, &Body) -> Vec<Value>;
 
-pub const PARSERS: [(&str, Parser); 8] = [
+pub const PARSERS: [(&str, Parser); 9] = [
     ("parseYouTube", parse_youtube),
     ("parseGitHubAPI", crate::github_api::parse),
+    ("parseSteamEvents", crate::steam_events::parse),
     ("parseAtom", parse_atom),
     ("parseXML", parse_xml),
     ("parseJSON", parse_json),
@@ -51,7 +52,7 @@ fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(pattern).expect("static regex"))
 }
 
-fn snippet(raw: &str, max: usize) -> String {
+pub(crate) fn snippet(raw: &str, max: usize) -> String {
     let text = html_to_text(raw);
     let cut = prefix16(&text, max);
     if cut.len() == text.len() {
@@ -244,7 +245,8 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
         r"^https?://store\.steampowered\.com/feeds/news/app/(\d+)",
     )
     .captures(url)
-    .map(|c| c[1].to_string());
+    .map(|c| c[1].to_string())
+    .or_else(|| crate::steam_events::appid(url));
     for item in &mut items {
         let Some(map) = item.as_object_mut() else {
             continue;

@@ -10,6 +10,11 @@ section below as its description.
   ID pings on every post; the object form can limit it to some feeds (`Feeds`, e.g.
   `/releases`) and to entries matching `Include` patterns, with an optional `Text`.
   `--dry-run` shows which entries would ping; edits never ping again.
+- Steam events as a source: `store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=…`
+  gives the same posts as a game's store RSS (same ids, so switching sends nothing twice),
+  sorted by Steam's own event type into `Patch`, `Major update`, `Beta`, `Release` and
+  `News` categories for `Filters`. Broadcasts and streams are left out, images come from
+  the post, and SteamMerge treats it like the store RSS. The RSS keeps working as before.
 
 ### Fixed
 - A user mention (`<@ID>`) written in a feed entry could notify that user (Discord's

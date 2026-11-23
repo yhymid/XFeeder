@@ -77,7 +77,9 @@ pub fn kind(source: &str) -> Option<(bool, String)> {
     }
     STORE_FEED
         .captures(source)
-        .map(|c| (false, c[1].to_string()))
+        .map(|c| c[1].to_string())
+        .or_else(|| crate::steam_events::appid(source))
+        .map(|app| (false, app))
 }
 
 fn text(entry: &Value, field: &str) -> String {

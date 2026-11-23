@@ -414,6 +414,7 @@ Jakie adresy działają jako feed:
 | Kanał YouTube | `https://www.youtube.com/feeds/videos.xml?channel_id=UC…` |
 | Commity na GitHubie | `https://github.com/user/repo/commits/main.atom` |
 | Newsy gry na Steamie | `https://store.steampowered.com/feeds/news/app/730` |
+| Newsy gry ze Steama z podziałem na łatki i newsy | `https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=730&count_before=0&count_after=10&lang_list=0`: te same posty co w RSS (zmiana źródła niczego nie wyśle drugi raz), ale każdy wpis dostaje kategorię `Patch`, `Major update`, `Beta`, `Release` albo `News`, a transmisje są pomijane. Same łatki: `"Filters": { "Include": ["Patch", "Major update"], "Fields": ["categories"] }`. Obrazki pochodzą z samego posta. Steam nie dokumentuje tego adresu; powrotem jest RSS z wiersza wyżej. |
 | Issue, PR, wydania, gałęzie z GitHuba | `https://api.github.com/repos/user/repo/releases`, patrz [6.1](#61-github-api-jako-źródło-authgithubtoken) |
 | Zwykła strona | `https://example.com/blog`: XFeeder znajdzie feed podany w `<link rel="alternate">`. Lepiej jednak wpisać od razu adres feedu, bo to oszczędza jedno zapytanie. |
 

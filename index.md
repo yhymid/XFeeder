@@ -4,14 +4,14 @@
 
 Every game, tool, driver and store in this database, A–Z. A game can appear twice: once with its Steam AppID and once with a publisher source.
 
-"XFeeder today" was tested on **2026-11-23** with `xfeeder preview` on the best source of each row (Beta branch, commit 3da345e):
+"XFeeder today" was tested on **2026-11-23** with `xfeeder preview` on the best source of each row (Beta branch, commit 3da345e; ❓ rows researched again the same day):
 
 - ✅: the parser returns real entries. Steam games use the store events JSON, which XFeeder reads since Beta 3da345e (the store RSS still works as the way back).
 - 🔧: the source works, but XFeeder sees only the whole page as one entry, or nothing. It needs an adapter (JSON, `__NEXT_DATA__`, HTML list or Markdown).
 - ❌: no usable official source; see the row in the linked file for the fallback.
 - ❓: not researched yet.
 
-297 rows.
+298 rows.
 
 | Name | File | Source | XFeeder today |
 |---|---|---|---|
@@ -20,7 +20,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Age of Empires II: Definitive Edition | [games/steam.md](games/steam.md) | Steam 813780 | ✅ events JSON / RSS |
 | Age of Empires IV | [games/steam.md](games/steam.md) | Steam 1466860 | ✅ events JSON / RSS |
 | AION 2 | [games/steam.md](games/steam.md) | Steam 3393110 | ✅ events JSON / RSS |
-| AION 2 | [games/publishers.md](games/publishers.md) | publisher | ❓ not researched |
+| AION 2 | [games/publishers.md](games/publishers.md) | publisher | ❌ no official source (JS site; use Steam) |
 | Albion Online | [games/steam.md](games/steam.md) | Steam 761890 | ✅ events JSON / RSS |
 | AMD Chipset | [drivers.md](drivers.md) | driver | 🔧 adapter needed |
 | AMD Radeon (Adrenalin) | [drivers.md](drivers.md) | driver | 🔧 adapter needed |
@@ -143,7 +143,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Honkai: Star Rail | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
 | How to Fish | [games/steam.md](games/steam.md) | Steam 4001890 | ✅ events JSON / RSS |
 | Hunt: Showdown 1896 | [games/steam.md](games/steam.md) | Steam 594650 | ✅ events JSON / RSS |
-| Hytale | [games/publishers.md](games/publishers.md) | publisher | ❓ not researched |
+| Hytale | [games/publishers.md](games/publishers.md) | publisher | ✅ RSS |
 | ICARUS | [games/steam.md](games/steam.md) | Steam 1149460 | ✅ events JSON / RSS |
 | Intel Arc | [drivers.md](drivers.md) | driver | 🔧 adapter needed |
 | Intel Arc Pro | [drivers.md](drivers.md) | driver | 🔧 adapter needed |
@@ -247,7 +247,8 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | SMITE 2 | [games/steam.md](games/steam.md) | Steam 2437170 | ✅ events JSON / RSS |
 | Sons Of The Forest | [games/steam.md](games/steam.md) | Steam 1326470 | ✅ events JSON / RSS |
 | Space Engineers | [games/steam.md](games/steam.md) | Steam 244850 | ✅ events JSON / RSS |
-| Splitgate 2 | [games/publishers.md](games/publishers.md) | publisher | ❓ not researched |
+| Splitgate 2 | [games/publishers.md](games/publishers.md) | publisher | ❌ no official source (JS site; use Steam) |
+| Splitgate 2 | [games/steam.md](games/steam.md) | Steam 2918300 | ✅ events JSON / RSS |
 | Squad | [games/steam.md](games/steam.md) | Steam 393380 | ✅ events JSON / RSS |
 | STALZONE | [games/steam.md](games/steam.md) | Steam 1818450 | ✅ events JSON / RSS |
 | Star Citizen | [games/publishers.md](games/publishers.md) | publisher | ❌ no official source |
@@ -311,4 +312,4 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | YouTube channels (4) | [tracked.md](tracked.md) | news / video | ✅ Atom |
 | Yu-Gi-Oh! Master Duel | [games/steam.md](games/steam.md) | Steam 1449850 | ✅ events JSON / RSS |
 | Zenless Zone Zero | [games/steam.md](games/steam.md) | Steam 4162040 | ✅ events JSON / RSS |
-| Zenless Zone Zero | [games/publishers.md](games/publishers.md) | publisher | ❓ not researched |
+| Zenless Zone Zero | [games/publishers.md](games/publishers.md) | publisher | ❌ no feed in the page (use Steam) |

@@ -47,6 +47,9 @@ From Valve's `EProtoClanEventType`, checked against real posts:
 
 ## Images
 
+- **App art guesses:** `store_item_assets/steam/apps/<APPID>/header.jpg` is missing (404) for 22 of 202 apps checked on 2026-11-23, because newer apps keep it under a hashed path (`…/<APPID>/<hash>/header.jpg`, given by `api/appdetails` as `header_image`). `library_hero.jpg` exists for 194 of 202; 7 apps have neither. XFeeder (Beta 5a8fddc) checks header → library hero → no image.
+- All 1778 capsule and body images of the last 10 posts of 202 apps loaded (200, `image/*`). `{STEAM_CLAN_LOC_IMAGE}` is a second placeholder for the same clan CDN.
+
 | What | URL |
 |---|---|
 | Post capsule / title image | `https://clan.fastly.steamstatic.com/images/<clanid>/<file>`, where `clanid` is `announcement_body.clanid` and the file comes from `jsondata.localized_capsule_image[0]` |
@@ -217,6 +220,7 @@ From Valve's `EProtoClanEventType`, checked against real posts:
 | SMITE 2 | 2437170 | [RSS](https://store.steampowered.com/feeds/news/app/2437170/) · [events](https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=2437170&count_before=0&count_after=10&lang_list=0) · [store](https://store.steampowered.com/app/2437170/) |  |
 | Sons Of The Forest | 1326470 | [RSS](https://store.steampowered.com/feeds/news/app/1326470/) · [events](https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=1326470&count_before=0&count_after=10&lang_list=0) · [store](https://store.steampowered.com/app/1326470/) |  |
 | Space Engineers | 244850 | [RSS](https://store.steampowered.com/feeds/news/app/244850/) · [events](https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=244850&count_before=0&count_after=10&lang_list=0) · [store](https://store.steampowered.com/app/244850/) |  |
+| Splitgate 2 *(Steam: SPLITGATE: Arena Reloaded)* | 2918300 | [RSS](https://store.steampowered.com/feeds/news/app/2918300/) · [events](https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=2918300&count_before=0&count_after=10&lang_list=0) · [store](https://store.steampowered.com/app/2918300/) | renamed from Splitgate 2; appid found by store search 2026-11-23 |
 | Squad | 393380 | [RSS](https://store.steampowered.com/feeds/news/app/393380/) · [events](https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=393380&count_before=0&count_after=10&lang_list=0) · [store](https://store.steampowered.com/app/393380/) |  |
 | STALZONE | 1818450 | [RSS](https://store.steampowered.com/feeds/news/app/1818450/) · [events](https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=1818450&count_before=0&count_after=10&lang_list=0) · [store](https://store.steampowered.com/app/1818450/) | ⚠️ name was unclear in the recording; appid found by store search |
 | Star Trek Online | 9900 | [RSS](https://store.steampowered.com/feeds/news/app/9900/) · [events](https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=9900&count_before=0&count_after=10&lang_list=0) · [store](https://store.steampowered.com/app/9900/) |  |

@@ -21,7 +21,10 @@ These are odd things found while checking real feeds on 2026-11-23. Each one can
 | Two `<link>`s, image first | FFXIV Lodestone Atom | use `rel="alternate"` |
 | Relative links | Bungie (`/7/en/News/...`), Riot, Mojang images | resolve against the site |
 | Protocol-relative image URLs (`//host/...`) | Blizzard, Microsoft | prefix `https:` |
-| A JSON field that is itself a JSON string | Steam `jsondata`, HoYoverse `sExt` | parse twice |
+| A JSON field that is itself a JSON string | Steam `jsondata`, HoYoverse `sExt` | parse twice; Steam `jsondata` is sometimes `[]`, not an object (59 of 1978 posts) |
+| BBCode tags with attributes | Steam bodies: `[p align="start"]` (7072× in 1978 posts), `[url="…" style="…"]`, `[url= https://…]` (space after `=`), `[img src="…" style="…"]`, `[td colwidth="…"]`, `[color=#…]`, `[dynamiclink href="…"][/dynamiclink]` | match tags with optional attributes |
+| Every body starts with `<?xml encoding="utf-8"?>` | blender.org RSS (`content:encoded`) | drop processing instructions before HTML → text |
+| Hashed app-art paths | Steam `header.jpg` for newer apps | check the image; fall back to `library_hero.jpg`, then none |
 | Lists not sorted by date (pinned items first) | HoYoverse, Kuro, Jagex | sort by date after parsing |
 | One page = many entries, no per-entry link | ChatGPT / Claude apps release notes | use the date heading as the id |
 | "Living" articles that get edited instead of new posts | Diablo IV patch notes, Call of Duty patchnotes | watch the edit time / a content hash |

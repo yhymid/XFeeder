@@ -32,7 +32,7 @@ Format legend:
 | Minecraft Bedrock | https://launchercontent.mojang.com/v2/bedrockPatchNotes.json | JSON | all entries; `patchNoteType` (sometimes missing) | ✅ 200 | `v2/news.json` (`newsType` contains `Bedrock`) |
 | Genshin Impact | https://sg-public-api-static.hoyoverse.com/content_v2_user/app/a1b1f9d3315447cc/getContentList?iAppId=32&iChanId=397&iPageSize=10&iPage=1&sLangKey=en-us | JSON | channel 397 = Updates; title `/Update Details\|Maintenance/` | ✅ 200 | HoYoLAB official account (below) |
 | Honkai: Star Rail | https://sg-public-api-static.hoyoverse.com/content_v2_user/app/113fe6d3b4514cdd/getContentList?iPage=1&iPageSize=10&sLangKey=en-us&isPreview=0&iChanId=250 | JSON | channel 250 = notices; title `/Update Details/` | ✅ 200 | `iChanId=248` = all news |
-| Zenless Zone Zero | not researched yet | — | — | ❓ | Steam 4162040 |
+| Zenless Zone Zero | https://zenless.hoyoverse.com/en-us/news is a JS app (no entries in the HTML); its data comes from the same HoYoverse content API as Genshin, not tested here | — | — | ❌ no feed in the page (2026-11-23) | **Steam 4162040** |
 | Wuthering Waves | https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/json/G152/en/ArticleMenu.json | JSON (whole archive, unsorted) | title `/Patch Notes/` | ✅ 200 | Steam 3513350 |
 | GTA V / GTA Online | **no official feed** (Newswire is a JS app; `/newswire/rss` 404) | — | — | ❌ | **Steam 271590** (mirrors Newswire), Enhanced 3240220 |
 | Red Dead Redemption 2 | none (same as GTA) | — | — | ❌ | Steam 1174180 |
@@ -60,10 +60,10 @@ Format legend:
 | World of Warships | https://worldofwarships.eu/en/rss/news/ | **RSS** | `category = Game Updates` (+ `Work in Progress` = dev blog) | ✅ 200 | — |
 | Final Fantasy XIV | https://na.finalfantasyxiv.com/lodestone/news/news.xml | **Atom** | `category = Updates` (+ Maintenance) | ✅ 200 | `topics.xml` (big "Patch X.Y Notes") |
 | War Thunder | https://warthunder.com/en/game/changelog/ | HTML | whole page = changelog | ✅ 200 | Steam 236390 |
-| Escape from Tarkov | site is a JS app, no feed | — | — | ❌ | **Steam 3932890** |
-| Hytale | not researched yet | — | — | ❓ | — |
-| Splitgate 2 | not found on Steam under this name; not researched | — | — | ❓ | — |
-| AION 2 | not researched (NCSOFT) | — | — | ❓ | Steam 3393110 |
+| Escape from Tarkov | site is a JS app, no feed (rechecked 2026-11-23: `/news` has no links in the HTML, `/rss` 404) | — | — | ❌ | **Steam 3932890** |
+| Hytale | https://hytale.com/rss.xml | **RSS** | title `/PATCH NOTES\|HOTFIX/i` (the blog mixes in story posts) | ✅ 200 home and VPS (86 items, 2026-11-23) | — |
+| Splitgate 2 | renamed **SPLITGATE: Arena Reloaded**; https://www.splitgate.com/news is a JS app | — | — | ❌ no feed in the page | **Steam 2918300** (events JSON ✅) |
+| AION 2 | https://aion2.plaync.com/ is a JS app (no news links in the HTML, 2026-11-23) | — | — | ❌ no feed in the page | **Steam 3393110** |
 
 ## Details per publisher
 

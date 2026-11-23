@@ -210,20 +210,7 @@ fn steam_pics_text(p: &Value) -> (String, String, Option<u32>) {
 /// Discord cannot turn such a message into a V2 one later, so SteamMerge
 /// never edits these posts (`steam_merge::find`).
 fn steam_pics_embed(entry: &Value, p: &Value) -> (Value, String) {
-    let (name, mut text, accent) = steam_pics_text(p);
-    // One small grey line under the text, so it is as tall as the capsule
-    // beside it: when it changed (Discord's relative time) and the AppID.
-    let mut meta = Vec::new();
-    if let Some(dt) = crate::text::parse_date_str(&js::to_string_or_empty(get(entry, "isoDate"))) {
-        meta.push(format!("<t:{}:R>", dt.timestamp()));
-    }
-    let appid = js::to_string_or_empty(get(p, "appid"));
-    if !appid.is_empty() {
-        meta.push(format!("AppID {appid}"));
-    }
-    if !meta.is_empty() {
-        text.push_str(&format!("\n-# {}", meta.join(" · ")));
-    }
+    let (name, text, accent) = steam_pics_text(p);
     // Author line with the game's own icon: as tall as SteamDB's site line,
     // so the text reaches the bottom of the capsule.
     let author = match js::to_string_or_empty(get(p, "kind")).as_str() {
@@ -1202,7 +1189,6 @@ mod tests {
     #[test]
     fn steam_pics_entries_are_compact_like_steamdb_posts() {
         let entry = json!({ "title": "Counter-Strike 2: new branch 1.42.0.0",
-            "isoDate": "2026-11-19T12:58:18.000Z",
             "link": "https://steamdb.info/app/730/depots/?branch=1.42.0.0",
             "steamPics": { "name": "Counter-Strike 2", "appid": 730, "change": 41339549,
                 "changeLink": "https://steamdb.info/app/730/history/?changeid=41339549",
@@ -1236,8 +1222,7 @@ mod tests {
             embed["description"],
             "Changelist 41339549\n\
              Changed: **Depots (Added 1.42.0.0, [build 26798866](https://steamdb.info/patchnotes/26798866/))**\n\
-             -# Game version 1.42.0.0 (20-Nov-2026)\n\
-             -# <t:1795093098:R> · AppID 730"
+             -# Game version 1.42.0.0 (20-Nov-2026)"
         );
         assert_eq!(label, "Counter-Strike 2: new branch 1.42.0.0");
         // Removed branch: red, no build link.

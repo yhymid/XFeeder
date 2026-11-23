@@ -84,6 +84,21 @@ SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `pu
   - The output contains ANSI colour codes (`ESC[0m`), sometimes at the start of the `AppID :` line. Strip them before parsing.
   - The CS2 change number from SteamCMD (41339555) was the newest changelist on SteamDB's History tab, so the two agree.
   - A second check on 2026-11-23 with all 10 tracked apps plus one bogus AppID took **9.3 s**.
+  - **Valve tools** (names as Steam gives them, checked 2026-11-23 with anonymous SteamCMD):
+
+    | Tool | AppID | Builds visible anonymously? |
+    |---|---|---|
+    | Steam Linux Runtime 1.0 (scout) | 1070560 | ✅ |
+    | Steam Linux Runtime 2.0 (soldier) | 1391110 | ✅ |
+    | Steam Linux Runtime 3.0 (sniper) | 1628350 | ✅ |
+    | SteamVR | 250820 | ✅ |
+    | Steamworks Common Redistributables | 228980 | ✅ |
+    | Proton 6.3 | 1580130 | ✅ |
+    | Proton 3.16 / 7.0 / 8.0 / 9.0 / 10.0 | 961940 / 1887720 / 2348590 / 2805730 / 3658110 | ❌ no depots |
+    | Proton EasyAntiCheat Runtime / BattlEye Runtime | 1826330 / 1161040 | ❌ no depots |
+
+    Proton Experimental (1493710) came back as a garbled `AppID : 1715812046 … 1970` block in a batch run, so it is not usable this way.
+  - **More games to watch: Steam's own top 100.** `https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/` (no key) lists the 100 most played AppIDs. On 2026-11-23, 32 of them were not on this page yet; all 32 showed builds anonymously. The XFeeder PICS test tracks 241 apps (this page + top 100 + the ✅ tools above).
   - **All 203 AppIDs of this page in one run: 94 s**, 3.7 MB of output, every AppID known.
   - **Some apps show anonymous Steam only `common`**: no `depots`, so no builds or branches. On 2026-11-23: Deadlock (1422450), Risk of Rain 2 (632360), NARAKA: BLADEPOINT (1203220). Their change number still moves. SteamDB sees their builds because it logs in with an account that has access tokens, so for these games keep SteamDB's RSS or the store feed.
 - **Real CS2 History-tab data** (1835 changelists, 2023-03-18 → 2026-11-21, saved from a browser by the user):

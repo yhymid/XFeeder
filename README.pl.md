@@ -12,7 +12,7 @@ Szczegółowe pliki są po angielsku, bo adresy, pola i formaty i tak są angiel
 
 | Plik | Co jest w środku | Wpisów |
 |---|---|---|
-| [games/steam.md](games/steam.md) | Gry na Steamie: trzy źródła Steama, odróżnianie łatek od newsów, obrazki i wszystkie gry ze sprawdzonym AppID | 175 gier |
+| [games/steam.md](games/steam.md) | Gry na Steamie: trzy źródła Steama, odróżnianie łatek od newsów, obrazki i wszystkie gry ze sprawdzonym AppID | 195 gier |
 | [games/publishers.md](games/publishers.md) | Gry spoza Steama albo z lepszym źródłem niż Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix i inni | 49 gier |
 | [free-stuff.md](free-stuff.md) | Darmowe gry: Epic, Steam (do zatrzymania i darmowe weekendy), GOG, Xbox PC Game Pass (nowe / wkrótce / znikające / EA Play) | 4 sklepy |
 | [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon i chipset, Intel Arc i Arc Pro, Mesa | 9 źródeł |

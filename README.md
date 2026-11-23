@@ -10,7 +10,7 @@ The code of the bot is on the [`main`](https://github.com/yhymid/XFeeder/tree/ma
 
 | File | What is inside | Entries |
 |---|---|---|
-| [games/steam.md](games/steam.md) | PC games on Steam: how Steam's three sources work, how to tell patches from news, images, and every game with a checked AppID | 175 games |
+| [games/steam.md](games/steam.md) | PC games on Steam: how Steam's three sources work, how to tell patches from news, images, and every game with a checked AppID | 195 games |
 | [games/publishers.md](games/publishers.md) | Games outside Steam, or with a better source than Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix and others | 49 games |
 | [free-stuff.md](free-stuff.md) | Free games: Epic, Steam (free to keep and free weekends), GOG, Xbox PC Game Pass (added / coming / leaving / EA Play) | 4 stores |
 | [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon and chipset, Intel Arc and Arc Pro, Mesa | 9 sources |

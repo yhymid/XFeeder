@@ -27,6 +27,7 @@ mod solver;
 mod state;
 mod steam_events;
 mod steam_merge;
+mod steam_pics;
 mod telemetry;
 mod text;
 mod xmltree;

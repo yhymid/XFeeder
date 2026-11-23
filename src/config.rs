@@ -733,7 +733,7 @@ const RESERVED_ROOT: [&str; 9] = [
 
 fn is_http(text: &str) -> bool {
     let lower = text.get(..8).unwrap_or(text).to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
+    lower.starts_with("http://") || lower.starts_with("https://") || crate::steam_pics::is_url(text)
 }
 
 fn looks_like_channel(value: &Value) -> bool {

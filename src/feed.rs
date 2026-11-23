@@ -934,6 +934,31 @@ impl Pipeline<'_> {
         allow_scrapling: bool,
         discovered: &mut Option<String>,
     ) -> Result<(Outcome, Option<(String, bool)>), Stop> {
+        if crate::steam_pics::is_url(url) {
+            let got = crate::steam_pics::fetch(
+                &self.config.root,
+                self.base,
+                url,
+                self.state.persist,
+                self.cancel,
+            )
+            .await;
+            if got.cancelled {
+                return Err(Stop::Cancelled);
+            }
+            let report = got
+                .failure
+                .as_ref()
+                .map(|_| ("STEAMPICS_FAILED".to_string(), false));
+            return Ok((
+                Outcome {
+                    items: got.items,
+                    failure: got.failure,
+                    source: None,
+                },
+                report,
+            ));
+        }
         let started = Instant::now();
         let validator = self.state.validator(url);
         expert(

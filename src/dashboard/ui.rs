@@ -2845,8 +2845,11 @@ impl ChannelForm {
             return Err("Add at least one source URL.".into());
         }
         for url in &sources {
-            if !url.starts_with("http://") && !url.starts_with("https://") {
-                return Err(format!("Not an http(s) URL: {url}"));
+            if !url.starts_with("http://")
+                && !url.starts_with("https://")
+                && !crate::steam_pics::is_url(url)
+            {
+                return Err(format!("Not an http(s) or steampics:// URL: {url}"));
             }
         }
         let number = |label: &str, text: &str| -> Result<Option<Value>, String> {

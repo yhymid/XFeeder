@@ -15,6 +15,13 @@ section below as its description.
   sorted by Steam's own event type into `Patch`, `Major update`, `Beta`, `Release` and
   `News` categories for `Filters`. Broadcasts and streams are left out, images come from
   the post, and SteamMerge treats it like the store RSS. The RSS keeps working as before.
+- Steam builds and branches from Steam itself: `steampics://APPID` reads Steam's product
+  info with anonymous SteamCMD (one run for all apps, at most every 10 minutes) and posts a
+  new public build (with the depot size change), branches added or removed (CS2's version
+  pins such as `1.42.0.0`) and new builds on other branches. Build posts link SteamDB's patch
+  notes page like SteamDB's RSS does, so switching sends nothing twice, and SteamMerge joins
+  them with the announcement. Every raw change is logged to `steam_pics.changes.jsonl`.
+  Settings: `Settings.SteamPics`.
 
 ### Fixed
 - A user mention (`<@ID>`) written in a feed entry could notify that user (Discord's

@@ -19,6 +19,9 @@
 //! ```json
 //! "Settings": { "SteamMerge": { "Enabled": true, "WindowHours": 12 } }
 //! ```
+//! `steampics://APPID` builds count as SteamDB builds; only their `Build`
+//! entries (new public build) join, branch entries stay their own posts.
+//!
 //! Off without the key or with `false`: every entry is its own post, as
 //! before.
 
@@ -72,6 +75,9 @@ static UPDATE_WORDS: LazyLock<Regex> = LazyLock::new(|| {
 
 /// `(is_steamdb, appid)` of a Steam store news or SteamDB patch notes feed.
 pub fn kind(source: &str) -> Option<(bool, String)> {
+    if let Some(app) = crate::steam_pics::appid(source.trim()) {
+        return Some((true, app.to_string()));
+    }
     if let Some(c) = STEAMDB_FEED.captures(source) {
         return Some((true, c[1].to_string()));
     }
@@ -80,6 +86,12 @@ pub fn kind(source: &str) -> Option<(bool, String)> {
         .map(|c| c[1].to_string())
         .or_else(|| crate::steam_events::appid(source))
         .map(|app| (false, app))
+}
+
+/// Steam PICS branch entries are not game updates and never join.
+fn joinable(source: &str, entry: &Value) -> bool {
+    !crate::steam_pics::is_url(source.trim())
+        || js::get(entry, "categories").get(0).and_then(Value::as_str) == Some("Build")
 }
 
 fn text(entry: &Value, field: &str) -> String {
@@ -136,12 +148,16 @@ pub fn find(
     merge: &Merge,
 ) -> Option<(Record, Value)> {
     let (is_db, app) = kind(source)?;
+    if !joinable(source, entry) {
+        return None;
+    }
     let record = records
         .iter()
         .rev()
         .filter(|r| r.channel == channel_key && now_ms - r.sent_at <= merge.window_ms)
         .find(|r| {
             r.entry.get("merged").is_none()
+                && joinable(&r.source, &r.entry)
                 && kind(&r.source).is_some_and(|(db, a)| db != is_db && a == app)
         })?;
     let (announcement, build) = if is_db {
@@ -242,6 +258,29 @@ mod tests {
         // Two builds the same day: the second build is a new post.
         let merged_already = vec![record("5", STORE, merged, 1)];
         assert!(find(&merged_already, "ch", DB, &build(9), NOW, &m).is_none());
+    }
+
+    #[test]
+    fn steam_pics_builds_join_but_branches_do_not() {
+        let m = Merge {
+            window_ms: 12 * 3_600_000,
+        };
+        const PICS: &str = "steampics://730";
+        let pics = |kind: &str| {
+            let mut e = build(3);
+            e["categories"] = json!([kind, "branch:public", "SteamPICS"]);
+            e
+        };
+        assert_eq!(kind(PICS), Some((true, "730".into())));
+        let posted = vec![record("5", STORE, announcement("Patch 1.2.3"), 2)];
+        assert!(find(&posted, "ch", PICS, &pics("Build"), NOW, &m).is_some());
+        assert!(find(&posted, "ch", PICS, &pics("Branch added"), NOW, &m).is_none());
+        let builds = vec![
+            record("1", PICS, pics("Build"), 2),
+            record("2", PICS, pics("Branch added"), 1),
+        ];
+        let (target, _) = find(&builds, "ch", STORE, &announcement("Update"), NOW, &m).unwrap();
+        assert_eq!(target.message_id, "1");
     }
 
     #[test]

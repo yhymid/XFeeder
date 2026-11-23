@@ -45,6 +45,21 @@ From Valve's `EProtoClanEventType`, checked against real posts:
 - Title regex that catches the type-28 patches:
   `(?i)\b(patch(\s*notes)?|hotfix|update\s*v?\d|v?\d+\.\d+(\.\d+)?\b.*(released|stable|unstable)|release notes|changelog)\b`
 
+## Build and branch changes (what SteamDB's History tab shows)
+
+SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `public` branch `buildid` changes (old › new), added or removed branches (betas, version pins such as CS2 `1.42.0.0`), depot size deltas, and noise (`review_percentage`, community items, timeline markers). Checked on 2026-11-23:
+
+- **SteamDB forbids scraping it.** The FAQ says "We also do not allow scraping/crawling on SteamDB … get the information from Steam itself" and warns about automatic bans. The page answers **403** to a non-browser client from home and from the XFeeder VPS.
+- **`/api/PatchnotesRSS/` is `Disallow`ed in robots.txt**, and the FAQ says the RSS "is heavily cached and is not intended to be used for automatically monitoring for new patches". It still answers 200 (with `ttl` 3600) from home and the VPS. Prod polls it every 30 minutes for 8 apps.
+- **The same data comes from Steam itself (PICS)**, as the SteamDB FAQ suggests. Anonymous SteamCMD returns it without an account:
+  `steamcmd +login anonymous +app_info_update 1 +app_info_print <APPID> [+app_info_print <APPID> …] +quit`
+  - `depots.branches.<name>` gives `buildid`, `description`, `timeupdated` and `timebuildupdated`. For CS2 on 2026-11-23, `public` = 26798866, the same as SteamDB's newest PatchnotesRSS item. `1.42.0.0` and the other version pins are listed with their descriptions.
+  - `depots.<id>.manifests.public` gives `gid`, `size` and `download` per depot (the size deltas on the History tab).
+  - `privatebranches` = 1 means that password branches exist; they are not listed.
+  - Cost: one run for 8 apps took **8 s** on the VPS once SteamCMD had updated itself. The first run of the day downloads a 41 MB self-update (24 s).
+  - `/usr/games/steamcmd` is already installed on the XFeeder VPS.
+- What to track: a `public` buildid change = new build (link `https://steamdb.info/patchnotes/<buildid>/` for humans, `https://store.steampowered.com/news/app/<APPID>` for the official notes); a branch that appears or disappears = new beta / version pin; a non-public buildid change = beta update. Ignore everything else. Dedupe by `<appid>:<branch>:<buildid>`.
+
 ## Images
 
 - **App art guesses:** `store_item_assets/steam/apps/<APPID>/header.jpg` is missing (404) for 22 of 202 apps checked on 2026-11-23, because newer apps keep it under a hashed path (`…/<APPID>/<hash>/header.jpg`, given by `api/appdetails` as `header_image`). `library_hero.jpg` exists for 194 of 202; 7 apps have neither. XFeeder (Beta 5a8fddc) checks header → library hero → no image.

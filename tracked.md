@@ -58,5 +58,5 @@ Each game pairs the official store RSS with SteamDB's patch-notes RSS, and XFeed
 | Steam News | 593110 | store RSS |
 | Steam group 39049601 | — | https://store.steampowered.com/feeds/news/group/39049601 (Valve's "RSS Feed" group: store features such as Next Fest) |
 
-- **SteamDB is a community source**: `https://steamdb.info/api/PatchnotesRSS/?appid=<APPID>` (200 on 2026-11-23). It sees build changes that Valve never announces, but it can go away at any time, so the official store RSS (or the events JSON) stays the main source.
+- **SteamDB is a community source**: `https://steamdb.info/api/PatchnotesRSS/?appid=<APPID>` (200 on 2026-11-23). It sees build changes that Valve never announces, but robots.txt `Disallow`s `/api/PatchnotesRSS/` and the SteamDB FAQ says the RSS is not meant for automatic monitoring. The same build data comes from Steam directly through anonymous SteamCMD/PICS; see [games/steam.md](games/steam.md#build-and-branch-changes-what-steamdbs-history-tab-shows).
 - To split patches from news, the store events JSON can replace the store RSS without reposts (see [games/steam.md](games/steam.md)).

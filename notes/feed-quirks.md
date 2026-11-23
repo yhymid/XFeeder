@@ -47,6 +47,7 @@ These are odd things found while checking real feeds on 2026-11-23. Each one can
 | Datacenter IP blocked with any UA | intel.com, en-forum.guildwars2.com (403 "Request not allowed from this Internet Service Provider") from the XFeeder VPS | browser fallback or another source (GW2: Steam 1284210) |
 | Page missing its data block 1 time in 4 | amd.com | a missing block means "no data", never "removed" |
 | 410 Gone after an API retirement | Artificial Analysis v2 data API | drop the source |
+| Scraping forbidden by the site | steamdb.info (FAQ + 403 to non-browser clients; robots.txt `Disallow: /api/PatchnotesRSS/`) | take the data from Steam itself (anonymous SteamCMD `app_info_print`) |
 | Login wall instead of a feed | Reddit `.rss` (404 / 429 / "Welcome to Reddit") | do not use without OAuth |
 | Feed advertised in `<head>` but returns HTML | Star Citizen comm-link RSS | check the body |
 | 308 / 301 / 307 redirect | WordPress `/rss` → `/feed/` (gry-wideo.pl, lowcygier.pl), Mesa news RSS (drops `www.`), Gemini blog RSS, Fall Guys and Rocket League news (`?lang=`) | follow it and store the new address |
@@ -61,4 +62,6 @@ These are odd things found while checking real feeds on 2026-11-23. Each one can
 | Epic free games | CDN cached | 30 min |
 | Game Pass lists | — | 6 h |
 | NVIDIA / AMD / Intel | Akamai caches (AMD `max-age=900`) | 30–60 min |
+| SteamDB PatchnotesRSS | `ttl` 3600, "heavily cached" | ≥ 60 min, or replace with SteamCMD/PICS |
+| SteamCMD `app_info_print` (PICS) | one login per run; 8 apps in 8 s | 10–15 min, all apps in one run |
 | GitHub `releases.atom` | 10 entries only | 15–30 min for busy repos |

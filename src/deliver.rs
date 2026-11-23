@@ -211,10 +211,24 @@ fn steam_pics_text(p: &Value) -> (String, String, Option<u32>) {
 /// never edits these posts (`steam_merge::find`).
 fn steam_pics_embed(entry: &Value, p: &Value) -> (Value, String) {
     let (name, text, accent) = steam_pics_text(p);
+    // Author line with the game's own icon: as tall as SteamDB's site line,
+    // so the text reaches the bottom of the capsule.
+    let author = match js::to_string_or_empty(get(p, "kind")).as_str() {
+        "Current" => "Current build",
+        "Build" => "New build",
+        "Branch added" => "Branch added",
+        "Branch build" => "Branch build",
+        "Branch removed" => "Branch removed",
+        _ => "Steam change",
+    };
     let mut embed = json!({
+        "author": { "name": author },
         "title": safe_text(&json!(name), 256),
         "description": safe_text(&json!(text), 4000),
     });
+    if let Some(icon) = http_url(get(p, "icon")) {
+        embed["author"]["icon_url"] = json!(icon);
+    }
     if let Some(link) = http_url(get(p, "changeLink")) {
         embed["url"] = json!(link);
     }
@@ -1181,12 +1195,18 @@ mod tests {
                 "kind": "Branch added", "branch": "1.42.0.0", "buildid": "26798866",
                 "buildLink": "https://steamdb.info/patchnotes/26798866/",
                 "description": "Game version 1.42.0.0 (20-Nov-2026)",
-                "thumbnail": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_600x900.jpg" } });
+                "thumbnail": "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/library_600x900.jpg",
+                "icon": "https://shared.fastly.steamstatic.com/community_assets/images/apps/730/i.jpg" } });
         let (payload, label) = webhook_payload(&entry);
         // A classic embed: its thumbnail keeps the portrait shape.
         assert!(payload.get("flags").is_none() && payload.get("components").is_none());
         let embed = &payload["embeds"][0];
         assert_eq!(embed["title"], "Counter-Strike 2");
+        assert_eq!(embed["author"]["name"], "Branch added");
+        assert_eq!(
+            embed["author"]["icon_url"],
+            "https://shared.fastly.steamstatic.com/community_assets/images/apps/730/i.jpg"
+        );
         assert_eq!(
             embed["url"],
             "https://steamdb.info/app/730/history/?changeid=41339549"

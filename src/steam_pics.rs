@@ -355,6 +355,16 @@ fn capsule_image(flat: &BTreeMap<String, String>, appid: u32) -> Option<String> 
     })
 }
 
+/// The app's small community icon (32×32), for the post's author line.
+fn icon_image(flat: &BTreeMap<String, String>, appid: u32) -> Option<String> {
+    let hash = flat.get("common/icon")?.trim();
+    (hash.len() == 40 && hash.bytes().all(|b| b.is_ascii_hexdigit())).then(|| {
+        format!(
+            "https://shared.fastly.steamstatic.com/community_assets/images/apps/{appid}/{hash}.jpg"
+        )
+    })
+}
+
 fn human_delta(delta: i128) -> String {
     let sign = if delta < 0 { "-" } else { "+" };
     let bytes = delta.unsigned_abs() as f64;
@@ -399,6 +409,7 @@ struct Ctx<'a> {
     name: &'a str,
     image: Option<String>,
     capsule: Option<String>,
+    icon: Option<String>,
     change: u64,
     now: i64,
 }
@@ -422,6 +433,7 @@ impl Ctx<'_> {
             "kind": labels[0],
             "branch": labels[1],
             "thumbnail": self.capsule.clone().or_else(|| self.image.clone()),
+            "icon": self.icon,
         });
         if let (Value::Object(base), Value::Object(extra)) = (&mut pics, detail) {
             base.extend(extra);
@@ -463,6 +475,7 @@ fn current_build(
         name: &name,
         image: header_image(flat, appid),
         capsule: capsule_image(flat, appid),
+        icon: icon_image(flat, appid),
         change,
         now,
     };
@@ -506,6 +519,7 @@ pub fn diff(
         name: &name,
         image: header_image(new, appid),
         capsule: capsule_image(new, appid),
+        icon: icon_image(new, appid),
         change,
         now,
     };
@@ -943,6 +957,12 @@ mod tests {
         );
         assert!(b.contains_key("1.42.0.0"));
         assert!(public_size(&cs2.flat).is_some_and(|s| s > 10_000_000_000));
+        assert_eq!(
+            icon_image(&cs2.flat, 730).as_deref(),
+            Some(
+                "https://shared.fastly.steamstatic.com/community_assets/images/apps/730/8dbc71957312bbd3baea65848b545be9eae2a355.jpg"
+            )
+        );
         assert_eq!(
             header_image(&cs2.flat, 730).as_deref(),
             Some(

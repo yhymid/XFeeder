@@ -322,8 +322,12 @@ pub fn normalize_link(input: &str) -> String {
     url.to_string()
 }
 
-/// Delivery identity: link > guid > stable content hash.
+/// Delivery identity: `identityKey` (set by `parsers::finish` for entries
+/// that share a link) > link > guid > stable content hash.
 pub fn entry_identity(entry: &Value, discord: bool) -> String {
+    if let Some(key) = js::trimmed_str(js::get(entry, "identityKey")) {
+        return key.to_string();
+    }
     // `sourceLink`: the link as the feed wrote it, before it was made absolute,
     // so entries delivered earlier keep their identity.
     let direct = js::or(&[

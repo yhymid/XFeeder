@@ -15,6 +15,15 @@ section below as its description.
 - A user mention (`<@ID>`) written in a feed entry could notify that user (Discord's
   webhook default parses user mentions). Every webhook post now sends `allowed_mentions`,
   so only the mentions configured in `Ping` notify.
+- Entries that share one link but have different guids (kernel.org lists every release with
+  `https://www.kernel.org/`) were treated as one entry, so only the first was ever sent.
+  They now get their own identity; feeds with unique links keep theirs.
+- RSS 1.0 / RDF feeds (Slashdot, Debian News) gave no entries. Items under `<rdf:RDF>` are
+  read now, with `dc:date` dates and `rdf:about` links.
+- Podcast feeds used the audio file as the post image. Enclosures are used only when they
+  are images; `media:group` and `itunes:image` are read too.
+- Category filters did not match Atom categories (`term`/`label`) or RSS categories with a
+  `domain` attribute (GitHub Changelog): categories are plain text now.
 
 ## 3.0 - Rust Update (2026-11-21)
 

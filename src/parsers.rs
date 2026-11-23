@@ -164,6 +164,67 @@ fn string_value(value: &Value) -> Value {
     }
 }
 
+/// Categories as plain strings. XML gives objects for categories with
+/// attributes: Atom `<category term="AI" label="…"/>`, RSS
+/// `<category domain="…">Improvement</category>`; filters need the text.
+fn category_list(value: &Value) -> Value {
+    let mut out: Vec<String> = Vec::new();
+    for item in as_list(value) {
+        let label = js::to_string_or_empty(or(&[
+            path(item, &["ATTR", "label"]),
+            path(item, &["ATTR", "term"]),
+        ]));
+        let text = if label.trim().is_empty() {
+            node_text(item)
+        } else {
+            label
+        };
+        let text = text.trim();
+        if !text.is_empty() && !out.iter().any(|t| t == text) {
+            out.push(text.to_string());
+        }
+    }
+    json!(out)
+}
+
+/// Whether a media element points at an image: by `type`/`medium`, or by
+/// the file extension when neither is given. Podcast enclosures are audio.
+fn is_image_media(node: &Value, url: &str) -> bool {
+    let kind = js::to_string_or_empty(path(node, &["ATTR", "type"])).to_lowercase();
+    let medium = js::to_string_or_empty(path(node, &["ATTR", "medium"])).to_lowercase();
+    if !kind.is_empty() || !medium.is_empty() {
+        return kind.starts_with("image/") || medium == "image";
+    }
+    let bare = url.split(['?', '#']).next().unwrap_or("").to_lowercase();
+    ![
+        ".mp3", ".m4a", ".aac", ".mp4", ".m4v", ".ogg", ".oga", ".opus", ".wav", ".webm", ".mov",
+        ".pdf", ".zip",
+    ]
+    .iter()
+    .any(|ext| bare.ends_with(ext))
+}
+
+/// The item's image: enclosure, `media:content`, `media:thumbnail` (also in
+/// `media:group`), `itunes:image`, in that order. Only real images count.
+fn item_image(e: &Value) -> Option<String> {
+    let group = get(e, "media:group");
+    let candidates = [
+        (get(e, "enclosure"), "url"),
+        (get(e, "media:content"), "url"),
+        (get(e, "media:thumbnail"), "url"),
+        (get(group, "media:content"), "url"),
+        (get(group, "media:thumbnail"), "url"),
+        (get(e, "itunes:image"), "href"),
+    ];
+    candidates.into_iter().find_map(|(value, attr)| {
+        as_list(value).into_iter().find_map(|node| {
+            let url = js::to_string_or_empty(path(node, &["ATTR", attr]));
+            let url = url.trim();
+            (!url.is_empty() && is_image_media(node, url)).then(|| url.to_string())
+        })
+    })
+}
+
 // ---------------------------------------------------------------- Finish --
 
 /// Fixes applied to the entries of every feed after parsing (not to Discord
@@ -242,7 +303,52 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
             }
         }
     }
+    mark_shared_links(&mut items);
     items
+}
+
+/// Entries that share one link but have different guids (kernel.org lists
+/// every release with `https://www.kernel.org/`) would all get the same
+/// identity, so only the first one would ever be sent. Give those entries
+/// `identityKey` = `link#guid`. Entries with a unique link keep their
+/// identity, so the history of every other feed stays valid.
+fn mark_shared_links(items: &mut [Value]) {
+    let link_of = |item: &Value| {
+        crate::text::normalize_link(&js::to_string_or_empty(or(&[
+            get(item, "sourceLink"),
+            get(item, "link"),
+        ])))
+    };
+    let mut counts: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for item in items.iter() {
+        let link = link_of(item);
+        if !link.is_empty() {
+            counts
+                .entry(link)
+                .or_default()
+                .push(js::to_string_or_empty(get(item, "guid")));
+        }
+    }
+    for item in items.iter_mut() {
+        let link = link_of(item);
+        let guid = js::to_string_or_empty(get(item, "guid"));
+        let Some(guids) = counts.get(&link) else {
+            continue;
+        };
+        let distinct = guids.iter().filter(|g| **g == guid).count() == 1;
+        if guids.len() > 1
+            && distinct
+            && !guid.trim().is_empty()
+            && guid.trim() != link
+            && let Some(map) = item.as_object_mut()
+        {
+            map.insert(
+                "identityKey".into(),
+                json!(format!("{link}#{}", guid.trim())),
+            );
+        }
+    }
 }
 
 /// Drop the title (and a site-name line before it) from the start of the text.
@@ -420,11 +526,7 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
             ]));
             let content = snippet(&description, 500);
             let guid = or(&[get(e, "id"), &link, &json!(title.clone())]).clone();
-            let categories = match get(e, "category") {
-                Value::Null => json!([]),
-                Value::Array(list) => Value::Array(list.clone()),
-                other => json!([other]),
-            };
+            let categories = category_list(get(e, "category"));
             entry(
                 title,
                 link,
@@ -457,6 +559,11 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
         ("Atom", as_list(path(&doc, &["feed", "entry"])))
     } else if truthy(path(&doc, &["channel", "item"])) {
         ("RSS (no-root)", as_list(path(&doc, &["channel", "item"])))
+    } else if truthy(path(&doc, &["rdf:RDF", "item"])) {
+        // RSS 1.0: items are siblings of <channel>, under <rdf:RDF>.
+        ("RDF", as_list(path(&doc, &["rdf:RDF", "item"])))
+    } else if truthy(path(&doc, &["RDF", "item"])) {
+        ("RDF", as_list(path(&doc, &["RDF", "item"])))
     } else {
         crate::info!(
             "XML Parser",
@@ -476,6 +583,7 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
                 path(e, &["link", "ATTR", "href"]),
                 path(e, &["link", "VALUE"]),
                 get(e, "link"),
+                path(e, &["ATTR", "rdf:about"]),
             ]);
             let link = if truthy(link) {
                 string_value(link)
@@ -494,6 +602,7 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
                 get(e, "published"),
                 get(e, "updated"),
                 get(e, "created"),
+                get(e, "dc:date"),
             ]);
             let raw = node_text(or(&[
                 path(e, &["content:encoded", "VALUE"]),
@@ -505,21 +614,10 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
                 path(e, &["description", "VALUE"]),
                 get(e, "description"),
             ]));
-            let image = or(&[
-                path(e, &["enclosure", "ATTR", "url"]),
-                path(e, &["media:content", "ATTR", "url"]),
-                path(e, &["media:thumbnail", "ATTR", "url"]),
-            ]);
-            let image = if truthy(image) {
-                image.clone()
-            } else {
-                first_image_in_html(&raw).map_or(Value::Null, Value::String)
-            };
-            let categories = match get(e, "category") {
-                Value::Array(list) => Value::Array(list.clone()),
-                v if truthy(v) => json!([v]),
-                _ => json!([]),
-            };
+            let image = item_image(e)
+                .or_else(|| first_image_in_html(&raw))
+                .map_or(Value::Null, Value::String);
+            let categories = category_list(get(e, "category"));
             let guid = or(&[path(e, &["guid", "VALUE"]), get(e, "guid"), &link]).clone();
             entry(
                 title,
@@ -873,13 +971,13 @@ pub fn parse_rss(url: &str, body: &Body) -> Vec<Value> {
     static ITEM: OnceLock<Regex> = OnceLock::new();
     static ENTRY: OnceLock<Regex> = OnceLock::new();
     let mut kind = "RSS";
-    let mut blocks: Vec<String> = re(&ITEM, r"(?is)<item>(.*?)</item>")
+    let mut blocks: Vec<String> = re(&ITEM, r"(?is)<item\b[^>]*>(.*?)</item>")
         .captures_iter(&body.text)
         .map(|c| c[1].to_string())
         .collect();
     if blocks.is_empty() {
         kind = "Atom";
-        blocks = re(&ENTRY, r"(?is)<entry>(.*?)</entry>")
+        blocks = re(&ENTRY, r"(?is)<entry\b[^>]*>(.*?)</entry>")
             .captures_iter(&body.text)
             .map(|c| c[1].to_string())
             .collect();
@@ -905,6 +1003,12 @@ pub fn parse_rss(url: &str, body: &Body) -> Vec<Value> {
             .unwrap_or_default();
             static IMG: OnceLock<Regex> = OnceLock::new();
             let image = tag_attr(block, "enclosure", "url")
+                .filter(|u| {
+                    // Podcast enclosures are audio: use an enclosure only when
+                    // it is (or looks like) an image.
+                    let node = json!({ "ATTR": { "type": tag_attr(block, "enclosure", "type") } });
+                    is_image_media(&node, u)
+                })
                 .or_else(|| tag_attr(block, "media:content", "url"))
                 .or_else(|| tag_attr(block, "media:thumbnail", "url"))
                 .or_else(|| {
@@ -958,7 +1062,7 @@ pub fn regex_items(body: &str) -> Vec<Value> {
     }
     static ITEM: OnceLock<Regex> = OnceLock::new();
     static TAGS: OnceLock<Regex> = OnceLock::new();
-    re(&ITEM, r"<item>([\s\S]*?)</item>")
+    re(&ITEM, r"<item\b[^>]*>([\s\S]*?)</item>")
         .captures_iter(body)
         .map(|c| {
             let block = &c[1];
@@ -1421,5 +1525,85 @@ mod tests {
             items[1]["enclosure"],
             "https://i.ytimg.com/vi/GOUuN2Zivys/maxresdefault.jpg"
         );
+    }
+
+    #[test]
+    fn rdf_feed_items_are_read() {
+        let xml = r#"<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="https://example.org/"><title>Ex</title></channel>
+  <item rdf:about="https://example.org/a"><title>First</title><link>https://example.org/a</link><dc:date>2026-11-20T10:00:00Z</dc:date></item>
+  <item rdf:about="https://example.org/b"><title>Second</title><dc:date>2026-11-21T10:00:00Z</dc:date></item>
+</rdf:RDF>"#;
+        let items = parse_xml("https://example.org/rdf", &Body::new(xml.into()));
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["title"], "First");
+        assert_eq!(items[0]["isoDate"], "2026-11-20T10:00:00.000Z");
+        assert_eq!(items[1]["link"], "https://example.org/b");
+        let regex = parse_rss("https://example.org/rdf", &Body::new(xml.into()));
+        assert_eq!(regex.len(), 2);
+    }
+
+    #[test]
+    fn podcast_audio_is_not_an_image() {
+        let xml = r#"<?xml version="1.0"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<channel><title>P</title>
+  <item><title>Ep 1</title><link>https://p.example/1</link>
+    <enclosure url="https://p.example/1.mp3" type="audio/mpeg" length="1"/>
+    <itunes:image href="https://p.example/1.jpg"/></item>
+  <item><title>Ep 2</title><link>https://p.example/2</link>
+    <enclosure url="https://p.example/2.mp3?x=1" length="1"/></item>
+  <item><title>Ep 3</title><link>https://p.example/3</link>
+    <enclosure url="https://p.example/3.mp3" type="audio/mpeg"/>
+    <enclosure url="https://p.example/3.png" type="image/png"/></item>
+</channel></rss>"#;
+        let items = parse_xml("https://p.example/feed", &Body::new(xml.into()));
+        assert_eq!(items[0]["enclosure"], "https://p.example/1.jpg");
+        assert_eq!(items[1]["enclosure"], Value::Null);
+        assert_eq!(items[2]["enclosure"], "https://p.example/3.png");
+        let regex = parse_rss("https://p.example/feed", &Body::new(xml.into()));
+        assert_ne!(regex[0]["enclosure"], "https://p.example/1.mp3");
+    }
+
+    #[test]
+    fn categories_are_plain_text() {
+        let atom = r#"<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
+<entry><title>T</title><id>x</id><link rel="alternate" href="https://a/1"/>
+<category term="AI"/><category term="ai-x" label="Policy"/><category term="AI"/></entry></feed>"#;
+        let items = parse_atom("https://a/feed", &Body::new(atom.into()));
+        assert_eq!(items[0]["categories"], json!(["AI", "Policy"]));
+        let rss = r#"<?xml version="1.0"?><rss version="2.0"><channel><item><title>T</title>
+<link>https://a/1</link><category domain="changelog-type">Improvement</category>
+<category domain="changelog-label">copilot</category></item></channel></rss>"#;
+        let items = parse_xml("https://a/rss", &Body::new(rss.into()));
+        assert_eq!(items[0]["categories"], json!(["Improvement", "copilot"]));
+        let (filter, _) = crate::filter::Filter::parse(
+            &json!({ "Include": ["copilot"], "Fields": ["categories"] }),
+        );
+        assert!(filter.unwrap().accepts(&items[0], 0));
+    }
+
+    #[test]
+    fn entries_sharing_a_link_get_their_own_identity() {
+        let xml = r#"<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>7.4-rc4</title><link>https://www.kernel.org/</link><guid isPermaLink="false">kernel.org,mainline,7.4-rc4</guid></item>
+<item><title>7.3.2</title><link>https://www.kernel.org/</link><guid isPermaLink="false">kernel.org,stable,7.3.2</guid></item>
+<item><title>Other</title><link>https://www.kernel.org/other</link><guid>g3</guid></item>
+</channel></rss>"#;
+        let url = "https://www.kernel.org/feeds/kdist.xml";
+        let items = finish(url, parse_xml(url, &Body::new(xml.into())));
+        let ids: Vec<String> = items
+            .iter()
+            .map(|e| crate::text::entry_identity(e, false))
+            .collect();
+        assert_ne!(ids[0], ids[1]);
+        assert!(ids[0].ends_with("#kernel.org,mainline,7.4-rc4"), "{ids:?}");
+        // A unique link keeps the identity it always had.
+        assert_eq!(
+            ids[2],
+            crate::text::normalize_link("https://www.kernel.org/other")
+        );
+        assert_eq!(finish(url, items.clone()), items);
     }
 }

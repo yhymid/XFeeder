@@ -12,13 +12,14 @@ Szczegółowe pliki są po angielsku, bo adresy, pola i formaty i tak są angiel
 
 | Plik | Co jest w środku | Wpisów |
 |---|---|---|
-| [games/steam.md](games/steam.md) | Gry na Steamie: trzy źródła Steama, odróżnianie łatek od newsów, obrazki i wszystkie gry ze sprawdzonym AppID | 195 gier |
+| [games/steam.md](games/steam.md) | Gry na Steamie: trzy źródła Steama, odróżnianie łatek od newsów, obrazki i wszystkie gry ze sprawdzonym AppID | 202 gry |
 | [games/publishers.md](games/publishers.md) | Gry spoza Steama albo z lepszym źródłem niż Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix i inni | 49 gier |
 | [free-stuff.md](free-stuff.md) | Darmowe gry: Epic, Steam (do zatrzymania i darmowe weekendy), GOG, Xbox PC Game Pass (nowe / wkrótce / znikające / EA Play) | 4 sklepy |
 | [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon i chipset, Intel Arc i Arc Pro, Mesa | 9 źródeł |
 | [ai.md](ai.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 źródeł |
 | [game-dev.md](game-dev.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stabilne / testowe), s&box | 7 narzędzi |
-| [index.md](index.md) | Wszystko powyżej od A do Z, z informacją, czy XFeeder czyta to już dziś (test z 2026-11-23) | 284 wiersze |
+| [tracked.md](tracked.md) | Co XFeeder śledzi na produkcji: polskie newsy, darmowe gry, repozytoria, YouTube, Steam (ze SteamDB) | 49 feedów |
+| [index.md](index.md) | Wszystko powyżej od A do Z, z informacją, czy XFeeder czyta to już dziś (test z 2026-11-23) | 297 wierszy |
 | [notes/feed-quirks.md](notes/feed-quirks.md) | Dziwactwa prawdziwych feedów: formaty, daty, blokady, limity odpytywania | — |
 
 ## Zasady bazy

@@ -11,7 +11,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 - ❌: no usable official source; see the row in the linked file for the fallback.
 - ❓: not researched yet.
 
-284 rows.
+297 rows.
 
 | Name | File | Source | XFeeder today |
 |---|---|---|---|
@@ -46,6 +46,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Black Desert Online | [games/steam.md](games/steam.md) | Steam 582660 | ✅ events JSON / RSS |
 | Blender | [game-dev.md](game-dev.md) | game dev | ✅ RSS/Atom |
 | Bodycam | [games/steam.md](games/steam.md) | Steam 2406770 | ✅ events JSON / RSS |
+| boop.pl | [tracked.md](tracked.md) | news / video | ✅ RSS (home only; the VPS gets 403) |
 | Borderlands 4 | [games/steam.md](games/steam.md) | Steam 1285190 | ✅ events JSON / RSS |
 | Brawlhalla | [games/steam.md](games/steam.md) | Steam 291550 | ✅ events JSON / RSS |
 | Brighter Shores | [games/steam.md](games/steam.md) | Steam 2791440 | ✅ events JSON / RSS |
@@ -104,6 +105,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Farming Simulator 25 | [games/steam.md](games/steam.md) | Steam 2300320 | ✅ events JSON / RSS |
 | Final Fantasy XIV | [games/steam.md](games/steam.md) | Steam 39210 | ✅ events JSON / RSS |
 | Final Fantasy XIV | [games/publishers.md](games/publishers.md) | publisher | ✅ Atom |
+| FMHY tracker | [tracked.md](tracked.md) | news / video | ✅ RSS |
 | For Honor | [games/steam.md](games/steam.md) | Steam 304390 | ✅ events JSON / RSS |
 | Fortnite | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
 | Forza Horizon 5 | [games/steam.md](games/steam.md) | Steam 1551360 | ✅ events JSON / RSS |
@@ -122,10 +124,14 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Grok / xAI (API) | [ai.md](ai.md) | AI tool | 🔧 adapter needed |
 | Grok / xAI (news) | [ai.md](ai.md) | AI tool | 🔧 adapter needed |
 | Grounded 2 | [games/steam.md](games/steam.md) | Steam 2661300 | ✅ events JSON / RSS |
+| gry-wideo.pl | [tracked.md](tracked.md) | news / video | ✅ RSS |
 | GTA V / GTA Online | [games/publishers.md](games/publishers.md) | publisher | ❌ no official source |
 | Guild Wars 2 | [games/steam.md](games/steam.md) | Steam 1284210 | ✅ events JSON / RSS |
 | Guild Wars 2 | [games/publishers.md](games/publishers.md) | publisher | ✅ RSS/Atom (from home only; the VPS gets 403, use Steam) |
 | Hades II | [games/steam.md](games/steam.md) | Steam 1145350 | ✅ events JSON / RSS |
+| Half-Life | [games/steam.md](games/steam.md) | Steam 70 | ✅ events JSON / RSS |
+| Half-Life 2 | [games/steam.md](games/steam.md) | Steam 220 | ✅ events JSON / RSS |
+| Half-Life: Alyx | [games/steam.md](games/steam.md) | Steam 546560 | ✅ events JSON / RSS |
 | Halls of Torment | [games/steam.md](games/steam.md) | Steam 2218750 | ✅ events JSON / RSS |
 | Hearthstone | [games/publishers.md](games/publishers.md) | publisher | ✅ JSON |
 | Hearts of Iron IV | [games/steam.md](games/steam.md) | Steam 394360 | ✅ events JSON / RSS |
@@ -147,10 +153,12 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Kingdom Come: Deliverance II | [games/steam.md](games/steam.md) | Steam 1771300 | ✅ events JSON / RSS |
 | Last Epoch | [games/steam.md](games/steam.md) | Steam 899770 | ✅ events JSON / RSS |
 | League of Legends | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
+| Left 4 Dead 2 | [games/steam.md](games/steam.md) | Steam 550 | ✅ events JSON / RSS |
 | Legends of Runeterra | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
 | Lethal Company | [games/steam.md](games/steam.md) | Steam 1966720 | ✅ events JSON / RSS |
 | Lost Ark | [games/steam.md](games/steam.md) | Steam 1599340 | ✅ events JSON / RSS |
 | Lost Ark | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
+| lowcygier.pl | [tracked.md](tracked.md) | news / video | ✅ RSS (home only; the VPS gets 403) |
 | Mage Arena | [games/steam.md](games/steam.md) | Steam 3716600 | ✅ events JSON / RSS |
 | Manor Lords | [games/steam.md](games/steam.md) | Steam 1363080 | ✅ events JSON / RSS |
 | MapleStory | [games/steam.md](games/steam.md) | Steam 216150 | ✅ events JSON / RSS |
@@ -181,6 +189,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Old School RuneScape | [games/publishers.md](games/publishers.md) | publisher | ✅ RSS/Atom |
 | Ollama | [ai.md](ai.md) | AI tool | ✅ Atom |
 | Once Human | [games/steam.md](games/steam.md) | Steam 2139460 | ✅ events JSON / RSS |
+| Onet Wiadomości | [tracked.md](tracked.md) | news / video | ✅ RSS |
 | OpenAI API changelog | [ai.md](ai.md) | AI tool | 🔧 adapter needed |
 | OpenAI models | [ai.md](ai.md) | AI tool | 🔧 adapter needed |
 | OpenAI news | [ai.md](ai.md) | AI tool | ✅ RSS/Atom |
@@ -222,6 +231,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | RuneScape: Dragonwilds | [games/steam.md](games/steam.md) | Steam 1374490 | ✅ events JSON / RSS |
 | Rust | [games/steam.md](games/steam.md) | Steam 252490 | ✅ events JSON / RSS |
 | s&box | [game-dev.md](game-dev.md) | game dev | ✅ RSS/Atom |
+| s&box | [games/steam.md](games/steam.md) | Steam 590830 | ✅ events JSON / RSS |
 | S.T.A.L.K.E.R. 2: Heart of Chornobyl | [games/steam.md](games/steam.md) | Steam 1643320 | ✅ events JSON / RSS |
 | SAND: Raiders of Sophie | [games/steam.md](games/steam.md) | Steam 1431300 | ✅ events JSON / RSS |
 | Satisfactory | [games/steam.md](games/steam.md) | Steam 526870 | ✅ events JSON / RSS |
@@ -248,6 +258,8 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Starfield | [games/steam.md](games/steam.md) | Steam 1716740 | ✅ events JSON / RSS |
 | StarRupture | [games/steam.md](games/steam.md) | Steam 1631270 | ✅ events JSON / RSS |
 | Starship Troopers: Extermination | [games/steam.md](games/steam.md) | Steam 1268750 | ✅ events JSON / RSS |
+| Steam Deck | [games/steam.md](games/steam.md) | Steam 1675200 | ✅ events JSON / RSS |
+| Steam News | [games/steam.md](games/steam.md) | Steam 593110 | ✅ events JSON / RSS |
 | Steam: free to keep | [free-stuff.md](free-stuff.md) | free games | 🔧 adapter needed |
 | Steam: free weekend | [free-stuff.md](free-stuff.md) | free games | 🔧 adapter needed |
 | Stellaris | [games/steam.md](games/steam.md) | Steam 281990 | ✅ events JSON / RSS |
@@ -296,6 +308,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Wuthering Waves | [games/steam.md](games/steam.md) | Steam 3513350 | ✅ events JSON / RSS |
 | Wuthering Waves | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
 | Xbox PC Game Pass | [free-stuff.md](free-stuff.md) | free games | 🔧 adapter needed |
+| YouTube channels (4) | [tracked.md](tracked.md) | news / video | ✅ Atom |
 | Yu-Gi-Oh! Master Duel | [games/steam.md](games/steam.md) | Steam 1449850 | ✅ events JSON / RSS |
 | Zenless Zone Zero | [games/steam.md](games/steam.md) | Steam 4162040 | ✅ events JSON / RSS |
 | Zenless Zone Zero | [games/publishers.md](games/publishers.md) | publisher | ❓ not researched |

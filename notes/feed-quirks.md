@@ -39,12 +39,14 @@ These are odd things found while checking real feeds on 2026-11-23. Each one can
 | HTTP 200 with a bot-challenge page | Black Desert (Incapsula), gitlab.freedesktop.org (Anubis) | treat as blocked, use the fallback |
 | Browser UA blocked, bot UA allowed | intel.com (home IP), Codeberg, fortnite.com | send an honest feed-reader UA |
 | Bot UA stalls, browser UA allowed | amd.com (home IP) | per-host UA; datacenter IPs may behave differently, so test from the server |
+| Datacenter IP blocked (403) | lowcygier.pl, boop.pl (anti-bot challenge) from the XFeeder VPS; both 200 from home | browser fallback on the server |
+| Images blocked from a datacenter IP | blender.org `wp-content/uploads` images (403 from the VPS) | post without the image, or fetch it from home |
 | Datacenter IP blocked with any UA | intel.com, en-forum.guildwars2.com (403 "Request not allowed from this Internet Service Provider") from the XFeeder VPS | browser fallback or another source (GW2: Steam 1284210) |
 | Page missing its data block 1 time in 4 | amd.com | a missing block means "no data", never "removed" |
 | 410 Gone after an API retirement | Artificial Analysis v2 data API | drop the source |
 | Login wall instead of a feed | Reddit `.rss` (404 / 429 / "Welcome to Reddit") | do not use without OAuth |
 | Feed advertised in `<head>` but returns HTML | Star Citizen comm-link RSS | check the body |
-| 308 / 301 / 307 redirect | Mesa news RSS (drops `www.`), Gemini blog RSS, Fall Guys and Rocket League news (`?lang=`) | follow it and store the new address |
+| 308 / 301 / 307 redirect | WordPress `/rss` → `/feed/` (gry-wideo.pl, lowcygier.pl), Mesa news RSS (drops `www.`), Gemini blog RSS, Fall Guys and Rocket League news (`?lang=`) | follow it and store the new address |
 
 ## Polling politeness
 

@@ -10,13 +10,14 @@ The code of the bot is on the [`main`](https://github.com/yhymid/XFeeder/tree/ma
 
 | File | What is inside | Entries |
 |---|---|---|
-| [games/steam.md](games/steam.md) | PC games on Steam: how Steam's three sources work, how to tell patches from news, images, and every game with a checked AppID | 195 games |
+| [games/steam.md](games/steam.md) | PC games on Steam: how Steam's three sources work, how to tell patches from news, images, and every game with a checked AppID | 202 games |
 | [games/publishers.md](games/publishers.md) | Games outside Steam, or with a better source than Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix and others | 49 games |
 | [free-stuff.md](free-stuff.md) | Free games: Epic, Steam (free to keep and free weekends), GOG, Xbox PC Game Pass (added / coming / leaving / EA Play) | 4 stores |
 | [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon and chipset, Intel Arc and Arc Pro, Mesa | 9 sources |
 | [ai.md](ai.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 sources |
 | [game-dev.md](game-dev.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stable / pre-release), s&box | 7 tools |
-| [index.md](index.md) | Everything above, A–Z, with whether XFeeder can read it today (tested 2026-11-23) | 284 rows |
+| [tracked.md](tracked.md) | What XFeeder tracks in production: Polish news, free games, repos, YouTube, Steam (with SteamDB) | 49 feeds |
+| [index.md](index.md) | Everything above, A–Z, with whether XFeeder can read it today (tested 2026-11-23) | 297 rows |
 | [notes/feed-quirks.md](notes/feed-quirks.md) | Odd behaviour found in real feeds (formats, dates, blocking, polling limits) | — |
 
 ## Rules for this database

@@ -18,6 +18,7 @@ Szczegółowe pliki są po angielsku, bo adresy, pola i formaty i tak są angiel
 | [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon i chipset, Intel Arc i Arc Pro, Mesa | 9 źródeł |
 | [ai.md](ai.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 źródeł |
 | [game-dev.md](game-dev.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stabilne / testowe), s&box | 7 narzędzi |
+| [index.md](index.md) | Wszystko powyżej od A do Z, z informacją, czy XFeeder czyta to już dziś (test z 2026-11-23) | 284 wiersze |
 | [notes/feed-quirks.md](notes/feed-quirks.md) | Dziwactwa prawdziwych feedów: formaty, daty, blokady, limity odpytywania | — |
 
 ## Zasady bazy
@@ -37,7 +38,7 @@ Szczegółowe pliki są po angielsku, bo adresy, pola i formaty i tak są angiel
 | ❓ | jeszcze niezbadane |
 | ↪ | przekierowanie: trzeba wpisać nowy adres |
 | **RSS / Atom** | XFeeder czyta to już dziś, najwyżej z wpisem w `Filters` |
-| JSON / NEXT / HTML / MD | potrzebny adapter w XFeederze (planowany): czysty JSON, JSON w `__NEXT_DATA__`, lista w HTML albo lista zmian w Markdown |
+| JSON / NEXT / HTML / MD | potrzebny adapter w XFeederze (planowany; [index.md](index.md) pokazuje, które już czyta): czysty JSON, JSON w `__NEXT_DATA__`, lista w HTML albo lista zmian w Markdown |
 
 ## Jak użyć linku w XFeederze już teraz
 

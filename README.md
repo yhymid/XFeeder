@@ -16,6 +16,7 @@ The code of the bot is on the [`main`](https://github.com/yhymid/XFeeder/tree/ma
 | [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon and chipset, Intel Arc and Arc Pro, Mesa | 9 sources |
 | [ai.md](ai.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 sources |
 | [game-dev.md](game-dev.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stable / pre-release), s&box | 7 tools |
+| [index.md](index.md) | Everything above, A–Z, with whether XFeeder can read it today (tested 2026-11-23) | 284 rows |
 | [notes/feed-quirks.md](notes/feed-quirks.md) | Odd behaviour found in real feeds (formats, dates, blocking, polling limits) | — |
 
 ## Rules for this database
@@ -35,7 +36,7 @@ The code of the bot is on the [`main`](https://github.com/yhymid/XFeeder/tree/ma
 | ❓ | not researched yet |
 | ↪ | redirect: follow it and use the new address |
 | **RSS / Atom** | XFeeder can read it today. At most a `Filters` entry is needed. |
-| JSON / NEXT / HTML / MD | needs an adapter in XFeeder (planned): plain JSON, JSON inside `__NEXT_DATA__`, a server-rendered HTML list, or a Markdown changelog |
+| JSON / NEXT / HTML / MD | needs an adapter in XFeeder (planned; [index.md](index.md) shows which ones it reads already): plain JSON, JSON inside `__NEXT_DATA__`, a server-rendered HTML list, or a Markdown changelog |
 
 ## Using a link with XFeeder today
 

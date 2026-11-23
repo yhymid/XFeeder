@@ -14,6 +14,7 @@ Most PC games publish their patch notes as Steam announcements. Valve exposes th
 
 - **Sources 1 and 2 share the same post id** (`gid`). The RSS link is `https://store.steampowered.com/news/app/<APPID>/view/<gid>`, so you can switch between them without reposting anything.
 - Source 3 uses a different id, so dedupe it by title and date.
+- **XFeeder reads source 1 since Beta 3da345e** (`src/steam_events.rs`): put the events URL in `RSS`. Entries get the category `Patch`, `Major update`, `Beta`, `Release` or `News` plus `event_type:N`; broadcasts and streams are dropped. Tested on all 195 games below on 2026-11-23.
 - Without `feeds=steam_community_announcements`, source 3 also returns press articles (PC Gamer, PCGamesN…).
 - Paging:
   - events: `ajaxgetpartnereventspageable/?appid=<APPID>&clan_accountid=0&offset=N&count=N`
@@ -38,6 +39,7 @@ From Valve's `EProtoClanEventType`, checked against real posts:
 | 35 | In-game event | news |
 | 11 | Broadcast | **skip**: 47 of PUBG's last 100 posts |
 | 17–19, 36 | Streams, creator home | skip |
+| 9, 15, 16, 20–27, 31 | Chat, DLC release, future release, sales, in-game bonuses / loot / perks / challenges / contests, IRL event, free trial | news. Seen in real feeds on 2026-11-23: 9 (Hell Let Loose: Vietnam), 15 (ETS2, PAYDAY 3), 20 and 23 (EVE Online), 21–22 and 31 (PAYDAY 3), 26 (skate), 27 (Dark and Darker). Drop them with an Exclude on `event_type:N` if they are noise. |
 
 - The `patchnotes` tag appears only on type 12. Filtering by that tag alone misses big updates such as Deadlock's Halloween update (type 13) and Dota 7.42 (type 14).
 - Title regex that catches the type-28 patches:

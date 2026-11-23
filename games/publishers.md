@@ -53,7 +53,7 @@ Format legend:
 | Roblox | https://devforum.roblox.com/c/updates/release-notes/62.rss | **RSS** | title `^Release Notes for \d+` | ✅ 200 | `/c/updates/announcements/36.rss` |
 | Star Citizen | no GET patch-notes feed (comm-link RSS returns HTML) | — | — | ❌ | https://status.robertsspaceindustries.com/index.xml ("Live Deployment" = patch) |
 | Elder Scrolls Online | https://www.elderscrollsonline.com/en-us/rss/news | **RSS** | title `/Patch Notes/` | ✅ 200 | Steam 306130 (the forum feed is behind Cloudflare) |
-| Guild Wars 2 | https://en-forum.guildwars2.com/forum/6-game-release-notes.xml/ | **RSS** | whole forum = update notes | ✅ 200 | https://api.guildwars2.com/v2/build (build id change = patch) |
+| Guild Wars 2 | https://en-forum.guildwars2.com/forum/6-game-release-notes.xml/ | **RSS** | whole forum = update notes | ✅ 200 from home; ❌ **403 from the XFeeder VPS** ("Request not allowed from this Internet Service Provider", any UA, 2026-11-23) | on a server: **Steam 1284210**; https://api.guildwars2.com/v2/build (build id change = patch, 200 from the VPS) |
 | Black Desert | official site behind an Incapsula block page | — | — | ❌ | **Steam 582660** |
 | Lost Ark | https://www.playlostark.com/en-us/news | HTML | slug ends in `-release-notes` | ✅ 200 | **Steam 1599340 is better** |
 | World of Tanks | https://worldoftanks.eu/en/rss/news/ | **RSS** | `category = Updates` | ✅ 200 | `.com` / `.asia` hosts |

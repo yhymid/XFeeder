@@ -124,7 +124,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Grounded 2 | [games/steam.md](games/steam.md) | Steam 2661300 | ✅ events JSON / RSS |
 | GTA V / GTA Online | [games/publishers.md](games/publishers.md) | publisher | ❌ no official source |
 | Guild Wars 2 | [games/steam.md](games/steam.md) | Steam 1284210 | ✅ events JSON / RSS |
-| Guild Wars 2 | [games/publishers.md](games/publishers.md) | publisher | ✅ RSS/Atom |
+| Guild Wars 2 | [games/publishers.md](games/publishers.md) | publisher | ✅ RSS/Atom (from home only; the VPS gets 403, use Steam) |
 | Hades II | [games/steam.md](games/steam.md) | Steam 1145350 | ✅ events JSON / RSS |
 | Halls of Torment | [games/steam.md](games/steam.md) | Steam 2218750 | ✅ events JSON / RSS |
 | Hearthstone | [games/publishers.md](games/publishers.md) | publisher | ✅ JSON |

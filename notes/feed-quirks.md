@@ -28,6 +28,7 @@ These are odd things found while checking real feeds on 2026-11-23. Each one can
 | Lists not sorted by date (pinned items first) | HoYoverse, Kuro, Jagex | sort by date after parsing |
 | One page = many entries, no per-entry link | ChatGPT / Claude apps release notes | use the date heading as the id |
 | "Living" articles that get edited instead of new posts | Diablo IV patch notes, Call of Duty patchnotes | watch the edit time / a content hash |
+| JSON entries with no link of their own | Mojang `javaPatchNotes.json` (424 entries) and `bedrockPatchNotes.json` (82) | identity must come from the entry's id or title, not the feed URL; the image is an object (`{title, url}`) |
 | Several items share the same `<link>` | kernel.org `kdist.xml` | fall back to `guid` for identity |
 | Enclosure that is audio, not an image | podcast feeds (NPR) | check `enclosure@type` before using it as an image |
 | Category as an object (`domain` / `term` attribute) | GitHub Changelog, Atom feeds | filter on the category text |

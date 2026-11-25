@@ -102,6 +102,15 @@ SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `pu
   - **All 203 AppIDs of this page in one run: 94 s**, 3.7 MB of output, every AppID known.
   - App art for posts: the portrait capsule (`common/library_assets_full/library_capsule/image/english` → `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/<APPID>/library_600x900.jpg`) and the 32×32 icon (`common/icon` hash → `https://shared.fastly.steamstatic.com/community_assets/images/apps/<APPID>/<hash>.jpg`); both 200 on 2026-11-23. Discord's Components V2 thumbnail crops a portrait image to a square, a classic embed thumbnail does not.
 
+## Live PICS changes (no SteamCMD)
+
+Steam's client protocol has `CMsgClientPICSChangesSinceRequest`: "which apps changed since change number N". Checked on 2026-11-25 with an anonymous login from home, using the Rust crate [steam-vent](https://crates.io/crates/steam-vent) 0.5.0 (MIT, Rust 1.88):
+
+- Connected in 1.0 s; 46 polls, one every 5 s, 0 errors, 0.22 s average answer, 117 app changes across all of Steam in 4 minutes. No watched app changed in that window.
+- `CMsgClientPICSProductInfoRequest` for one app (CS2, 33 KB) took 0.21 s; Deadlock answers `missing_token = true`, so its depots stay hidden this way too.
+- No published rate limit was found. node-steam-user polls every 60 s by default and advises not going below about 10 s.
+- [SteamWebPipes](https://github.com/xPaw/SteamWebPipes) does the same in C#; archived, last push 2021-11.
+
 ## GameTracking: file-level changes of Valve games
 
 SteamDB's team runs [SteamTracking](https://github.com/SteamTracking) (the old `SteamDatabase/GameTracking-*` URLs redirect there). Every build of these games is committed with its changed files (manifests, `steam.inf`, schemas, strings), and SteamDB's own Discord posts them next to the build. The commits feed works for **Deadlock**, whose depots anonymous PICS hides. Checked on 2026-11-23 (20 entries per feed):

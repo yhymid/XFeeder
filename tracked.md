@@ -9,7 +9,7 @@ The feeds in XFeeder's live `config.json` (outside the test channel), checked on
 | Source | Feed | Format | Home | 🖥 VPS | Notes |
 |---|---|---|---|---|---|
 | FMHY tracker | https://fmhy-tracker.pages.dev/feed.xml | RSS | ✅ 200 | ✅ | community tracker of FMHY changes |
-| boop.pl | https://boop.pl/rss | RSS | ✅ 200 | ❌ **403** anti-bot challenge | XFeeder logs `ANTIBOT_CHALLENGE_UNRESOLVED`; needs the browser fallback on the server |
+| boop.pl | https://boop.pl/rss | RSS | ✅ 200 | ✅ via browser fallback | plain requests are sometimes answered 403; XFeeder then renews its clearance with the browser and entries arrive (checked in the logs on 2026-11-25) |
 | gry-wideo.pl | https://gry-wideo.pl/feed/ | RSS | ✅ 200 | ✅ 200 | the config has `/rss`, which answers **301** to `/feed/`; XFeeder logged 403 on `/rss` earlier, so use `/feed/` directly |
 | lowcygier.pl | https://lowcygier.pl/feed/ | RSS | ✅ 200 | ❌ **403** on `/rss` | `/rss` answers **301** to `/feed/` from home |
 | Onet Wiadomości | https://wiadomosci.onet.pl/.feed | RSS | ✅ 200 | ✅ | |

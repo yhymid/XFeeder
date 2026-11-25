@@ -36,7 +36,7 @@
 //! ```json
 //! "Settings": { "SteamPics": { "Command": "/usr/games/steamcmd",
 //!   "MinIntervalMinutes": 10, "TimeoutSeconds": 180,
-//!   "IgnoreBranches": "^dprp?$", "RawLog": true } }
+//!   "IgnoreBranches": "^dprp?$", "RawLog": true, "Changelists": false } }
 //! ```
 //! All keys are optional. `Command` defaults to `/usr/games/steamcmd` when it
 //! exists (Debian/Ubuntu package), otherwise `steamcmd` from `PATH`.
@@ -86,6 +86,7 @@ struct Settings {
     timeout: Duration,
     ignore: Option<Regex>,
     raw_log: bool,
+    changelists: bool,
 }
 
 fn settings(root: &Value) -> Settings {
@@ -133,6 +134,7 @@ fn settings(root: &Value) -> Settings {
         timeout: Duration::from_secs_f64(number("TimeoutSeconds", 180.0, 10.0, 900.0)),
         ignore,
         raw_log: section.get("RawLog") != Some(&Value::Bool(false)),
+        changelists: section.get("Changelists") == Some(&Value::Bool(true)),
     }
 }
 
@@ -494,6 +496,58 @@ fn current_build(
     ))
 }
 
+/// A change number without a build or branch entry (`Changelists`), with the
+/// names of the keys that changed, when anonymous Steam shows any.
+fn changelist(
+    appid: u32,
+    change: u64,
+    flat: &BTreeMap<String, String>,
+    raw: &[(String, Option<String>, Option<String>)],
+    now: i64,
+) -> Value {
+    let mut names: Vec<&str> = Vec::new();
+    for (key, ..) in raw {
+        let mut parts = key.split('/');
+        let (section, field) = (parts.next().unwrap_or(""), parts.next());
+        let name = match section {
+            "common" | "extended" | "config" => field.unwrap_or(section),
+            _ => section,
+        };
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let mut keys = names.iter().take(4).copied().collect::<Vec<_>>().join(", ");
+    if names.len() > 4 {
+        keys.push_str(&format!(" +{}", names.len() - 4));
+    }
+    let name = app_name(flat, appid);
+    let ctx = Ctx {
+        appid,
+        name: &name,
+        image: header_image(flat, appid),
+        capsule: capsule_image(flat, appid),
+        icon: icon_image(flat, appid),
+        change,
+        now,
+    };
+    let mut entry = ctx.entry(
+        format!("{}: changelist {change}", ctx.name),
+        if keys.is_empty() {
+            format!("Steam change #{change}")
+        } else {
+            format!("Steam change #{change}. Changed: {keys}")
+        },
+        ctx.history(),
+        now,
+        ["Changelist", ""],
+        json!({ "keys": keys }),
+    );
+    entry["identityKey"] = json!(format!("steampics:{appid}:change:{change}"));
+    entry["categories"] = json!(["Changelist", "SteamPICS"]);
+    entry
+}
+
 pub fn diff(
     appid: u32,
     change: u64,
@@ -684,7 +738,13 @@ impl Runner {
     }
 
     /// Applies one SteamCMD run; returns the raw-log lines.
-    fn apply(&mut self, apps: Vec<App>, ignore: Option<&Regex>, now: i64) -> Vec<Value> {
+    fn apply(
+        &mut self,
+        apps: Vec<App>,
+        ignore: Option<&Regex>,
+        changelists: bool,
+        now: i64,
+    ) -> Vec<Value> {
         let mut log = Vec::new();
         for app in apps.into_iter().filter(|a| a.known) {
             let key = app.appid.to_string();
@@ -706,7 +766,27 @@ impl Runner {
             if let Some(old) = &old_flat
                 && old_change != Some(app.change)
             {
-                let d = diff(app.appid, app.change, old, &app.flat, ignore, now);
+                let mut d = diff(app.appid, app.change, old, &app.flat, ignore, now);
+                let kinds: Vec<Value> = d
+                    .events
+                    .iter()
+                    .map(|e| e["categories"][0].clone())
+                    .collect();
+                // A build that comes back (rollback) has the link of its first
+                // post: give it its own identity or it would never be sent.
+                for event in &mut d.events {
+                    let identity = crate::text::entry_identity(event, true);
+                    if events
+                        .iter()
+                        .any(|e| crate::text::entry_identity(e, true) == identity)
+                    {
+                        event["identityKey"] = json!(format!("{identity}#change:{}", app.change));
+                    }
+                }
+                if changelists && d.events.is_empty() {
+                    d.events
+                        .push(changelist(app.appid, app.change, &app.flat, &d.raw, now));
+                }
                 // Logged even with no visible change: for apps whose depots
                 // anonymous Steam hides (only `common`), a bare change number
                 // bump may be the only trace of a new build.
@@ -717,7 +797,7 @@ impl Runner {
                     "changeOld": old_change,
                     "changeNew": app.change,
                     "depotsVisible": app.flat.keys().any(|k| k.starts_with("depots/")),
-                    "events": d.events.iter().map(|e| e["categories"][0].clone()).collect::<Vec<_>>(),
+                    "events": kinds,
                     "changedKeys": d.raw.len(),
                     "changes": d.raw.iter().take(RAW_CHANGES_MAX)
                         .map(|(k, a, b)| json!({ "k": k, "old": a, "new": b }))
@@ -880,7 +960,7 @@ pub async fn fetch(
                 let apps = parse_output(&text);
                 let unknown: Vec<u32> = apps.iter().filter(|a| !a.known).map(|a| a.appid).collect();
                 let now = chrono::Utc::now().timestamp();
-                let log = runner.apply(apps, cfg.ignore.as_ref(), now);
+                let log = runner.apply(apps, cfg.ignore.as_ref(), cfg.changelists, now);
                 crate::diag::expert(
                     "steampics.run",
                     json!({ "apps": wanted.len(), "unknown": unknown, "changedApps": log.len(),
@@ -1071,7 +1151,7 @@ mod tests {
     fn runner_remembers_first_then_reports_and_keeps_unknown_apps_out() {
         let mut runner = Runner::default();
         let apps = parse_output(&fixture());
-        assert!(runner.apply(apps.clone(), None, 10).is_empty());
+        assert!(runner.apply(apps.clone(), None, false, 10).is_empty());
         // First sight: the current build only, as the baseline.
         let base = runner.items(730);
         assert_eq!(base.len(), 1);
@@ -1092,7 +1172,7 @@ mod tests {
         next[0]
             .flat
             .insert("common/review_percentage".into(), "1".into());
-        let log = runner.apply(next.clone(), None, 20);
+        let log = runner.apply(next.clone(), None, false, 20);
         assert_eq!(log.len(), 1);
         assert_eq!(log[0]["events"], json!(["Build"]));
         assert_eq!(log[0]["changedKeys"], 2);
@@ -1103,12 +1183,12 @@ mod tests {
             "https://steamdb.info/patchnotes/26900000/"
         );
         // Same change number again: nothing new.
-        assert!(runner.apply(next.clone(), None, 30).is_empty());
+        assert!(runner.apply(next.clone(), None, false, 30).is_empty());
         assert_eq!(runner.items(730).len(), 2);
         // A bare change number bump (hidden depots) is still logged.
         let mut bump = next;
         bump[0].change += 1;
-        let log = runner.apply(bump, None, 40);
+        let log = runner.apply(bump, None, false, 40);
         assert_eq!(log.len(), 1);
         assert_eq!(log[0]["changedKeys"], 0);
         assert_eq!(log[0]["depotsVisible"], true);
@@ -1197,6 +1277,44 @@ mod tests {
             serde_json::from_slice(&std::fs::read(state_path(&dir)).unwrap()).unwrap();
         assert_eq!(saved["apps"]["730"]["change"], 41339556);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn changelists_and_rollbacks() {
+        let build = |apps: &[App], id: &str, n: u64| {
+            let mut next = apps.to_vec();
+            next[0].change += n;
+            next[0]
+                .flat
+                .insert("depots/branches/public/buildid".into(), id.into());
+            next
+        };
+        let mut runner = Runner::default();
+        let apps = parse_output(&fixture());
+        runner.apply(apps.clone(), None, true, 10);
+        // Build A -> B -> A: three posts with three identities.
+        runner.apply(build(&apps, "26900000", 1), None, true, 20);
+        runner.apply(build(&apps, "26798866", 2), None, true, 30);
+        let ids: BTreeSet<String> = runner
+            .items(730)
+            .iter()
+            .map(|e| crate::text::entry_identity(e, true))
+            .collect();
+        assert_eq!(ids.len(), 3, "{ids:?}");
+        // Nothing visible changed, then only a review score.
+        let mut next = build(&apps, "26798866", 3);
+        let log = runner.apply(next.clone(), None, true, 40);
+        assert_eq!(log[0]["events"], json!([]));
+        let newest = runner.items(730).remove(0);
+        assert_eq!(newest["categories"][0], "Changelist");
+        assert_eq!(newest["steamPics"]["keys"], "");
+        next[0].change += 1;
+        next[0]
+            .flat
+            .insert("common/review_percentage".into(), "1".into());
+        runner.apply(next, None, true, 50);
+        let newest = runner.items(730).remove(0);
+        assert_eq!(newest["steamPics"]["keys"], "review_percentage");
     }
 
     #[test]

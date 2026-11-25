@@ -187,20 +187,16 @@ fn steam_pics_text(p: &Value) -> (String, String, Option<u32>) {
         "Current" => (format!("Current public {build}"), Some(0x5865F2)),
         "Build" => (format!("Depots (public, {build})"), Some(0x66C0F4)),
         "Branch added" => (format!("Depots (Added {branch}, {build})"), Some(0x57F287)),
-        "Branch build" => (format!("Depots ({branch}, {build})"), Some(0xFEE75C)),
+        "Branch build" => (format!("Depots ({branch}, {build})"), Some(0xE67E22)),
         "Branch removed" => (format!("Depots (Removed {branch})"), Some(0xED4245)),
+        // No build or branch change: yellow, with the keys that changed, if any.
+        "Changelist" => (clean(s("keys")), Some(0xFEE75C)),
         other => (clean(other.to_string()), None),
     };
     let mut lines = Vec::new();
     lines.push(format!("Changelist {}", s("change")));
-    lines.push(format!("Changed: **{what}**"));
-    let description = clean(s("description"));
-    if !description.is_empty() && description != branch {
-        lines.push(format!("-# {description}"));
-    }
-    let size = s("size");
-    if !size.is_empty() {
-        lines.push(format!("-# Public depots {size}"));
+    if !what.is_empty() {
+        lines.push(format!("Changed: **{what}**"));
     }
     (name, lines.join("\n"), accent)
 }
@@ -219,6 +215,7 @@ fn steam_pics_embed(entry: &Value, p: &Value) -> (Value, String) {
         "Branch added" => "Branch added",
         "Branch build" => "Branch build",
         "Branch removed" => "Branch removed",
+        "Changelist" => "Changelist",
         _ => "Steam change",
     };
     let mut embed = json!({
@@ -1221,8 +1218,7 @@ mod tests {
         assert_eq!(
             embed["description"],
             "Changelist 41339549\n\
-             Changed: **Depots (Added 1.42.0.0, [build 26798866](https://steamdb.info/patchnotes/26798866/))**\n\
-             -# Game version 1.42.0.0 (20-Nov-2026)"
+             Changed: **Depots (Added 1.42.0.0, [build 26798866](https://steamdb.info/patchnotes/26798866/))**"
         );
         assert_eq!(label, "Counter-Strike 2: new branch 1.42.0.0");
         // Removed branch: red, no build link.
@@ -1234,6 +1230,15 @@ mod tests {
             payload
                 .to_string()
                 .contains("Changed: **Depots (Removed 1.42.0.0)**")
+        );
+        // A bare changelist: yellow, no "Changed" line.
+        let mut bare = entry.clone();
+        bare["steamPics"]["kind"] = json!("Changelist");
+        let (payload_bare, _) = webhook_payload(&bare);
+        assert_eq!(payload_bare["embeds"][0]["color"], 0xFEE75C);
+        assert_eq!(
+            payload_bare["embeds"][0]["description"],
+            "Changelist 41339549"
         );
         // A ping line goes into `content` above the embed.
         let mention = crate::ping::Mention {

@@ -32,6 +32,7 @@ These are odd things found while checking real feeds on 2026-11-23. Each one can
 | Enclosure that is audio, not an image | podcast feeds (NPR) | check `enclosure@type` before using it as an image |
 | Category as an object (`domain` / `term` attribute) | GitHub Changelog, Atom feeds | filter on the category text |
 | Noise entries in a releases feed | OpenClaw `releases.atom` (`release-publish/...`) | Include filter on the title |
+| All links temporarily point at a CI preview host | Mesa news RSS on 2026-11-25: for a while 494 entries linked `mesa.pages.freedesktop.org/-/mesa3d.org/-/jobs/<job>/artifacts/…` instead of `www.mesa3d.org`, so link-based identity saw old releases as new and reposted them; the links are back to normal | identify by host-independent slug, or refuse old entries (by date) when a whole known feed turns new at once |
 
 ## Blocking and errors
 

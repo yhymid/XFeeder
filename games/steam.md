@@ -116,6 +116,7 @@ SteamDB's team runs [SteamTracking](https://github.com/SteamTracking) (the old `
 | Half-Life: Alyx | https://github.com/SteamTracking/GameTracking-HalfLifeAlyx/commits/master.atom | 2026-11-05 |
 
 - Also in the organisation: `GameTracking-Dota2Test`, `GameTracking-Artifact(-Beta)`, `GameTracking-Underlords(-Android)`, `SteamTracking` (Steam client and web files), `Protobufs`.
+- **Deadlock's bare PICS change-number bumps matched GameTracking commits 3 of 3** (2026-11-23 → 25, UTC, bump seen / commit): 11-23 19:41:21 / 19:41:44, 11-24 20:06:58 / 20:01:05, 11-24 23:46:14 / 23:43:16. Small sample. Risk of Rain 2 bumps much more often (at least 9 in two days) with no visible key change, so a bump alone is not a build there.
 - The commit title is the game's build number from `steam.inf` (CS2 `2000948`, Deadlock `6864`), then the file count and the first changed files.
 - SteamDB's Discord (`cs-updates`) colours a bare changelist yellow and a changelist with depot changes purple; it pings only for depot changes, and it also posts related hidden apps ("SteamDB Unknown App 2275500 / 2275530" next to CS2).
   - **Some apps show anonymous Steam only `common`**: no `depots`, so no builds or branches. On 2026-11-23: Deadlock (1422450), Risk of Rain 2 (632360), NARAKA: BLADEPOINT (1203220). Their change number still moves. SteamDB sees their builds because it logs in with an account that has access tokens, so for these games keep SteamDB's RSS or the store feed.

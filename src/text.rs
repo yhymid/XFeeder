@@ -209,6 +209,160 @@ pub fn html_to_text(input: &str) -> String {
     lines.join("\n")
 }
 
+// Markers that survive `strip_html` (they are not tags) and become Discord
+// markdown afterwards.
+const HEAD_OPEN: char = '\u{E010}';
+const HEAD_CLOSE: char = '\u{E011}';
+const LINK_OPEN: char = '\u{E012}';
+const LINK_MID: char = '\u{E013}';
+const LINK_CLOSE: char = '\u{E014}';
+
+/// Post text for Discord: like [`html_to_text`], plus headings (`<h1>`–`<h6>`,
+/// a paragraph or line that is only bold, `<Section name>` lines) in bold,
+/// links with their own text as `[text](url)` and a line that is only a URL
+/// as a short named link. Telegram and delivery identities keep using the
+/// plain `contentSnippet`.
+pub fn html_to_rich(input: &str) -> String {
+    static HEADING: OnceLock<Regex> = OnceLock::new();
+    static BOLD_LINE: OnceLock<Regex> = OnceLock::new();
+    static ANCHOR: OnceLock<Regex> = OnceLock::new();
+    let html = re(&HEADING, r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]\s*>")
+        .replace_all(input, |c: &regex::Captures| {
+            format!("<p>{HEAD_OPEN}{}{HEAD_CLOSE}</p>", &c[1])
+        });
+    let bold = re(
+        &BOLD_LINE,
+        r"(?is)(^|<br\s*/?>|<p\b[^>]*>|</p>|\n)\s*<(?:b|strong)>([^<]{1,100})</(?:b|strong)>\s*(<br\s*/?>|</p>|\n|$)",
+    );
+    // Twice: two bold lines in a row share the break between them.
+    let mut html = html.into_owned();
+    for _ in 0..2 {
+        html = bold
+            .replace_all(&html, |c: &regex::Captures| {
+                format!("{}{HEAD_OPEN}{}{HEAD_CLOSE}{}", &c[1], &c[2], &c[3])
+            })
+            .into_owned();
+    }
+    let html = re(
+        &ANCHOR,
+        r#"(?is)<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a\s*>"#,
+    )
+    .replace_all(&html, |c: &regex::Captures| {
+        format!("{LINK_OPEN}{}{LINK_MID}{}{LINK_CLOSE}", &c[2], &c[1])
+    });
+    let text = html_to_text(&html);
+    // An empty line before a heading that follows text sets sections apart.
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines().filter_map(rich_line) {
+        let heading = line.starts_with("**") && line.ends_with("**");
+        let after_text = out
+            .last()
+            .is_some_and(|l| !(l.starts_with("**") && l.ends_with("**")));
+        if heading && after_text {
+            out.push(String::new());
+        }
+        out.push(line);
+    }
+    out.join("\n")
+}
+
+fn rich_line(line: &str) -> Option<String> {
+    static LINK: OnceLock<Regex> = OnceLock::new();
+    let link = re(
+        &LINK,
+        "\u{E012}([^\u{E013}]*)\u{E013}([^\u{E014}]*)\u{E014}",
+    );
+    let line = link.replace_all(line, |c: &regex::Captures| {
+        let text = c[1].trim().replace(['[', ']'], "");
+        let url = c[2].trim();
+        let web = url.starts_with("https://") || url.starts_with("http://");
+        if !web || url.contains([' ', ')']) {
+            text
+        } else if text.is_empty() || text == url {
+            url.to_string()
+        } else {
+            format!("[{text}]({url})")
+        }
+    });
+    let line = line.trim();
+    let whole = line.starts_with(HEAD_OPEN)
+        && line.ends_with(HEAD_CLOSE)
+        && line.matches(HEAD_OPEN).count() == 1;
+    let line = if whole {
+        let inner = line.trim_matches([HEAD_OPEN, HEAD_CLOSE]).trim();
+        let inner = inner
+            .trim_start_matches(['<'])
+            .trim_end_matches(['>'])
+            .trim();
+        if inner.is_empty() || inner.contains("**") {
+            inner.to_string()
+        } else {
+            format!("**{inner}**")
+        }
+    } else {
+        line.replace([HEAD_OPEN, HEAD_CLOSE], "")
+    };
+    // "<New Events>" written as a section name.
+    let line = match line.strip_prefix('<').and_then(|l| l.strip_suffix('>')) {
+        Some(name) if !name.is_empty() && name.len() <= 60 && !name.contains(['<', '>', '/']) => {
+            format!("**{}**", name.trim())
+        }
+        _ => line,
+    };
+    let line = line.trim().to_string();
+    if line.is_empty() {
+        return None;
+    }
+    Some(named_url(&line).unwrap_or(line))
+}
+
+/// A line that is only a URL becomes a short named link.
+fn named_url(line: &str) -> Option<String> {
+    let url = Url::parse(line).ok()?;
+    if !matches!(url.scheme(), "http" | "https") || line.contains(char::is_whitespace) {
+        return None;
+    }
+    let host = url
+        .host_str()?
+        .trim_start_matches("www.")
+        .to_ascii_lowercase();
+    let segments: Vec<&str> = url.path_segments().map(|s| s.collect()).unwrap_or_default();
+    let label = match (host.as_str(), segments.as_slice()) {
+        ("store.steampowered.com", ["app", _, name, ..]) if !name.is_empty() => {
+            format!("{} on Steam", name.replace('_', " "))
+        }
+        ("store.steampowered.com", ["app", ..]) => "Steam store page".to_string(),
+        ("youtu.be", _) | ("youtube.com", _) => "YouTube video".to_string(),
+        _ => return None,
+    };
+    Some(format!("[{label}]({line})"))
+}
+
+/// Cut a post text at the end of a line (or a word) before `max` UTF-16
+/// units and show that it goes on.
+pub fn cut_text(text: &str, max: usize) -> String {
+    if js::len16(text) <= max {
+        return text.to_string();
+    }
+    let cut = js::prefix16(text, max.saturating_sub(2));
+    // The cut already ends a word or a line.
+    let next = text[cut.len()..].chars().next();
+    if next == Some('\n') {
+        return format!("{}\n…", cut.trim_end());
+    }
+    if let Some(i) = cut.rfind('\n').filter(|&i| i > cut.len() / 2) {
+        return format!("{}\n…", cut[..i].trim_end());
+    }
+    if next.is_some_and(char::is_whitespace) {
+        return format!("{}…", cut.trim_end());
+    }
+    let cut = cut
+        .rfind(char::is_whitespace)
+        .filter(|&i| i > cut.len() / 2)
+        .map_or(cut, |i| &cut[..i]);
+    format!("{}…", cut.trim_end())
+}
+
 /// Absolute form of a possibly relative link found in a feed.
 pub fn resolve_url(base: &str, href: &str) -> Option<String> {
     if href.is_empty() || Url::parse(href).is_ok() {
@@ -469,6 +623,40 @@ pub fn discord_time(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rich_text_for_discord() {
+        let html = "<h2>All-New Content</h2><p><b>New In Store</b></p><p>- White Fox<br>- Jeff</p>\
+            <p><b>&lt;New Events&gt;</b></p><p>Read <a href=\"https://a.example/notes\">the notes</a> now.</p>\
+            <p>https://store.steampowered.com/app/3531720/ELDEN_RING_NIGHTREIGN_The_Forsaken_Hollows/</p>\
+            <p>https://youtu.be/2UNC9EkMWHY</p><p>Text with <b>bold</b> inside.</p>";
+        assert_eq!(
+            html_to_rich(html),
+            "**All-New Content**\n**New In Store**\n- White Fox\n- Jeff\n\n**New Events**\n\
+             Read [the notes](https://a.example/notes) now.\n\
+             [ELDEN RING NIGHTREIGN The Forsaken Hollows on Steam](https://store.steampowered.com/app/3531720/ELDEN_RING_NIGHTREIGN_The_Forsaken_Hollows/)\n\
+             [YouTube video](https://youtu.be/2UNC9EkMWHY)\n\
+             Text with bold inside."
+        );
+        // A link whose text is its URL stays a plain URL; other schemes lose the link.
+        assert_eq!(
+            html_to_rich(
+                "<a href=\"https://x.example/a\">https://x.example/a</a> <a href=\"javascript:x\">click</a>"
+            ),
+            "https://x.example/a click"
+        );
+    }
+
+    #[test]
+    fn cut_text_ends_at_a_line() {
+        let text = "line one\nline two\nline three is longer";
+        assert_eq!(cut_text(text, 100), text);
+        assert_eq!(cut_text(text, 24), "line one\nline two\n…");
+        assert_eq!(
+            cut_text("one two three four five six", 15),
+            "one two three…"
+        );
+    }
     use serde_json::json;
 
     #[test]

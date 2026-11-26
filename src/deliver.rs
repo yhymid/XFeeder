@@ -52,6 +52,37 @@ impl From<HttpError> for SendError {
     }
 }
 
+/// `Settings.PostText`: Discord posts show the longer `contentText` (bold
+/// headings, named links), cut at the end of a line at `Length` characters
+/// (default 1500, 300–3500). `false` or `"Enabled": false` = the previous
+/// layout (`contentSnippet`, at most 800 characters).
+static POST_TEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1500);
+
+pub fn set_post_text(root: &Value) {
+    POST_TEXT.store(post_text_length(root), std::sync::atomic::Ordering::Relaxed);
+}
+
+fn post_text_length(root: &Value) -> usize {
+    let raw = get(get(root, "Settings"), "PostText");
+    match raw {
+        Value::Bool(false) => 0,
+        Value::Object(map) if map.get("Enabled") == Some(&Value::Bool(false)) => 0,
+        _ => get(raw, "Length")
+            .as_u64()
+            .map_or(1500, |n| n.clamp(300, 3500) as usize),
+    }
+}
+
+fn post_body(entry: &Value) -> String {
+    let length = POST_TEXT.load(std::sync::atomic::Ordering::Relaxed);
+    match get(entry, "contentText").as_str() {
+        Some(text) if length > 0 && !text.trim().is_empty() => {
+            crate::text::cut_text(text.trim(), length)
+        }
+        _ => truncate(get(entry, "contentSnippet"), 800),
+    }
+}
+
 fn safe_text(value: &Value, max: usize) -> String {
     if value.is_null() {
         return String::new();
@@ -243,6 +274,12 @@ fn steam_pics_embed(entry: &Value, p: &Value) -> (Value, String) {
     (json!({ "embeds": [embed] }), label)
 }
 
+/// The webhook payload an entry would be posted with (no mention), for
+/// `xfeeder preview --payload`.
+pub fn preview_payload(entry: &Value) -> Value {
+    with_mention(webhook_payload(entry).0, None, true)
+}
+
 fn webhook_payload(entry: &Value) -> (Value, String) {
     if get(entry, "steamPics").is_object() && !truthy(get(entry, "merged")) {
         return steam_pics_embed(entry, get(entry, "steamPics"));
@@ -339,7 +376,7 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
             "📰 **{}**",
             js::to_string(js::or(&[title, &json!("New entry")]))
         );
-        let body = truncate(get(entry, "contentSnippet"), 800);
+        let body = post_body(entry);
         let image = get(entry, "enclosure");
         if crate::text::is_avatar(image) {
             c.section(vec![heading, body], image);
@@ -1142,6 +1179,51 @@ mod tests {
         assert_eq!(
             components.last().unwrap()["components"][0]["url"],
             json!("https://a/1")
+        );
+    }
+
+    #[test]
+    fn post_text_setting() {
+        assert_eq!(post_text_length(&json!({})), 1500);
+        assert_eq!(
+            post_text_length(&json!({ "Settings": { "PostText": { "Length": 2000 } } })),
+            2000
+        );
+        assert_eq!(
+            post_text_length(&json!({ "Settings": { "PostText": { "Length": 50 } } })),
+            300
+        );
+        assert_eq!(
+            post_text_length(&json!({ "Settings": { "PostText": false } })),
+            0
+        );
+        assert_eq!(
+            post_text_length(&json!({ "Settings": { "PostText": { "Enabled": false } } })),
+            0
+        );
+    }
+
+    #[test]
+    fn post_uses_the_longer_text() {
+        let long = (1..=120)
+            .map(|i| format!("· Fixed thing number {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let entry = json!({ "title": "Patch", "link": "https://a/1", "contentSnippet": "short", "contentText": long });
+        let (payload, _) = webhook_payload(&entry);
+        let body = payload["components"][0]["components"][1]["content"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(body.starts_with("· Fixed thing number 1\n"), "{body}");
+        assert!(body.ends_with("\n…"), "cut at a line end: {body}");
+        assert!(body.chars().count() <= 1500);
+        // Without contentText the previous text is used.
+        let old = json!({ "title": "Patch", "link": "https://a/1", "contentSnippet": "short" });
+        let (payload, _) = webhook_payload(&old);
+        assert_eq!(
+            payload["components"][0]["components"][1]["content"],
+            "short"
         );
     }
 

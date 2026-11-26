@@ -36,7 +36,9 @@ Options:
   --bench N        Fetch every feed N times and print min/median/p95/max.
   --config PATH    config.json for Scrapling, solver, proxy and network
                    settings (default ./config.json when it exists).
-  --json           Print one JSON object per feed instead of text.";
+  --json           Print one JSON object per feed instead of text.
+  --payload        With --json: add the Discord webhook payload of each entry
+                   (as it would be posted, Settings.PostText from config).";
 
 struct Args {
     urls: Vec<String>,
@@ -44,6 +46,7 @@ struct Args {
     bench: usize,
     config: Option<PathBuf>,
     json: bool,
+    payload: bool,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Args, String> {
@@ -53,6 +56,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
         bench: 1,
         config: None,
         json: false,
+        payload: false,
     };
     let mut iter = args.into_iter();
     while let Some(arg) = iter.next() {
@@ -68,6 +72,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
             "--config" => out.config = Some(PathBuf::from(value("--config")?)),
             "--profile" => out.urls.extend(profile_urls(&value("--profile")?)?),
             "--json" => out.json = true,
+            "--payload" => out.payload = true,
             url if url.starts_with("http://") || url.starts_with("https://") => {
                 out.urls.push(url.to_string());
             }
@@ -110,7 +115,9 @@ fn profile_path(name: &str) -> PathBuf {
 fn load_config(path: Option<&Path>) -> Result<(config::Config, PathBuf), String> {
     let path = path.map_or_else(|| PathBuf::from("./config.json"), Path::to_path_buf);
     if path.exists() {
-        return Ok((config::load(&path)?, path));
+        let config = config::load(&path)?;
+        crate::deliver::set_post_text(&config.root);
+        return Ok((config, path));
     }
     let empty = config::from_value(&json!({}), &config::Env::new())?;
     Ok((empty, path))
@@ -363,8 +370,20 @@ fn print_text(url: &str, runs: &[Run], items_shown: usize) {
     println!();
 }
 
-fn print_json(url: &str, runs: &[Run], items_shown: usize) {
+fn print_json(url: &str, runs: &[Run], items_shown: usize, payload: bool) {
     let first = &runs[0];
+    let items: Vec<Value> = first
+        .items
+        .iter()
+        .take(items_shown)
+        .map(|item| {
+            let mut item = item.clone();
+            if payload {
+                item["payload"] = crate::deliver::preview_payload(&item);
+            }
+            item
+        })
+        .collect();
     let col = |f: fn(&Timing) -> u64| stats(&runs.iter().map(|r| f(&r.timing)).collect::<Vec<_>>());
     let out = json!({
         "url": crate::diag::sanitize_url(url),
@@ -385,7 +404,7 @@ fn print_json(url: &str, runs: &[Run], items_shown: usize) {
         "hints": hints(&first.items),
         "adaptiveMinutes": first.interval.0,
         "adaptiveReason": first.interval.1,
-        "items": first.items.iter().take(items_shown).collect::<Vec<_>>(),
+        "items": items,
     });
     println!("{out}");
 }
@@ -461,7 +480,7 @@ pub async fn run(args: Vec<String>) -> ExitCode {
         }
         failed |= runs[0].items.is_empty() || runs[0].failure.is_some();
         if args.json {
-            print_json(url, &runs, args.items);
+            print_json(url, &runs, args.items, args.payload);
         } else {
             print_text(url, &runs, args.items);
         }

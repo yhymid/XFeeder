@@ -6,6 +6,15 @@ section below as its description.
 ## Unreleased
 
 ### Added
+- Readable Discord posts (`Settings.PostText`, on by default): RSS, Atom and Steam event
+  posts show up to 1500 characters (`Length`, 300–3500) instead of the first ~500, cut at the
+  end of a line; headings (`<h1>`–`<h6>`, bold-only lines, `<Section>` lines) are bold with
+  an empty line before them; links keep their text as `[text](url)`; a line that is only a
+  Steam store or YouTube URL becomes a short named link. The text is kept in a new
+  `contentText` field, so `contentSnippet`, Telegram and delivery identities do not change.
+  `"PostText": false` restores the previous text.
+- `xfeeder preview --json --payload` adds the Discord payload of each entry, as it would be
+  posted.
 - Channel `Ping`: mention a role, users or `@everyone` in a line above Discord posts. A role
   ID pings on every post; the object form can limit it to some feeds (`Feeds`, e.g.
   `/releases`) and to entries matching `Include` patterns, with an optional `Text`.

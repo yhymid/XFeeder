@@ -67,6 +67,21 @@ pub(crate) fn snippet(raw: &str, max: usize) -> String {
     format!("{}…", js::trim_end(cut))
 }
 
+/// The longer Discord text of an entry (`contentText`, see
+/// [`crate::text::html_to_rich`]); `contentSnippet` stays as it was, because
+/// entries without a link or guid are identified by it.
+pub(crate) fn rich(raw: &str) -> String {
+    crate::text::cut_text(&crate::text::html_to_rich(raw), 4000)
+}
+
+fn with_text(mut entry: Value, raw: &str) -> Value {
+    let text = rich(raw);
+    if !text.is_empty() {
+        entry["contentText"] = json!(text);
+    }
+    entry
+}
+
 /// Commit trailers are noise in a message card (and `Claude-Session` links
 /// should not be published).
 fn without_trailers(text: &str) -> String {
@@ -534,17 +549,27 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                 get(e, "content"),
             ]));
             let content = snippet(&description, 500);
+            // The full content when there is one; summaries are often a teaser.
+            let full = node_text(or(&[
+                path(e, &["content", "VALUE"]),
+                get(e, "content"),
+                path(e, &["summary", "VALUE"]),
+                get(e, "summary"),
+            ]));
             let guid = or(&[get(e, "id"), &link, &json!(title.clone())]).clone();
             let categories = category_list(get(e, "category"));
-            entry(
-                title,
-                link,
-                content,
-                iso,
-                if truthy(&image) { image } else { Value::Null },
-                author,
-                string_value(&guid),
-                categories,
+            with_text(
+                entry(
+                    title,
+                    link,
+                    content,
+                    iso,
+                    if truthy(&image) { image } else { Value::Null },
+                    author,
+                    string_value(&guid),
+                    categories,
+                ),
+                &full,
             )
         })
         .filter(|item| truthy(&item["link"]) || truthy(&item["title"]))
@@ -628,15 +653,18 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
                 .map_or(Value::Null, Value::String);
             let categories = category_list(get(e, "category"));
             let guid = or(&[path(e, &["guid", "VALUE"]), get(e, "guid"), &link]).clone();
-            entry(
-                title,
-                link,
-                snippet(&raw, 500),
-                date_or_now(pub_date),
-                image,
-                author,
-                string_value(&guid),
-                categories,
+            with_text(
+                entry(
+                    title,
+                    link,
+                    snippet(&raw, 500),
+                    date_or_now(pub_date),
+                    image,
+                    author,
+                    string_value(&guid),
+                    categories,
+                ),
+                &raw,
             )
         })
         .collect();

@@ -17,12 +17,13 @@ use serde_json::{Map, Value};
 const LIMIT: usize = 2_000;
 
 /// Entry fields kept for rebuilding a message.
-const FIELDS: [&str; 14] = [
+const FIELDS: [&str; 15] = [
     "title",
     "link",
     "sourceLink",
     "identityKey",
     "contentSnippet",
+    "contentText",
     "isoDate",
     "enclosure",
     "imageFallback",

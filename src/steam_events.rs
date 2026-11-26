@@ -104,14 +104,15 @@ fn clan_url(text: &str) -> String {
 pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
     static URL_OPEN: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"(?i)\[url=\s*["']?([^"'\]\s]+)["']?[^\]]*\]"#).unwrap());
-    // A link card with no text: `[dynamiclink href="…"][/dynamiclink]`.
+    // A link card: `[dynamiclink href="…"][/dynamiclink]`, sometimes with the
+    // URL repeated inside (like `[previewyoutube=ID]URL[/previewyoutube]`).
     static DYNAMIC: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?is)\[dynamiclink\s+href=["']?([^"'\]\s]+)["']?[^\]]*\]\s*\[/dynamiclink\]"#)
+        Regex::new(r#"(?is)\[dynamiclink\s+href=["']?([^"'\]\s]+)["']?[^\]]*\].*?\[/dynamiclink\]"#)
             .unwrap()
     });
     static YOUTUBE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
-            r#"(?is)\[previewyoutube=["']?([A-Za-z0-9_-]{6,})[^\]]*\]\s*\[/previewyoutube\]"#,
+            r#"(?is)\[previewyoutube=["']?([A-Za-z0-9_-]{6,})[^\]]*\].*?\[/previewyoutube\]"#,
         )
         .unwrap()
     });
@@ -233,6 +234,7 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
                 "title": if title.is_empty() { "No title".to_string() } else { title },
                 "link": link,
                 "contentSnippet": crate::parsers::snippet(&html, 500),
+                "contentText": crate::parsers::rich(&html),
                 "isoDate": iso(started),
                 "enclosure": image,
                 "author": Value::Null,
@@ -246,6 +248,17 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn video_and_link_cards_with_text_inside() {
+        let body = "Watch:\n[previewyoutube=AX6OFBzjmlk;full]https://www.youtube.com/watch?v=AX6OFBzjmlk[/previewyoutube]\n\
+                    [dynamiclink href=\"https://store.steampowered.com/app/1/X/\"]https://store.steampowered.com/app/1/X/[/dynamiclink]";
+        let (html, _) = bbcode_to_html(body);
+        assert_eq!(
+            crate::text::html_to_text(&html),
+            "Watch:\nhttps://youtu.be/AX6OFBzjmlk\nhttps://store.steampowered.com/app/1/X/"
+        );
+    }
 
     #[test]
     fn line_breaks_in_bodies_stay_line_breaks() {

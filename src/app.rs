@@ -778,10 +778,13 @@ impl App {
                 json!({ "channel": label, "url": source, "fetched": fetched, "kept": entries.len() }),
             );
         }
-        let identified: Vec<(String, Value)> = entries
+        let mut identified: Vec<(String, Value)> = entries
             .into_iter()
             .map(|e| (entry_identity(&e, discord), e))
             .collect();
+        if stabilize_shared_links(cache, source, &kinds, &mut identified, &label) {
+            self.persist(&bucket_key, cache).await?;
+        }
         self.observe_entries(channel, source, &identified);
         self.baseline(channel, cache, source, &identified, &kinds, &bucket_key)
             .await?;
@@ -1368,6 +1371,117 @@ fn handle_done(
 /// the feed's own address does not: feeds whose entries had no link or guid
 /// (Mojang's patch note JSON) gave every entry that identity, and once they
 /// get real identities the first check must not replay the whole feed.
+/// Link and guid of an entry that the parsers would key `link#guid` when the
+/// link is shared (see `parsers::mark_shared_links`).
+fn link_and_guid(entry: &Value) -> Option<(String, String)> {
+    use crate::js::{get, or, to_string_or_empty};
+    let link = crate::text::normalize_link(&to_string_or_empty(or(&[
+        get(entry, "sourceLink"),
+        get(entry, "link"),
+    ])));
+    let guid = to_string_or_empty(get(entry, "guid")).trim().to_string();
+    (!link.is_empty() && !guid.is_empty() && guid != link).then_some((link, guid))
+}
+
+/// Keeps identities of entries that share a link stable across checks.
+///
+/// The parsers key an entry `link#guid` only while another entry of the same
+/// fetch has that link, so one entry could change identity between checks:
+/// sent again when a second entry with its link appeared, or a new entry
+/// swallowed when it was alone again with a link already in history. Here:
+/// - a link that history already holds as `link#…` keeps `link#guid` for
+///   every entry with it, even when it is alone in this fetch;
+/// - the first time a link is seen shared while history has only the bare
+///   link (sent when it was alone), the oldest entry with that link takes
+///   over the bare link's place, so it is not sent again and the others are.
+///
+/// Returns whether the history was changed.
+fn stabilize_shared_links(
+    cache: &mut Map<String, Value>,
+    source: &str,
+    kinds: &[Target],
+    identified: &mut [(String, Value)],
+    label: &str,
+) -> bool {
+    let names: Vec<String> = std::iter::once(source.to_string())
+        .chain(kinds.iter().map(|t| format!("{source}::{}", t.kind())))
+        .collect();
+    let any_key = |cache: &Map<String, Value>, test: &dyn Fn(&str) -> bool| {
+        names.iter().any(|n| {
+            cache
+                .get(n)
+                .and_then(Value::as_array)
+                .is_some_and(|l| l.iter().filter_map(Value::as_str).any(test))
+        })
+    };
+    // Sticky: once shared, always `link#guid`.
+    for (id, entry) in identified.iter_mut() {
+        let Some((link, guid)) = link_and_guid(entry) else {
+            continue;
+        };
+        let prefix = format!("{link}#");
+        if *id == link && any_key(cache, &|k: &str| k.starts_with(&prefix)) {
+            *id = format!("{link}#{guid}");
+            entry["identityKey"] = json!(id.clone());
+        }
+    }
+    // First time shared: the bare link in history belongs to the oldest entry.
+    let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
+    for (i, (id, entry)) in identified.iter().enumerate() {
+        if let Some((link, guid)) = link_and_guid(entry)
+            && *id == format!("{link}#{guid}")
+        {
+            groups.entry(link).or_default().push(i);
+        }
+    }
+    let mut changed = false;
+    for (link, members) in groups {
+        let date = |i: usize| {
+            crate::js::get(&identified[i].1, "isoDate")
+                .as_str()
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+                .map_or(i64::MIN, |d| d.timestamp_millis())
+        };
+        // Oldest by date; without dates, the last one in the feed.
+        let Some(&owner) = members
+            .iter()
+            .min_by_key(|&&i| (date(i), std::cmp::Reverse(i)))
+        else {
+            continue;
+        };
+        let prefix = format!("{link}#");
+        let owner_id = identified[owner].0.clone();
+        for name in names.iter().skip(1) {
+            let Some(list) = cache.get(name).and_then(Value::as_array) else {
+                continue;
+            };
+            let has_bare = list.iter().any(|v| v.as_str() == Some(link.as_str()));
+            let has_shared = list
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|k| k.starts_with(&prefix));
+            if has_bare && !has_shared {
+                let list = crate::state::push_cache(list, &[json!(owner_id)], CACHE_LIMIT);
+                cache.insert(name.clone(), Value::Array(list));
+                changed = true;
+                crate::info!(
+                    "Channel",
+                    "{label}: {} entries now share the link {}; the one already sent ({}) keeps its place, the others are new",
+                    members.len(),
+                    sanitize_url(&link),
+                    crate::text::cut_text(
+                        crate::js::get(&identified[owner].1, "title")
+                            .as_str()
+                            .unwrap_or(""),
+                        80
+                    )
+                );
+            }
+        }
+    }
+    changed
+}
+
 fn real_history(source: &str, bucket: Option<&Value>) -> bool {
     let own = crate::text::normalize_link(source);
     bucket
@@ -1378,6 +1492,71 @@ fn real_history(source: &str, bucket: Option<&Value>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One check of a feed: parse like the parsers do, stabilize, then send
+    /// what is pending (recorded in history). Returns the titles sent.
+    fn check(cache: &mut Map<String, Value>, items: &[(&str, &str, &str)]) -> Vec<String> {
+        const SRC: &str = "https://feed.example/rss";
+        let entries: Vec<Value> = items
+            .iter()
+            .map(|(title, link, date)| json!({ "title": title, "link": link, "guid": format!("g-{title}"), "isoDate": date }))
+            .collect();
+        let entries = crate::parsers::finish(SRC, entries);
+        let mut identified: Vec<(String, Value)> = entries
+            .into_iter()
+            .map(|e| (entry_identity(&e, true), e))
+            .collect();
+        stabilize_shared_links(cache, SRC, &[Target::Webhook], &mut identified, "test");
+        let mut sent = Vec::new();
+        for (id, entry) in &identified {
+            if !App::pending(cache, SRC, id, &[Target::Webhook]).is_empty() {
+                sent.push(entry["title"].as_str().unwrap().to_string());
+                let name = format!("{SRC}::webhook");
+                let list = cache[&name].as_array().unwrap().clone();
+                cache.insert(
+                    name,
+                    Value::Array(crate::state::push_cache(&list, &[json!(id)], CACHE_LIMIT)),
+                );
+            }
+        }
+        sent
+    }
+
+    #[test]
+    fn shared_links_send_nothing_twice_and_miss_nothing() {
+        let mut cache = Map::new();
+        let l = "https://kernel.example/";
+        assert_eq!(
+            check(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")]),
+            ["A"]
+        );
+        // B appears with the same link: B is new, A was sent already.
+        let ab = [
+            ("B", l, "2026-11-02T00:00:00Z"),
+            ("A", l, "2026-11-01T00:00:00Z"),
+        ];
+        assert_eq!(check(&mut cache, &ab), ["B"]);
+        assert!(check(&mut cache, &ab).is_empty());
+        // Back to one entry with that link: a new one is sent, an old one is not.
+        assert_eq!(
+            check(&mut cache, &[("C", l, "2026-11-03T00:00:00Z")]),
+            ["C"]
+        );
+        assert!(check(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")]).is_empty());
+        assert!(check(&mut cache, &[("B", l, "2026-11-02T00:00:00Z")]).is_empty());
+    }
+
+    #[test]
+    fn unshared_links_keep_their_identity_when_the_guid_changes() {
+        // Feeds whose guid changes on every fetch stay keyed by link alone.
+        let mut cache = Map::new();
+        let m = "https://site.example/post";
+        assert_eq!(
+            check(&mut cache, &[("one", m, "2026-11-01T00:00:00Z")]),
+            ["one"]
+        );
+        assert!(check(&mut cache, &[("one again", m, "2026-11-01T00:00:00Z")]).is_empty());
+    }
 
     #[test]
     fn a_history_of_only_the_feed_address_is_not_real() {

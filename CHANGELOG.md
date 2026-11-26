@@ -38,6 +38,13 @@ section below as its description.
   Settings: `Settings.SteamPics`.
 
 ### Fixed
+- Entries that share one link (kernel.org, Claude release notes) keep the same identity on
+  every check. Before, an entry was keyed `link#guid` only while another entry of the same
+  fetch had its link, so it could be sent again when a second entry with that link appeared,
+  or a new entry could be skipped when it was alone again. Once history holds a link as
+  `link#…`, every entry with it keeps `link#guid`; the first time a link is shared while
+  history has only the bare link, the oldest entry takes its place (logged). Found in a code
+  review; on prod's history (one affected feed, 181 entries) it changes nothing to send now.
 - Steam builds keep the last 50 events per app instead of 20, so with `Changelists` a build
   post cannot rotate out before it is sent.
 - A SteamCMD run that timed out or was cancelled left the real SteamCMD running:

@@ -131,6 +131,9 @@ pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;");
+    // Steam shows a line break in a post body as a line break. In HTML it
+    // would be a space, which glued "· fix one\n· fix two" lists into one line.
+    let text = text.replace("\r\n", "\n").replace('\n', "<br>");
     let mut first_image = None;
     let text = IMG.replace_all(&text, |c: &Captures| {
         if first_image.is_none() {
@@ -243,6 +246,23 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_breaks_in_bodies_stay_line_breaks() {
+        // Hades II hotfix notes: one "·" item per source line.
+        let body = "· [spoiler][b]Dream Dives[/b][/spoiler]: Fixed [b]Wells of Charon[/b]\n\
+                    · Fixed an interaction between [b]Weed Killer (Demeter)[/b] and Dividing Blaze\r\n\
+                    [p]- White Fox - Jade Majesty\n- Jeff the Land Shark[/p]";
+        let (html, _) = bbcode_to_html(body);
+        let text = crate::text::html_to_text(&html);
+        assert_eq!(
+            text,
+            "· Dream Dives: Fixed Wells of Charon\n\
+             · Fixed an interaction between Weed Killer (Demeter) and Dividing Blaze\n\
+             - White Fox - Jade Majesty\n\
+             - Jeff the Land Shark"
+        );
+    }
 
     const URL: &str = "https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=730&count_before=0&count_after=10&lang_list=0";
 

@@ -15,6 +15,9 @@ section below as its description.
   (`${STEAMCMD_LOGIN}`); the session comes from one manual `steamcmd +login NAME`. A lost
   session (password or Steam Guard prompt) stops the run at once and falls back to anonymous
   for 6 hours; switching modes re-baselines instead of posting "Branch added".
+  `Password` (`${STEAMCMD_PASSWORD}`) logs in when there is no saved session: from a 0600
+  temporary script, never on the command line or in logs; Steam may ask to approve it in the
+  Steam Mobile app (SteamCMD waits, up to `TimeoutSeconds`).
 - Readable Discord posts (`Settings.PostText`, on by default): RSS, Atom and Steam event
   posts show up to 1500 characters (`Length`, 300–3500) instead of the first ~500, cut at the
   end of a line; headings (`<h1>`–`<h6>`, bold-only lines, `<Section>` lines) are bold with

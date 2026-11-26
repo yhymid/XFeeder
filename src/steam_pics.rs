@@ -37,14 +37,14 @@
 //! "Settings": { "SteamPics": { "Command": "/usr/games/steamcmd",
 //!   "MinIntervalMinutes": 10, "TimeoutSeconds": 180,
 //!   "IgnoreBranches": "^dprp?$", "RawLog": true, "Changelists": false,
-//!   "Login": "${STEAMCMD_LOGIN}" } }
+//!   "Login": "${STEAMCMD_LOGIN}", "Password": "${STEAMCMD_PASSWORD}" } }
 //! ```
 //!
 //! `Login` (optional) uses a Steam account instead of anonymous, for apps
-//! whose depots anonymous Steam hides (Deadlock). No password is stored: log
-//! in once by hand (`steamcmd +login NAME`, password and Steam Guard code),
-//! after which SteamCMD reuses its saved session. If Steam asks for a password
-//! or code again, the run stops at once and anonymous is used for 6 hours.
+//! whose depots anonymous Steam hides (Deadlock). Runs use SteamCMD's saved
+//! session; `Password` is used only when there is none, and Steam may ask to
+//! approve that login in the Steam Mobile app. A failed login falls back to
+//! anonymous for 6 hours.
 //! Switching between the two compares nothing (no flood of "Branch added").
 //! All keys are optional. `Command` defaults to `/usr/games/steamcmd` when it
 //! exists (Debian/Ubuntu package), otherwise `steamcmd` from `PATH`.
@@ -100,6 +100,7 @@ struct Settings {
     raw_log: bool,
     changelists: bool,
     login: Option<String>,
+    password: Option<String>,
 }
 
 fn settings(root: &Value) -> Settings {
@@ -149,6 +150,7 @@ fn settings(root: &Value) -> Settings {
         raw_log: section.get("RawLog") != Some(&Value::Bool(false)),
         changelists: section.get("Changelists") == Some(&Value::Bool(true)),
         login: login_name(section.get("Login")),
+        password: login_password(section.get("Password")),
     }
 }
 
@@ -170,6 +172,27 @@ fn login_name(value: Option<&Value>) -> Option<String> {
         );
         None
     }
+}
+
+/// The account password for `Password` (normally `${STEAMCMD_PASSWORD}`).
+/// Never logged. Spaces, quotes and line breaks cannot go in a SteamCMD
+/// script line, so such a password is refused (log in by hand instead).
+fn login_password(value: Option<&Value>) -> Option<String> {
+    let password = value.and_then(Value::as_str)?;
+    if password.is_empty() || (password.starts_with("${") && password.ends_with('}')) {
+        return None;
+    }
+    if password
+        .chars()
+        .any(|c| c.is_whitespace() || c == '"' || c.is_control())
+    {
+        crate::warn!(
+            "SteamPics",
+            "SteamPics.Password has spaces, quotes or line breaks, which SteamCMD scripts cannot take; not using it (log in once by hand: steamcmd +login NAME)"
+        );
+        return None;
+    }
+    Some(password.to_string())
 }
 
 /// Every `steampics://` AppID in the config, in order of first appearance.
@@ -958,7 +981,7 @@ enum RunError {
 /// SteamCMD output that means the saved session is gone (it would otherwise
 /// wait for a password or a Steam Guard code).
 static LOGIN_FAILED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)steam guard|two-factor|login failure|account logon denied|invalid password|rate limit exceeded|password:|cached credentials not found")
+    Regex::new(r"(?i)steam guard|two-factor|login failure|account logon denied|invalid password|rate limit exceeded|password:|cached credentials not found|timed out waiting for confirmation")
         .expect("static regex")
 });
 
@@ -982,25 +1005,81 @@ impl Drop for GroupKill {
     }
 }
 
+/// A 0600 SteamCMD script holding the password, deleted when dropped; the
+/// password never goes on the command line (visible to every user).
+struct Runscript(PathBuf);
+
+impl Runscript {
+    fn new(lines: &str) -> std::io::Result<Self> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let path = std::env::temp_dir().join(format!(
+            "xfeeder-steamcmd-{}-{}.txt",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)?;
+        file.write_all(lines.as_bytes())?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for Runscript {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// How SteamCMD logs in: anonymous, an account's saved session, or an
+/// account with its password (Steam may ask to approve it in the app).
+#[derive(Clone, Copy)]
+enum Login<'a> {
+    Anonymous,
+    Saved(&'a str),
+    Password(&'a str, &'a str),
+}
+
 async fn run_steamcmd(
     command: &str,
-    login: Option<&str>,
+    login: Login<'_>,
     apps: &BTreeSet<u32>,
     timeout: Duration,
     cancel: &CancellationToken,
 ) -> Result<String, RunError> {
     let mut cmd = tokio::process::Command::new(command);
+    let mut script = None;
     match login {
-        // No password: SteamCMD's saved session, never a prompt.
-        Some(name) => cmd.args(["+@NoPromptForPassword", "1", "+login", name]),
-        None => cmd.args(["+login", "anonymous"]),
-    };
-    cmd.args(["+app_info_update", "1"]);
-    for app in apps {
-        cmd.arg("+app_info_print").arg(app.to_string());
+        // No password: SteamCMD's saved session, never a password prompt.
+        Login::Saved(name) => {
+            cmd.args(["+@NoPromptForPassword", "1", "+login", name]);
+        }
+        Login::Anonymous => {
+            cmd.args(["+login", "anonymous"]);
+        }
+        Login::Password(name, password) => {
+            let mut lines = format!("login {name} {password}\napp_info_update 1\n");
+            for app in apps {
+                lines.push_str(&format!("app_info_print {app}\n"));
+            }
+            lines.push_str("quit\n");
+            let file = Runscript::new(&lines)
+                .map_err(|e| RunError::Failed(format!("cannot write the SteamCMD script: {e}")))?;
+            cmd.arg("+runscript").arg(&file.0);
+            script = Some(file);
+        }
     }
-    cmd.arg("+quit")
-        .stdin(Stdio::null())
+    if script.is_none() {
+        cmd.args(["+app_info_update", "1"]);
+        for app in apps {
+            cmd.arg("+app_info_print").arg(app.to_string());
+        }
+        cmd.arg("+quit");
+    }
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         // Its own process group: /usr/games/steamcmd and steamcmd.sh are
@@ -1021,13 +1100,19 @@ async fn run_steamcmd(
         },
     };
     group.0 = None;
-    let text = String::from_utf8_lossy(&output.stdout).into_owned();
-    if login.is_some()
-        && let Some(found) = LOGIN_FAILED.find(&ANSI.replace_all(&text, ""))
+    drop(script);
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    if let Login::Password(_, password) = login {
+        text = text.replace(password, "***");
+    }
+    let clean = ANSI.replace_all(&text, "");
+    if !HEADER.is_match(&clean)
+        && !matches!(login, Login::Anonymous)
+        && let Some(found) = LOGIN_FAILED.find(&clean)
     {
         return Err(RunError::Login(found.as_str().to_string()));
     }
-    if !HEADER.is_match(&ANSI.replace_all(&text, "")) {
+    if !HEADER.is_match(&clean) {
         let tail: String = ANSI
             .replace_all(&text, "")
             .lines()
@@ -1082,21 +1167,45 @@ pub async fn fetch(
                 .login_blocked_until
                 .is_none_or(|t| Instant::now() >= t)
         });
-        let mut result = run_steamcmd(&cfg.command, login, &wanted, cfg.timeout, cancel).await;
+        let first = login.map_or(Login::Anonymous, Login::Saved);
+        let mut result = run_steamcmd(&cfg.command, first, &wanted, cfg.timeout, cancel).await;
         runner.mode = if login.is_some() {
             "login"
         } else {
             "anonymous"
         }
         .into();
+        // No saved session yet (or it expired): log in with the password once;
+        // Steam may ask to approve it in the Steam Mobile app.
+        if let (Err(RunError::Login(_)), Some(name), Some(password)) =
+            (&result, login, cfg.password.as_deref())
+        {
+            crate::warn!(
+                "SteamPics",
+                "Logging in to Steam as {name} with the password from .env. If Steam asks, approve the login in the Steam Mobile app now (waiting up to {} s).",
+                cfg.timeout.as_secs()
+            );
+            result = run_steamcmd(
+                &cfg.command,
+                Login::Password(name, password),
+                &wanted,
+                cfg.timeout,
+                cancel,
+            )
+            .await;
+            if let Err(RunError::Failed(message)) = &result {
+                result = Err(RunError::Login(message.clone()));
+            }
+        }
         if let Err(RunError::Login(found)) = &result {
             crate::warn!(
                 "SteamPics",
-                "Steam login for SteamPics.Login needs a password or Steam Guard code (\"{found}\"); using anonymous for 6 hours. Log in once by hand on this machine: steamcmd +login NAME"
+                "Steam login for SteamPics.Login failed (\"{found}\"); using anonymous for 6 hours. Check STEAMCMD_LOGIN/STEAMCMD_PASSWORD in .env and approve the login in the Steam Mobile app when asked."
             );
             runner.login_blocked_until = Some(Instant::now() + Duration::from_secs(6 * 3600));
             runner.mode = "anonymous".into();
-            result = run_steamcmd(&cfg.command, None, &wanted, cfg.timeout, cancel).await;
+            result =
+                run_steamcmd(&cfg.command, Login::Anonymous, &wanted, cfg.timeout, cancel).await;
         }
         match result {
             Err(RunError::Login(message)) => {
@@ -1456,7 +1565,7 @@ mod tests {
         let apps: BTreeSet<u32> = [730].into();
         let result = run_steamcmd(
             script.to_str().unwrap(),
-            None,
+            Login::Anonymous,
             &apps,
             Duration::from_millis(500),
             &CancellationToken::new(),
@@ -1522,6 +1631,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn password_login_with_app_approval() {
+        let dir = std::env::temp_dir().join(format!("xf-steampw-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/steam-pics/app_info_print.txt"
+        );
+        let seen = dir.join("seen");
+        let fake = |body: &str| {
+            let script = dir.join("steamcmd");
+            std::fs::write(&script, format!("#!/bin/sh\necho \"$@\" > {s}\nstat -c %a \"$2\" >> {s}\ncat \"$2\" >> {s}\n{body}\n", s = seen.display())).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+            script
+        };
+        let apps: BTreeSet<u32> = [730].into();
+        // Steam asks for approval in the app, then prints the app info.
+        let script = fake(&format!(
+            "echo 'Please confirm the login in the Steam Mobile app on your phone.'\necho 'Waiting for confirmation...OK'\ncat {fixture}"
+        ));
+        let ok = run_steamcmd(
+            script.to_str().unwrap(),
+            Login::Password("feed_bot1", "Secr3t!pw"),
+            &apps,
+            Duration::from_secs(10),
+            &CancellationToken::new(),
+        )
+        .await;
+        assert!(ok.is_ok());
+        let log = std::fs::read_to_string(&seen).unwrap();
+        let mut lines = log.lines();
+        let argv = lines.next().unwrap();
+        assert!(
+            argv.starts_with("+runscript ") && !argv.contains("Secr3t"),
+            "{argv}"
+        );
+        assert_eq!(lines.next(), Some("600"));
+        assert!(
+            log.contains("login feed_bot1 Secr3t!pw\napp_info_update 1\napp_info_print 730\nquit")
+        );
+        let file = argv.trim_start_matches("+runscript ");
+        assert!(
+            !std::path::Path::new(file).exists(),
+            "the password file is deleted"
+        );
+        // A refused login: the error never shows the password.
+        let script =
+            fake("echo 'login feed_bot1 Secr3t!pw'\necho 'Timed out waiting for confirmation'");
+        let err = run_steamcmd(
+            script.to_str().unwrap(),
+            Login::Password("feed_bot1", "Secr3t!pw"),
+            &apps,
+            Duration::from_secs(10),
+            &CancellationToken::new(),
+        )
+        .await;
+        match err {
+            Err(RunError::Login(m)) => assert!(!m.contains("Secr3t"), "{m}"),
+            _ => panic!("expected a login error"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(login_password(Some(&json!("${STEAMCMD_PASSWORD}"))), None);
+        assert_eq!(login_password(Some(&json!("a b"))), None);
+        assert_eq!(login_password(Some(&json!("ok!pw"))), Some("ok!pw".into()));
+    }
+
+    #[tokio::test]
     async fn a_lost_steam_session_stops_the_run() {
         let dir = std::env::temp_dir().join(format!("xf-steamlogin-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1537,7 +1713,7 @@ mod tests {
         let apps: BTreeSet<u32> = [730].into();
         let result = run_steamcmd(
             script.to_str().unwrap(),
-            Some("feed_bot1"),
+            Login::Saved("feed_bot1"),
             &apps,
             Duration::from_secs(10),
             &CancellationToken::new(),

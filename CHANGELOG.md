@@ -33,6 +33,9 @@ section below as its description.
   Settings: `Settings.SteamPics`.
 
 ### Fixed
+- A SteamCMD run that timed out or was cancelled left the real SteamCMD running:
+  `/usr/games/steamcmd` and `steamcmd.sh` are shell scripts that start it as a child, and only
+  the script was killed. SteamCMD now runs in its own process group, which is killed as a whole.
 - Steam builds (`steampics://`): an answer with an older change number (stale cached info)
   or without any depot (partial answer) is ignored instead of being compared, which would
   have posted a fake rollback or "Branch removed" for every branch. Found in a code review.

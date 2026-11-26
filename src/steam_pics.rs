@@ -888,6 +888,26 @@ enum RunError {
     Failed(String),
 }
 
+/// Kills a whole process group when dropped (timeout, cancel, error), unless
+/// the run finished and the id was cleared.
+struct GroupKill(Option<u32>);
+
+impl Drop for GroupKill {
+    fn drop(&mut self) {
+        if let Some(pid) = self
+            .0
+            .and_then(|p| i32::try_from(p).ok())
+            .filter(|&p| p > 0)
+        {
+            // SAFETY: plain syscall; a negative pid addresses the group
+            // created by `process_group(0)`, whose id is the child's pid.
+            unsafe {
+                libc::kill(-pid, libc::SIGKILL);
+            }
+        }
+    }
+}
+
 async fn run_steamcmd(
     command: &str,
     apps: &BTreeSet<u32>,
@@ -903,10 +923,15 @@ async fn run_steamcmd(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        // Its own process group: /usr/games/steamcmd and steamcmd.sh are
+        // shell scripts that start the real binary as a child, which
+        // kill_on_drop alone would leave running after a timeout.
+        .process_group(0)
         .kill_on_drop(true);
     let child = cmd
         .spawn()
         .map_err(|e| RunError::Failed(format!("cannot start {command}: {e}")))?;
+    let mut group = GroupKill(child.id());
     let output = tokio::select! {
         _ = cancel.cancelled() => return Err(RunError::Cancelled),
         result = tokio::time::timeout(timeout, child.wait_with_output()) => match result {
@@ -915,6 +940,7 @@ async fn run_steamcmd(
             Ok(Ok(output)) => output,
         },
     };
+    group.0 = None;
     let text = String::from_utf8_lossy(&output.stdout).into_owned();
     if !HEADER.is_match(&ANSI.replace_all(&text, "")) {
         let tail: String = ANSI
@@ -1299,6 +1325,44 @@ mod tests {
             serde_json::from_slice(&std::fs::read(state_path(&dir)).unwrap()).unwrap();
         assert_eq!(saved["apps"]["730"]["change"], 41339556);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_steamcmd_leaves_no_child_behind() {
+        // A wrapper script like steamcmd.sh: a shell that starts a child.
+        let dir = std::env::temp_dir().join(format!("xf-steamcmd-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("steamcmd");
+        let marker = dir.join("child.pid");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nsleep 30 &\necho $! > {}\nwait\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let apps: BTreeSet<u32> = [730].into();
+        let result = run_steamcmd(
+            script.to_str().unwrap(),
+            &apps,
+            Duration::from_millis(500),
+            &CancellationToken::new(),
+        )
+        .await;
+        assert!(matches!(result, Err(RunError::Failed(_))));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let child: i32 = std::fs::read_to_string(&marker)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        // SAFETY: signal 0 only checks whether the process exists.
+        let alive = unsafe { libc::kill(child, 0) } == 0;
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(!alive, "the script's child survived the timeout");
     }
 
     #[test]

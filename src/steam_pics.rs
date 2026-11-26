@@ -36,8 +36,16 @@
 //! ```json
 //! "Settings": { "SteamPics": { "Command": "/usr/games/steamcmd",
 //!   "MinIntervalMinutes": 10, "TimeoutSeconds": 180,
-//!   "IgnoreBranches": "^dprp?$", "RawLog": true, "Changelists": false } }
+//!   "IgnoreBranches": "^dprp?$", "RawLog": true, "Changelists": false,
+//!   "Login": "${STEAMCMD_LOGIN}" } }
 //! ```
+//!
+//! `Login` (optional) uses a Steam account instead of anonymous, for apps
+//! whose depots anonymous Steam hides (Deadlock). No password is stored: log
+//! in once by hand (`steamcmd +login NAME`, password and Steam Guard code),
+//! after which SteamCMD reuses its saved session. If Steam asks for a password
+//! or code again, the run stops at once and anonymous is used for 6 hours.
+//! Switching between the two compares nothing (no flood of "Branch added").
 //! All keys are optional. `Command` defaults to `/usr/games/steamcmd` when it
 //! exists (Debian/Ubuntu package), otherwise `steamcmd` from `PATH`.
 
@@ -91,6 +99,7 @@ struct Settings {
     ignore: Option<Regex>,
     raw_log: bool,
     changelists: bool,
+    login: Option<String>,
 }
 
 fn settings(root: &Value) -> Settings {
@@ -139,6 +148,27 @@ fn settings(root: &Value) -> Settings {
         ignore,
         raw_log: section.get("RawLog") != Some(&Value::Bool(false)),
         changelists: section.get("Changelists") == Some(&Value::Bool(true)),
+        login: login_name(section.get("Login")),
+    }
+}
+
+/// A Steam account name for `Login`: letters, digits and `_` only (it goes on
+/// SteamCMD's command line). An unresolved `${NAME}` or anything else is off.
+fn login_name(value: Option<&Value>) -> Option<String> {
+    let name = value.and_then(Value::as_str)?.trim();
+    if name.is_empty() || name.eq_ignore_ascii_case("anonymous") {
+        return None;
+    }
+    if (3..=64).contains(&name.len())
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        Some(name.to_string())
+    } else {
+        crate::warn!(
+            "SteamPics",
+            "SteamPics.Login is not a Steam account name (letters, digits, _); using anonymous"
+        );
+        None
     }
 }
 
@@ -701,6 +731,9 @@ struct Runner {
     last_run: Option<Instant>,
     covered: BTreeSet<u32>,
     last_error: Option<String>,
+    /// `anonymous` or `login`, stored per app: a change of mode re-baselines.
+    mode: String,
+    login_blocked_until: Option<Instant>,
 }
 
 static RUNNER: LazyLock<Mutex<Runner>> = LazyLock::new(|| Mutex::new(Runner::default()));
@@ -759,6 +792,33 @@ impl Runner {
                 .as_object_mut()
                 .map(std::mem::take)
                 .unwrap_or_default();
+            let mode = if self.mode.is_empty() {
+                "anonymous"
+            } else {
+                self.mode.as_str()
+            };
+            let old_mode = entry
+                .get("mode")
+                .and_then(Value::as_str)
+                .unwrap_or("anonymous");
+            if old_mode != mode && entry.get("flat").is_some() {
+                // The other mode sees other depots and branches: start over
+                // from this answer instead of posting the difference.
+                crate::info!(
+                    "SteamPics",
+                    "{} ({}): now read as {mode} (was {old_mode}); comparing from this run",
+                    app_name(&app.flat, app.appid),
+                    app.appid
+                );
+                let mut fresh = entry;
+                fresh.insert("change".into(), json!(app.change));
+                fresh.insert("name".into(), json!(app_name(&app.flat, app.appid)));
+                fresh.insert("flat".into(), json!(app.flat));
+                fresh.insert("mode".into(), json!(mode));
+                self.apps
+                    .insert(app.appid.to_string(), Value::Object(fresh));
+                continue;
+            }
             let old_change = entry.get("change").and_then(Value::as_u64);
             // Change numbers only go up; a lower one is stale cached info, and
             // an answer that lost every depot is partial. Diffing either would
@@ -847,6 +907,7 @@ impl Runner {
                 "name": app_name(&app.flat, app.appid),
                 "flat": app.flat,
                 "events": events,
+                "mode": mode,
             });
         }
         log
@@ -890,7 +951,16 @@ fn append_raw_log(path: &Path, lines: &[Value]) -> std::io::Result<()> {
 enum RunError {
     Cancelled,
     Failed(String),
+    /// Steam wanted a password or Steam Guard code for `Login`.
+    Login(String),
 }
+
+/// SteamCMD output that means the saved session is gone (it would otherwise
+/// wait for a password or a Steam Guard code).
+static LOGIN_FAILED: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)steam guard|two-factor|login failure|account logon denied|invalid password|rate limit exceeded|password:|cached credentials not found")
+        .expect("static regex")
+});
 
 /// Kills a whole process group when dropped (timeout, cancel, error), unless
 /// the run finished and the id was cleared.
@@ -914,12 +984,18 @@ impl Drop for GroupKill {
 
 async fn run_steamcmd(
     command: &str,
+    login: Option<&str>,
     apps: &BTreeSet<u32>,
     timeout: Duration,
     cancel: &CancellationToken,
 ) -> Result<String, RunError> {
     let mut cmd = tokio::process::Command::new(command);
-    cmd.args(["+login", "anonymous", "+app_info_update", "1"]);
+    match login {
+        // No password: SteamCMD's saved session, never a prompt.
+        Some(name) => cmd.args(["+@NoPromptForPassword", "1", "+login", name]),
+        None => cmd.args(["+login", "anonymous"]),
+    };
+    cmd.args(["+app_info_update", "1"]);
     for app in apps {
         cmd.arg("+app_info_print").arg(app.to_string());
     }
@@ -946,6 +1022,11 @@ async fn run_steamcmd(
     };
     group.0 = None;
     let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    if login.is_some()
+        && let Some(found) = LOGIN_FAILED.find(&ANSI.replace_all(&text, ""))
+    {
+        return Err(RunError::Login(found.as_str().to_string()));
+    }
     if !HEADER.is_match(&ANSI.replace_all(&text, "")) {
         let tail: String = ANSI
             .replace_all(&text, "")
@@ -996,7 +1077,31 @@ pub async fn fetch(
         configured(root, &mut wanted);
         wanted.insert(id);
         let started = Instant::now();
-        match run_steamcmd(&cfg.command, &wanted, cfg.timeout, cancel).await {
+        let login = cfg.login.as_deref().filter(|_| {
+            runner
+                .login_blocked_until
+                .is_none_or(|t| Instant::now() >= t)
+        });
+        let mut result = run_steamcmd(&cfg.command, login, &wanted, cfg.timeout, cancel).await;
+        runner.mode = if login.is_some() {
+            "login"
+        } else {
+            "anonymous"
+        }
+        .into();
+        if let Err(RunError::Login(found)) = &result {
+            crate::warn!(
+                "SteamPics",
+                "Steam login for SteamPics.Login needs a password or Steam Guard code (\"{found}\"); using anonymous for 6 hours. Log in once by hand on this machine: steamcmd +login NAME"
+            );
+            runner.login_blocked_until = Some(Instant::now() + Duration::from_secs(6 * 3600));
+            runner.mode = "anonymous".into();
+            result = run_steamcmd(&cfg.command, None, &wanted, cfg.timeout, cancel).await;
+        }
+        match result {
+            Err(RunError::Login(message)) => {
+                runner.last_error = Some(format!("Steam login: {message}"));
+            }
             Err(RunError::Cancelled) => {
                 return Fetched {
                     items: runner.items(id),
@@ -1351,6 +1456,7 @@ mod tests {
         let apps: BTreeSet<u32> = [730].into();
         let result = run_steamcmd(
             script.to_str().unwrap(),
+            None,
             &apps,
             Duration::from_millis(500),
             &CancellationToken::new(),
@@ -1367,6 +1473,83 @@ mod tests {
         let alive = unsafe { libc::kill(child, 0) } == 0;
         std::fs::remove_dir_all(&dir).ok();
         assert!(!alive, "the script's child survived the timeout");
+    }
+
+    #[test]
+    fn login_names() {
+        assert_eq!(
+            login_name(Some(&json!("feed_bot1"))),
+            Some("feed_bot1".into())
+        );
+        for off in [
+            json!(""),
+            json!("anonymous"),
+            json!("a b"),
+            json!("x;rm"),
+            json!(5),
+        ] {
+            assert_eq!(login_name(Some(&off)), None, "{off}");
+        }
+        assert_eq!(login_name(None), None);
+    }
+
+    #[test]
+    fn switching_login_mode_posts_nothing() {
+        let mut runner = Runner::default();
+        let apps = parse_output(&fixture());
+        runner.apply(apps.clone(), None, true, 10);
+        let before = runner.items(730).len();
+        // The account sees another build and a new branch: only a new baseline.
+        let mut seen = apps.clone();
+        seen[0].change += 1;
+        seen[0]
+            .flat
+            .insert("depots/branches/staff/buildid".into(), "1".into());
+        seen[0]
+            .flat
+            .insert("depots/branches/public/buildid".into(), "26900000".into());
+        runner.mode = "login".into();
+        assert!(runner.apply(seen.clone(), None, true, 20).is_empty());
+        assert_eq!(runner.items(730).len(), before);
+        // Later changes in the same mode are compared as usual.
+        let mut next = seen;
+        next[0].change += 1;
+        next[0]
+            .flat
+            .insert("depots/branches/public/buildid".into(), "26900001".into());
+        runner.apply(next, None, true, 30);
+        assert_eq!(runner.items(730).len(), before + 1);
+    }
+
+    #[tokio::test]
+    async fn a_lost_steam_session_stops_the_run() {
+        let dir = std::env::temp_dir().join(format!("xf-steamlogin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("steamcmd");
+        let args = dir.join("args");
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\necho \"$@\" > {}\necho 'Logging in user ...'\necho 'Steam Guard code:'\n", args.display()),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let apps: BTreeSet<u32> = [730].into();
+        let result = run_steamcmd(
+            script.to_str().unwrap(),
+            Some("feed_bot1"),
+            &apps,
+            Duration::from_secs(10),
+            &CancellationToken::new(),
+        )
+        .await;
+        let used = std::fs::read_to_string(&args).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(matches!(result, Err(RunError::Login(_))));
+        assert!(
+            used.starts_with("+@NoPromptForPassword 1 +login feed_bot1 +app_info_update"),
+            "{used}"
+        );
     }
 
     #[test]

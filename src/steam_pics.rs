@@ -981,7 +981,7 @@ enum RunError {
 /// SteamCMD output that means the saved session is gone (it would otherwise
 /// wait for a password or a Steam Guard code).
 static LOGIN_FAILED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)steam guard|two-factor|login failure|account logon denied|invalid password|rate limit exceeded|password:|cached credentials not found|no cached credentials|timed out waiting for confirmation|logging in user .*failed")
+    Regex::new(r"(?i)steam guard code|two-factor code|need two-factor|login failure|account logon denied|invalid password|rate limit exceeded|password:|cached credentials not found|no cached credentials|timed out waiting for confirmation|error \(timeout\)|logging in user .*failed")
         .expect("static regex")
 });
 
@@ -1110,7 +1110,7 @@ async fn run_steamcmd(
         // What SteamCMD said about the login (the password is already
         // replaced): app_info_print also prints SteamCMD's cached app info
         // after a failed login, so app info alone proves nothing.
-        let said: Vec<&str> = clean
+        let mut said: Vec<&str> = clean
             .lines()
             .map(str::trim)
             .filter(|l| {
@@ -1126,12 +1126,16 @@ async fn run_steamcmd(
                     "credentials",
                     "rate limit",
                     "denied",
+                    "error",
+                    "retrying",
                 ]
                 .iter()
                 .any(|w| l.contains(w))
             })
-            .take(12)
             .collect();
+        // "Waiting for confirmation..." repeats every few seconds.
+        said.dedup();
+        said.truncate(16);
         crate::diag::expert(
             "steampics.login",
             json!({ "lines": said, "exit": output.status.code() }),
@@ -1215,8 +1219,7 @@ pub async fn fetch(
         {
             crate::warn!(
                 "SteamPics",
-                "Logging in to Steam as {name} with the password from .env. If Steam asks, approve the login in the Steam Mobile app now (waiting up to {} s).",
-                cfg.timeout.as_secs()
+                "Logging in to Steam as {name} with the password from .env. If Steam asks, approve the login in the Steam Mobile app now: SteamCMD waits only about 1 minute.",
             );
             result = run_steamcmd(
                 &cfg.command,
@@ -1681,6 +1684,35 @@ mod tests {
         };
         let apps: BTreeSet<u32> = [730].into();
         // Steam asks for approval in the app, then prints the app info.
+        // The account's Steam Guard notice is not a failure; the timeout is.
+        let script = fake(&format!(
+            "echo \"Logging in user 'feed_bot1' to Steam Public...This account is protected by a Steam Guard mobile authenticator.\"\necho 'Waiting for confirmation...'\necho 'Waiting for confirmation...OK'\ncat {fixture}"
+        ));
+        assert!(
+            run_steamcmd(
+                script.to_str().unwrap(),
+                Login::Password("feed_bot1", "Secr3t!pw"),
+                &apps,
+                Duration::from_secs(10),
+                &CancellationToken::new()
+            )
+            .await
+            .is_ok()
+        );
+        let script = fake(&format!(
+            "echo 'Waiting for confirmation...'\necho 'Retrying...'\necho 'ERROR (Timeout)'\ncat {fixture}"
+        ));
+        assert!(matches!(
+            run_steamcmd(
+                script.to_str().unwrap(),
+                Login::Password("feed_bot1", "Secr3t!pw"),
+                &apps,
+                Duration::from_secs(10),
+                &CancellationToken::new()
+            )
+            .await,
+            Err(RunError::Login(_))
+        ));
         let script = fake(&format!(
             "echo 'Please confirm the login in the Steam Mobile app on your phone.'\necho 'Waiting for confirmation...OK'\ncat {fixture}"
         ));

@@ -17,7 +17,7 @@ section below as its description.
   for 6 hours; switching modes re-baselines instead of posting "Branch added".
   `Password` (`${STEAMCMD_PASSWORD}`) logs in when there is no saved session: from a 0600
   temporary script, never on the command line or in logs; Steam may ask to approve it in the
-  Steam Mobile app (SteamCMD waits, up to `TimeoutSeconds`).
+  Steam Mobile app (SteamCMD waits only about a minute).
 - Readable Discord posts (`Settings.PostText`, on by default): RSS, Atom and Steam event
   posts show up to 1500 characters (`Length`, 300–3500) instead of the first ~500, cut at the
   end of a line; headings (`<h1>`–`<h6>`, bold-only lines, `<Section>` lines) are bold with

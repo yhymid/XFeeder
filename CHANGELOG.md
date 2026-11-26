@@ -6,6 +6,10 @@ section below as its description.
 ## Unreleased
 
 ### Added
+- Only one worker per `cache.json`: the worker holds an exclusive lock on `cache.json.lock`
+  (also across containers sharing the directory), and a second one exits with "another XFeeder
+  worker is already using …". `--dry-run` does not lock. `XFEEDER_DASHBOARD_WORKER_CONTROL=off`
+  turns off the dashboard's Start/Stop/Restart for a worker run as its own service or container.
 - `Settings.SteamPics.Login`: read `steampics://` games with a Steam account (for games whose
   depots anonymous Steam hides, like Deadlock). Only the account name is configured
   (`${STEAMCMD_LOGIN}`); the session comes from one manual `steamcmd +login NAME`. A lost

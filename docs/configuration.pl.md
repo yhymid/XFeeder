@@ -912,6 +912,7 @@ Zmienne można ustawić w systemie albo w `.env`.
 | `XFEEDER_DASHBOARD_PASSWORD` | Hasło do dashboardu. **Wymagane**, gdy dashboard słucha poza `127.0.0.1`. |
 | `XFEEDER_DASHBOARD_HOST` / `_PORT` | Adres i port dashboardu (domyślnie `127.0.0.1:3000`). |
 | `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` | Publiczny adres dashboardu za reverse proxy, np. `https://feeds.example.com`. |
+| `XFEEDER_DASHBOARD_WORKER_CONTROL` | `off` = bez Start/Stop/Restart w dashboardzie (worker działa jako osobna usługa lub kontener). Zobacz [dashboard.pl.md](dashboard.pl.md). |
 | `XFEEDER_DASHBOARD_SESSION_TTL_HOURS` | Jak długo trwa zalogowanie (domyślnie 12 h). |
 | `XFEEDER_SERVICE_UNIT` | Usługa systemd, której dziennik pokazuje strona Logi w dashboardzie (domyślnie `xfeeder`). |
 

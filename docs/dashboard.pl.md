@@ -48,6 +48,7 @@ pliki (zob. [Prośby do workera](#prośby-do-workera)).
 | `XFEEDER_DASHBOARD_PORT` | `3000` | Port. |
 | `XFEEDER_DASHBOARD_PASSWORD` | – | Hasło; wymagane dla adresu innego niż lokalny. |
 | `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` | – | Publiczny adres `https://…` za reverse proxy. |
+| `XFEEDER_DASHBOARD_WORKER_CONTROL` | `on` | `off` ukrywa Start/Stop/Restart i odrzuca je, gdy worker działa jako osobna usługa lub kontener (Docker). Drugi worker na tym samym `cache.json` i tak nie wystartuje: worker trzyma blokadę `cache.json.lock`. |
 | `XFEEDER_DASHBOARD_SESSION_TTL_HOURS` | `12` | Jak długo trwa logowanie. |
 | `XFEEDER_SERVICE_UNIT` | `xfeeder` | Usługa systemd, której dziennik czyta strona **Logi**. |
 

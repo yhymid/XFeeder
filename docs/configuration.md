@@ -913,6 +913,7 @@ Variables can be set in the system or in `.env`.
 | `XFEEDER_DASHBOARD_PASSWORD` | Dashboard password. **Required** when the dashboard listens beyond `127.0.0.1`. |
 | `XFEEDER_DASHBOARD_HOST` / `_PORT` | Dashboard address and port (default `127.0.0.1:3000`). |
 | `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` | The dashboard's public address behind a reverse proxy, e.g. `https://feeds.example.com`. |
+| `XFEEDER_DASHBOARD_WORKER_CONTROL` | `off` = no Start/Stop/Restart in the dashboard (the worker runs as its own service or container). See [dashboard.md](dashboard.md). |
 | `XFEEDER_DASHBOARD_SESSION_TTL_HOURS` | How long a login lasts (default 12 h). |
 | `XFEEDER_SERVICE_UNIT` | systemd unit whose journal the dashboard's Logs page shows (default `xfeeder`). |
 

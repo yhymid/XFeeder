@@ -58,7 +58,8 @@ Worker options:
   --help          Show this help.
 
 Dashboard (XFEEDER_DASHBOARD_HOST, XFEEDER_DASHBOARD_PORT, XFEEDER_DASHBOARD_PASSWORD,
-XFEEDER_DASHBOARD_PUBLIC_ORIGIN):
+XFEEDER_DASHBOARD_PUBLIC_ORIGIN, XFEEDER_DASHBOARD_WORKER_CONTROL=off when the worker runs
+as its own service or container):
   --data-dir DIR  Directory with config.json, .env and cache.json (default .).";
 
 struct Options {
@@ -185,12 +186,53 @@ async fn run_dashboard(args: Vec<String>) -> ExitCode {
         public_origin: var("XFEEDER_DASHBOARD_PUBLIC_ORIGIN"),
         password: var("XFEEDER_DASHBOARD_PASSWORD"),
         session_ttl_hours: var("XFEEDER_DASHBOARD_SESSION_TTL_HOURS").parse().ok(),
+        worker_control: !matches!(
+            var("XFEEDER_DASHBOARD_WORKER_CONTROL")
+                .to_lowercase()
+                .as_str(),
+            "off" | "false" | "0" | "no"
+        ),
     };
     match dashboard::serve(options).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("[Dashboard] {}", diag::sanitize_text(&error));
             ExitCode::FAILURE
+        }
+    }
+}
+
+/// Takes an exclusive `flock` on `<cache>.lock` for the life of the worker.
+/// Works across processes and containers sharing the directory. A file
+/// system without locks gives a warning, not a failure.
+fn lock_cache(cache: &std::path::Path) -> Result<Option<std::fs::File>, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::io::AsRawFd;
+    let path = std::path::PathBuf::from(format!("{}.lock", cache.display()));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    // SAFETY: plain syscall on a descriptor owned by `file`.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        return Ok(Some(file));
+    }
+    let error = std::io::Error::last_os_error();
+    match error.raw_os_error() {
+        Some(libc::EWOULDBLOCK) => Err(format!(
+            "another XFeeder worker is already using {} (lock {}); stop it first",
+            cache.display(),
+            path.display()
+        )),
+        _ => {
+            eprintln!(
+                "[Startup Warning] cannot lock {}: {error}; not checking for a second worker",
+                path.display()
+            );
+            Ok(None)
         }
     }
 }
@@ -237,6 +279,19 @@ async fn run_worker(options: Options) -> ExitCode {
             }
         };
     }
+    // One worker per cache: a second one (another service, a dashboard Start
+    // in a second container) would overwrite the first one's history.
+    let _worker_lock = if options.dry_run {
+        None
+    } else {
+        match lock_cache(&options.cache) {
+            Ok(lock) => lock,
+            Err(message) => {
+                eprintln!("[Startup Error] {message}");
+                return ExitCode::FAILURE;
+            }
+        }
+    };
 
     let app = match app::App::new(
         &options.config,
@@ -365,5 +420,30 @@ async fn run_worker(options: Options) -> ExitCode {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+#[cfg(test)]
+mod lock_tests {
+    #[test]
+    fn a_second_worker_on_the_same_cache_is_refused() {
+        let dir = std::env::temp_dir().join(format!("xfeeder-lock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cache = dir.join("cache.json");
+        let first = super::lock_cache(&cache).unwrap();
+        assert!(first.is_some());
+        let second = super::lock_cache(&cache);
+        assert!(
+            second
+                .as_ref()
+                .is_err_and(|e| e.contains("another XFeeder worker")),
+            "{second:?}"
+        );
+        drop(first);
+        assert!(
+            super::lock_cache(&cache).unwrap().is_some(),
+            "free again after the first exits"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

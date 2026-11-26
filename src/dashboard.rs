@@ -36,6 +36,9 @@ pub struct Options {
     pub public_origin: String,
     pub password: String,
     pub session_ttl_hours: Option<f64>,
+    /// Start/stop/restart buttons; off when the worker runs elsewhere
+    /// (its own systemd service or container).
+    pub worker_control: bool,
 }
 
 struct Paths {
@@ -64,6 +67,7 @@ struct Server {
     paths: Paths,
     auth: Auth,
     worker: tokio::sync::Mutex<Worker>,
+    worker_control: bool,
 }
 
 fn is_loopback(host: &str) -> bool {
@@ -740,7 +744,7 @@ impl Server {
             worker.child = None;
         }
         let managed = worker.child.is_some();
-        json!({ "running": managed, "externalWorker": !managed && self.external_worker(), "busy": worker.busy, "managed": managed })
+        json!({ "running": managed, "externalWorker": !managed && self.external_worker(), "busy": worker.busy, "managed": managed, "control": self.worker_control })
     }
 
     async fn worker_action(&self, action: &str) -> Response {
@@ -751,6 +755,12 @@ impl Server {
     }
 
     async fn worker_run(&self, action: &str) -> Result<Value, (StatusCode, String)> {
+        if !self.worker_control {
+            return Err((
+                StatusCode::CONFLICT,
+                "Worker control is off (XFEEDER_DASHBOARD_WORKER_CONTROL=off): the worker runs as its own service or container; start and stop it there".into(),
+            ));
+        }
         let mut worker = self.worker.lock().await;
         if worker.busy {
             return Err((StatusCode::CONFLICT, "Worker operation in progress".into()));
@@ -1587,6 +1597,7 @@ pub async fn serve(options: Options) -> Result<(), String> {
             child: None,
             busy: false,
         }),
+        worker_control: options.worker_control,
     });
     println!(
         "[Dashboard] XFeeder dashboard running at http://{}:{port} ({})",
@@ -1641,6 +1652,7 @@ mod tests {
                 child: None,
                 busy: false,
             }),
+            worker_control: true,
         })
     }
 
@@ -1677,6 +1689,31 @@ mod tests {
             headers,
             String::from_utf8_lossy(&bytes).into_owned(),
         )
+    }
+
+    #[tokio::test]
+    async fn worker_control_off_refuses_start() {
+        let dir = std::env::temp_dir().join(format!("xfeeder-wc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), "{\"channels\": []}").unwrap();
+        let mut server = test_server(&dir, "");
+        Arc::get_mut(&mut server).unwrap().worker_control = false;
+        let origin = [("origin", "http://127.0.0.1:3000")];
+        let (status, _, body) = call(
+            &server,
+            Method::POST,
+            "/api/worker/control",
+            "{\"action\":\"start\"}",
+            &origin,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(body.contains("XFEEDER_DASHBOARD_WORKER_CONTROL"), "{body}");
+        assert!(server.worker.lock().await.child.is_none());
+        let (_, _, page) = call(&server, Method::GET, "/", "", &origin).await;
+        assert!(page.contains("Worker control is off") && !page.contains(">Start</button>"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]

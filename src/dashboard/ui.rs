@@ -1329,7 +1329,11 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
     );
 
     let external = status["externalWorker"] == json!(true) && status["managed"] != json!(true);
-    if external {
+    if status["control"] == json!(false) {
+        body.push_str(
+            "<section><h2>Worker control</h2><p class=\"muted\">Worker control is off (<code>XFEEDER_DASHBOARD_WORKER_CONTROL=off</code>): the worker runs as its own service or container. Start, stop and restart it there (for example <code>docker compose restart worker</code>); configuration changes are picked up without a restart.</p></section>",
+        );
+    } else if external {
         body.push_str(
             "<section><h2>Worker control</h2><p class=\"muted\">The worker runs as a systemd service (or another process), so it is not controlled from here. Restart it with <code>sudo systemctl restart xfeeder</code>; configuration changes are picked up without a restart.</p></section>",
         );

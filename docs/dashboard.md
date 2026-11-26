@@ -47,6 +47,7 @@ itself and never writes the worker's history files (`cache.json`, `sent.json`): 
 | `XFEEDER_DASHBOARD_PORT` | `3000` | Port. |
 | `XFEEDER_DASHBOARD_PASSWORD` | – | Password; required for a non-loopback address. |
 | `XFEEDER_DASHBOARD_PUBLIC_ORIGIN` | – | Public `https://…` address behind a reverse proxy. |
+| `XFEEDER_DASHBOARD_WORKER_CONTROL` | `on` | `off` hides Start/Stop/Restart and refuses them, for a worker that runs as its own service or container (Docker). A second worker on the same `cache.json` is refused anyway: the worker holds a lock on `cache.json.lock`. |
 | `XFEEDER_DASHBOARD_SESSION_TTL_HOURS` | `12` | How long a login lasts. |
 | `XFEEDER_SERVICE_UNIT` | `xfeeder` | systemd unit whose journal the **Logs** page reads. |
 

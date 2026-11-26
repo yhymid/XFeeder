@@ -56,7 +56,11 @@ use tokio_util::sync::CancellationToken;
 use crate::js;
 
 pub const SCHEME: &str = "steampics://";
-const EVENTS_KEPT: usize = 20;
+/// Events kept per app for the feed and for finding returning builds. With
+/// `Changelists` every change number adds one, so 20 could rotate a build out
+/// before a slow delivery sent it (most changes give 0–3 events: 3 days of
+/// the 241-app test, 2026-11-26).
+const EVENTS_KEPT: usize = 50;
 const RAW_LOG_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const RAW_CHANGES_MAX: usize = 5000;
 const DEFAULT_IGNORE: &str = "^dprp?$";

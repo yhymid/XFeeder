@@ -33,6 +33,8 @@ section below as its description.
   Settings: `Settings.SteamPics`.
 
 ### Fixed
+- Steam builds keep the last 50 events per app instead of 20, so with `Changelists` a build
+  post cannot rotate out before it is sent.
 - A SteamCMD run that timed out or was cancelled left the real SteamCMD running:
   `/usr/games/steamcmd` and `steamcmd.sh` are shell scripts that start it as a child, and only
   the script was killed. SteamCMD now runs in its own process group, which is killed as a whole.

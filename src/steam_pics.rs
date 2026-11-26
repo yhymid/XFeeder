@@ -981,7 +981,7 @@ enum RunError {
 /// SteamCMD output that means the saved session is gone (it would otherwise
 /// wait for a password or a Steam Guard code).
 static LOGIN_FAILED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)steam guard|two-factor|login failure|account logon denied|invalid password|rate limit exceeded|password:|cached credentials not found|timed out waiting for confirmation")
+    Regex::new(r"(?i)steam guard|two-factor|login failure|account logon denied|invalid password|rate limit exceeded|password:|cached credentials not found|no cached credentials|timed out waiting for confirmation|logging in user .*failed")
         .expect("static regex")
 });
 
@@ -1106,11 +1106,44 @@ async fn run_steamcmd(
         text = text.replace(password, "***");
     }
     let clean = ANSI.replace_all(&text, "");
-    if !HEADER.is_match(&clean)
-        && !matches!(login, Login::Anonymous)
-        && let Some(found) = LOGIN_FAILED.find(&clean)
-    {
-        return Err(RunError::Login(found.as_str().to_string()));
+    if !matches!(login, Login::Anonymous) {
+        // What SteamCMD said about the login (the password is already
+        // replaced): app_info_print also prints SteamCMD's cached app info
+        // after a failed login, so app info alone proves nothing.
+        let said: Vec<&str> = clean
+            .lines()
+            .map(str::trim)
+            .filter(|l| {
+                let l = l.to_lowercase();
+                [
+                    "logging in",
+                    "waiting for",
+                    "confirm",
+                    "failed",
+                    "steam guard",
+                    "two-factor",
+                    "password",
+                    "credentials",
+                    "rate limit",
+                    "denied",
+                ]
+                .iter()
+                .any(|w| l.contains(w))
+            })
+            .take(12)
+            .collect();
+        crate::diag::expert(
+            "steampics.login",
+            json!({ "lines": said, "exit": output.status.code() }),
+        );
+        crate::info!(
+            "SteamPics",
+            "SteamCMD login: {}",
+            crate::diag::sanitize_text(&said.join(" | "))
+        );
+        if let Some(found) = LOGIN_FAILED.find(&clean) {
+            return Err(RunError::Login(found.as_str().to_string()));
+        }
     }
     if !HEADER.is_match(&clean) {
         let tail: String = ANSI

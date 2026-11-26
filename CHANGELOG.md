@@ -24,7 +24,7 @@ section below as its description.
   Settings: `Settings.SteamPics`.
 
 ### Fixed
-- Steam posts keep their line breaks. A body like "· fix one\\n· fix two" (Hades II, Marvel
+- Steam posts keep their line breaks. A body like `· fix one\n· fix two` (Hades II, Marvel
   Rivals, The Isle) was joined into one long line, because a line break in HTML is a space.
   Checked on 585 posts of 195 games: lists glued into one line 9 → 0, lines over 400
   characters 106 → 43, identities unchanged.

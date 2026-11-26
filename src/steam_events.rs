@@ -3,7 +3,8 @@
 //! The store RSS (`store.steampowered.com/feeds/news/app/APPID`) cannot tell
 //! patch notes from news, broadcasts or crossposts. The store's own events
 //! JSON can (`event_type`), with the same post ids, so switching a game from
-//! the RSS to this URL sends nothing twice:
+//! the RSS to this URL keeps the same post ids (history is kept per source URL,
+//! so the first check of the new URL relies on `FirstRunSend`):
 //!
 //! ```text
 //! https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=APPID&count_before=0&count_after=10&lang_list=0

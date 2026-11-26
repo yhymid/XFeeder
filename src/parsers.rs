@@ -82,6 +82,43 @@ fn with_text(mut entry: Value, raw: &str) -> Value {
     entry
 }
 
+/// Post text clean-up that does not touch `contentSnippet`: drop a first line
+/// that only repeats the title (Mesa, GitHub), and for GitHub join lines the
+/// author wrapped at ~72 columns ("…, gated\nby GPU generation").
+fn tidy_text(text: &str, title: &str, rejoin: bool) -> String {
+    let plain = |s: &str| s.trim().trim_matches('*').trim().to_lowercase();
+    let mut lines: Vec<&str> = text.lines().collect();
+    if lines
+        .first()
+        .is_some_and(|l| !title.is_empty() && plain(l) == plain(title))
+    {
+        lines.remove(0);
+        while lines.first().is_some_and(|l| l.trim().is_empty()) {
+            lines.remove(0);
+        }
+    }
+    if !rejoin {
+        return lines.join("\n");
+    }
+    let mut out: Vec<String> = Vec::new();
+    for line in lines {
+        let continues = line.starts_with(|c: char| c.is_lowercase())
+            && out.last().is_some_and(|prev| {
+                !prev.is_empty()
+                    && !prev.ends_with(['.', ':', '!', '?', '*'])
+                    && !prev.starts_with("**")
+            });
+        match out.last_mut() {
+            Some(prev) if continues => {
+                prev.push(' ');
+                prev.push_str(line.trim());
+            }
+            _ => out.push(line.to_string()),
+        }
+    }
+    out.join("\n")
+}
+
 /// Commit trailers are noise in a message card (and `Claude-Session` links
 /// should not be published).
 fn without_trailers(text: &str) -> String {
@@ -263,10 +300,22 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
     .captures(url)
     .map(|c| c[1].to_string())
     .or_else(|| crate::steam_events::appid(url));
+    let github = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .is_some_and(|h| h == "github.com" || h == "api.github.com");
     for item in &mut items {
         let Some(map) = item.as_object_mut() else {
             continue;
         };
+        let title = map
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if let Some(Value::String(text)) = map.get_mut("contentText") {
+            *text = tidy_text(text, &title, github);
+        }
         if let Some(link) = map.get("link").and_then(Value::as_str)
             && let Some(absolute) = resolve_url(url, link)
         {
@@ -1327,6 +1376,28 @@ pub fn is_blocked_page(body: &str, status: u16, headers: &serde_json::Map<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn post_text_tidy() {
+        assert_eq!(
+            tidy_text(
+                "Mesa 26.2.4 is released\nThis is a bug fix release.",
+                "Mesa 26.2.4 is released",
+                false
+            ),
+            "This is a bug fix release."
+        );
+        assert_eq!(
+            tidy_text(
+                "• inkling2: faster decode\nAdd kernels, gated\nby GPU generation.\n- next item",
+                "v1",
+                true
+            ),
+            "• inkling2: faster decode\nAdd kernels, gated by GPU generation.\n- next item"
+        );
+        // Not for other sites: an author's own line breaks stay.
+        assert_eq!(tidy_text("one\ntwo", "x", false), "one\ntwo");
+    }
 
     fn fixture(name: &str) -> String {
         std::fs::read_to_string(format!(

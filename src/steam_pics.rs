@@ -756,6 +756,28 @@ impl Runner {
                 .map(std::mem::take)
                 .unwrap_or_default();
             let old_change = entry.get("change").and_then(Value::as_u64);
+            // Change numbers only go up; a lower one is stale cached info, and
+            // an answer that lost every depot is partial. Diffing either would
+            // post fake rollbacks or "Branch removed" for every branch.
+            let had_depots = entry
+                .get("flat")
+                .and_then(Value::as_object)
+                .is_some_and(|f| f.keys().any(|k| k.starts_with("depots/")));
+            let lost_depots = had_depots && !app.flat.keys().any(|k| k.starts_with("depots/"));
+            if old_change.is_some_and(|old| app.change < old) || lost_depots {
+                crate::warn!(
+                    "SteamPICS",
+                    "{} ({}): ignoring a stale or partial answer (change {} after {}, depots {})",
+                    app_name(&app.flat, app.appid),
+                    app.appid,
+                    app.change,
+                    old_change.unwrap_or(0),
+                    if lost_depots { "missing" } else { "present" }
+                );
+                self.apps
+                    .insert(app.appid.to_string(), Value::Object(entry));
+                continue;
+            }
             let old_flat: Option<BTreeMap<String, String>> = entry
                 .get("flat")
                 .and_then(|f| serde_json::from_value(f.clone()).ok());
@@ -1277,6 +1299,39 @@ mod tests {
             serde_json::from_slice(&std::fs::read(state_path(&dir)).unwrap()).unwrap();
         assert_eq!(saved["apps"]["730"]["change"], 41339556);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stale_or_partial_answers_are_ignored() {
+        let mut runner = Runner::default();
+        let apps = parse_output(&fixture());
+        runner.apply(apps.clone(), None, true, 10);
+        let mut newer = apps.clone();
+        newer[0].change += 5;
+        newer[0]
+            .flat
+            .insert("depots/branches/public/buildid".into(), "26900000".into());
+        runner.apply(newer.clone(), None, true, 20);
+        let before = runner.items(730).len();
+        // An older change number (stale cache) posts no rollback.
+        let mut stale = apps.clone();
+        stale[0].change += 1;
+        runner.apply(stale, None, true, 30);
+        assert_eq!(runner.items(730).len(), before);
+        // An answer without any depot posts no "Branch removed".
+        let mut partial = newer.clone();
+        partial[0].change += 1;
+        partial[0].flat.retain(|k, _| !k.starts_with("depots/"));
+        runner.apply(partial, None, true, 40);
+        assert_eq!(runner.items(730).len(), before);
+        // The next real answer is compared with the last good state.
+        let mut next = newer;
+        next[0].change += 2;
+        next[0]
+            .flat
+            .insert("depots/branches/public/buildid".into(), "26900001".into());
+        runner.apply(next, None, true, 50);
+        assert_eq!(runner.items(730)[0]["categories"][0], "Build");
     }
 
     #[test]

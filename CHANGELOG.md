@@ -20,7 +20,7 @@ section below as its description.
   `/releases`) and to entries matching `Include` patterns, with an optional `Text`.
   `--dry-run` shows which entries would ping; edits never ping again.
 - Steam events as a source: `store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=…`
-  gives the same posts as a game's store RSS (same ids, so switching sends nothing twice),
+  gives the same posts as a game's store RSS (same ids; history is kept per source URL, so a switched channel relies on `FirstRunSend` to not repost),
   sorted by Steam's own event type into `Patch`, `Major update`, `Beta`, `Release` and
   `News` categories for `Filters`. Broadcasts and streams are left out, images come from
   the post, and SteamMerge treats it like the store RSS. The RSS keeps working as before.
@@ -28,11 +28,19 @@ section below as its description.
   info with anonymous SteamCMD (one run for all apps, at most every 10 minutes) and posts a
   new public build (with the depot size change), branches added or removed (CS2's version
   pins such as `1.42.0.0`) and new builds on other branches. Build posts link SteamDB's patch
-  notes page like SteamDB's RSS does, so switching sends nothing twice, and SteamMerge joins
+  notes page like SteamDB's RSS does (history is kept per source URL, so `FirstRunSend` keeps a switched channel from reposting), and SteamMerge joins
   them with the announcement. Every raw change is logged to `steam_pics.changes.jsonl`.
   Settings: `Settings.SteamPics`.
 
 ### Fixed
+- Steam builds (`steampics://`): an answer with an older change number (stale cached info)
+  or without any depot (partial answer) is ignored instead of being compared, which would
+  have posted a fake rollback or "Branch removed" for every branch. Found in a code review.
+- Post text links: link text that looks like an address shows the real target (no
+  `[https://a.example](https://b.example)`), and a link split over lines no longer leaves
+  hidden characters in the post. `sent.json` keeps at most 1500 characters of post text.
+- Post text: a first line that only repeats the title is dropped (Mesa, GitHub), and GitHub
+  release notes wrapped at ~72 columns are joined back into sentences.
 - Steam posts keep their line breaks. A body like `· fix one\n· fix two` (Hades II, Marvel
   Rivals, The Isle) was joined into one long line, because a line break in HTML is a space.
   Checked on 585 posts of 195 games: lists glued into one line 9 → 0, lines over 400

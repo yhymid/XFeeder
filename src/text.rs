@@ -248,7 +248,16 @@ pub fn html_to_rich(input: &str) -> String {
         r#"(?is)<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a\s*>"#,
     )
     .replace_all(&html, |c: &regex::Captures| {
-        format!("{LINK_OPEN}{}{LINK_MID}{}{LINK_CLOSE}", &c[2], &c[1])
+        // Link text on one line, without tags (a <br> or <p> inside the
+        // link would split the markers over lines).
+        let text = strip_html(&c[2])
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        format!("{LINK_OPEN}{text}{LINK_MID}{}{LINK_CLOSE}", &c[1])
     });
     let text = html_to_text(&html);
     // An empty line before a heading that follows text sets sections apart.
@@ -276,14 +285,23 @@ fn rich_line(line: &str) -> Option<String> {
         let text = c[1].trim().replace(['[', ']'], "");
         let url = c[2].trim();
         let web = url.starts_with("https://") || url.starts_with("http://");
+        // Text that looks like an address shows the real one: no
+        // "[https://bank.example](https://evil.example)".
+        static ADDRESS: OnceLock<Regex> = OnceLock::new();
+        let address = re(
+            &ADDRESS,
+            r"(?i)^(?:[a-z][a-z0-9+.-]*://|www\.)|^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/\S*)?$",
+        );
         if !web || url.contains([' ', ')']) {
             text
-        } else if text.is_empty() || text == url {
+        } else if text.is_empty() || text == url || address.is_match(&text) {
             url.to_string()
         } else {
             format!("[{text}]({url})")
         }
     });
+    // Markers of a link that did not close on this line must not leak.
+    let line = line.replace([LINK_OPEN, LINK_MID, LINK_CLOSE], " ");
     let line = line.trim();
     let whole = line.starts_with(HEAD_OPEN)
         && line.ends_with(HEAD_CLOSE)
@@ -644,6 +662,30 @@ mod tests {
                 "<a href=\"https://x.example/a\">https://x.example/a</a> <a href=\"javascript:x\">click</a>"
             ),
             "https://x.example/a click"
+        );
+    }
+
+    #[test]
+    fn rich_links_cannot_leak_markers_or_spoof() {
+        assert_eq!(
+            html_to_rich("<a href=\"https://x.example/a\">first<br>second</a>"),
+            "[first second](https://x.example/a)"
+        );
+        assert_eq!(
+            html_to_rich(
+                "<a href=\"https://evil.example/login\">https://steamcommunity.com/login</a>"
+            ),
+            "https://evil.example/login"
+        );
+        assert_eq!(
+            html_to_rich("<a href=\"https://evil.example/\">steamcommunity.com</a>"),
+            "https://evil.example/"
+        );
+        let text =
+            html_to_rich("<p><a href=\"https://x.example/\">a<figure>b</figure></p><p>c</a></p>");
+        assert!(
+            !text.contains(['\u{E012}', '\u{E013}', '\u{E014}']),
+            "{text:?}"
         );
     }
 

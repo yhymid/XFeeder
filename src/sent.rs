@@ -98,7 +98,13 @@ pub fn slim(entry: &Value) -> Value {
     let mut out = Map::new();
     for field in FIELDS {
         if let Some(value) = entry.get(field).filter(|v| !v.is_null()) {
-            out.insert(field.into(), value.clone());
+            // The longer post text is kept only as long as a post shows by
+            // default, so sent.json stays small (it is rewritten on every send).
+            let value = match (field, value.as_str()) {
+                ("contentText", Some(text)) => Value::String(crate::text::cut_text(text, 1500)),
+                _ => value.clone(),
+            };
+            out.insert(field.into(), value);
         }
     }
     Value::Object(out)

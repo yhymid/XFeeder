@@ -672,11 +672,7 @@ impl App {
         kinds: &[Target],
         bucket_key: &str,
     ) -> Result<(), Stop> {
-        let has_history = |value: Option<&Value>| {
-            value
-                .and_then(Value::as_array)
-                .is_some_and(|list| !list.is_empty())
-        };
+        let has_history = |value: Option<&Value>| real_history(source, value);
         if has_history(cache.get(source)) {
             return Ok(()); // legacy single bucket, migrated by `pending`
         }
@@ -1367,9 +1363,33 @@ fn handle_done(
     }
 }
 
+/// Whether a delivery bucket holds a real history. One holding nothing but
+/// the feed's own address does not: feeds whose entries had no link or guid
+/// (Mojang's patch note JSON) gave every entry that identity, and once they
+/// get real identities the first check must not replay the whole feed.
+fn real_history(source: &str, bucket: Option<&Value>) -> bool {
+    let own = crate::text::normalize_link(source);
+    bucket
+        .and_then(Value::as_array)
+        .is_some_and(|list| list.iter().any(|id| id.as_str() != Some(own.as_str())))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_history_of_only_the_feed_address_is_not_real() {
+        let feed = "https://launchercontent.mojang.com/v2/javaPatchNotes.json";
+        assert!(!real_history(feed, None));
+        assert!(!real_history(feed, Some(&json!([]))));
+        assert!(!real_history(feed, Some(&json!([feed, feed, feed]))));
+        assert!(real_history(
+            feed,
+            Some(&json!([feed, "mojang:java:26-4-snapshot-9"]))
+        ));
+        assert!(real_history("https://f", Some(&json!(["a"]))));
+    }
 
     #[test]
     fn backoff_caps_at_eight_intervals_or_one_hour() {

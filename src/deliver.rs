@@ -1146,6 +1146,17 @@ mod tests {
     }
 
     #[test]
+    fn entry_without_link_has_no_button() {
+        let entry = json!({ "title": "Minecraft 26.4 Pre-Release 1", "link": null, "contentSnippet": "text",
+            "enclosure": "https://launchercontent.mojang.com/v2/images/a.jpg", "author": "Minecraft" });
+        let (payload, label) = webhook_payload(&entry);
+        let text = payload.to_string();
+        assert_eq!(label, "Minecraft 26.4 Pre-Release 1");
+        assert!(!text.contains("\"style\":5"), "no link button: {text}");
+        assert!(text.contains("launchercontent.mojang.com/v2/images/a.jpg"));
+    }
+
+    #[test]
     fn youtube_payload() {
         let (payload, _) = webhook_payload(
             &json!({ "title": "Vid", "link": "https://www.youtube.com/watch?v=Z7BLIwA17jM" }),

@@ -1,0 +1,73 @@
+{
+ "version": 1,
+ "entries": [
+  {
+   "title": "Minecraft 26.4 Pre-Release 1",
+   "version": "26.4-pre-1",
+   "type": "snapshot",
+   "image": {
+    "title": "26.4-pre-1 540x540.jpg",
+    "url": "/v2/images/26.4pre1540x540.jpg"
+   },
+   "contentPath": "javaPatchNotes/26-4-pre-release-1.json",
+   "id": "26-4-pre-release-1",
+   "date": "2026-11-24T12:48:31.000Z",
+   "shortText": "The first pre-release for 26.4: The Deep Freeze has arrived! We're hard at work squashing bugs, making improvements, and putting the final icy touches on the update ahead of release. Pre-releases don't follow the usual Tuesday snapshot schedule, so stay frosty! You never know when the next update might come sliding in.Happy mining!",
+   "needsTranslation": false
+  },
+  {
+   "title": "Minecraft 26.4 Snapshot 10",
+   "version": "26.4-snapshot-10",
+   "type": "snapshot",
+   "image": {
+    "title": "26.4-snapshot-10 540x540.jpg",
+    "url": "/v2/images/26.4snapshot10540x540.jpg"
+   },
+   "contentPath": "javaPatchNotes/ab4c469ad1328c1949d845ba7c0d0022f7929483988dc89b683b51fbe5e8b341.json",
+   "id": "ab4c469ad1328c1949d845ba7c0d0022f7929483988dc89b683b51fbe5e8b341",
+   "date": "2026-11-17T16:02:02.000Z",
+   "shortText": "We have now released 26.4 Snapshot 10, fixing a crash in the Multiplayer screen.",
+   "needsTranslation": false
+  },
+  {
+   "title": "Minecraft 26.4 Snapshot 9",
+   "version": "26.4-snapshot-9",
+   "type": "snapshot",
+   "image": {
+    "title": "26.4-Snapshot-9 540x540.jpg",
+    "url": "/v2/images/26.4Snapshot9540x540.jpg"
+   },
+   "contentPath": "javaPatchNotes/26-4-snapshot-9.json",
+   "id": "26-4-snapshot-9",
+   "date": "2026-11-17T12:58:45.000Z",
+   "shortText": "26.4 Snapshot 9 is here, bringing data-driven dispensers, Vulkan as the default graphics backend, and a new setting to fine-tune your fog. We've also made improvements to keyboard navigation and narration, alongside a few other tweaks and fixes!\r\n\r\nHappy mining!",
+   "needsTranslation": false
+  },
+  {
+   "title": "Minecraft 1.20.3",
+   "version": "1.20.3",
+   "type": "release",
+   "image": {
+    "url": "/v2/images/7gdLuqNV769mqNvZ0aqCeMMinecraft1.20.3HeaderImage.jpeg",
+    "title": "Minecraft 1.20.3 Header Image"
+   },
+   "contentPath": "javaPatchNotes/25SH7jXrnaRzCmtgIK6y5p.json",
+   "id": "25SH7jXrnaRzCmtgIK6y5p",
+   "date": "2023-12-04T12:10:32.000Z",
+   "shortText": "We're now releasing 1.20.3 for Minecraft: Java Edition. This release comes with new functionality for Decorated Pots, a new look for the Bat and improvements to Shields.\nThis release also includes new features for map makers and pack creators like Scoreboa"
+  },
+  {
+   "title": "Minecraft: Java Edition 1.13 Aquatic",
+   "version": "1.13",
+   "type": "release",
+   "image": {
+    "url": "/v2/images/2zsEGQgnYgmLEg81GAB0Jgaquatic.jpeg",
+    "title": "aquatic"
+   },
+   "contentPath": "javaPatchNotes/2s08MG8wMvdFOIE4MhTQpn.json",
+   "id": "2s08MG8wMvdFOIE4MhTQpn",
+   "date": "2018-07-18T15:11:46.000Z",
+   "shortText": "Aquatic changelog\nGeneral\n\nAll undead mobs now sink\nChanged underwater visibility\nYour vision will gradually increase the longer you're underwater\n\nOverhauled world generation\nOverhauled command parser\nAdded new world type \"Buffet\"\nAllows you to create wor"
+  }
+ ]
+}

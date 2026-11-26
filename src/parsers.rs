@@ -36,10 +36,11 @@ impl Body {
 
 pub type Parser = fn(&str, &Body) -> Vec<Value>;
 
-pub const PARSERS: [(&str, Parser); 9] = [
+pub const PARSERS: [(&str, Parser); 10] = [
     ("parseYouTube", parse_youtube),
     ("parseGitHubAPI", crate::github_api::parse),
     ("parseSteamEvents", crate::steam_events::parse),
+    ("parseMojang", crate::mojang::parse),
     ("parseAtom", parse_atom),
     ("parseXML", parse_xml),
     ("parseJSON", parse_json),

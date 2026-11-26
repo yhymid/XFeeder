@@ -14,6 +14,7 @@ mod filter;
 mod github_api;
 mod http;
 mod js;
+mod mojang;
 mod parsers;
 mod ping;
 mod preview;

@@ -24,6 +24,14 @@ section below as its description.
   Settings: `Settings.SteamPics`.
 
 ### Fixed
+- Minecraft patch notes (`launchercontent.mojang.com/v2/javaPatchNotes.json` and
+  `bedrockPatchNotes.json`) were never posted: their entries have no link or guid, so all
+  424 + 82 got the feed's own address as one shared identity. A dedicated parser keeps each
+  entry's `id`, date, short text, picture and category (`snapshot`/`release`,
+  `retail`/`beta`). A delivery history holding only the feed's own address no longer counts
+  as history, so the first check after the update marks the existing patch notes as seen
+  (`FirstRunSend`) instead of posting all of them. Entries have no link: the launcher has no
+  page per entry and minecraft.net addresses cannot be derived from the title.
 - A user mention (`<@ID>`) written in a feed entry could notify that user (Discord's
   webhook default parses user mentions). Every webhook post now sends `allowed_mentions`,
   so only the mentions configured in `Ping` notify.

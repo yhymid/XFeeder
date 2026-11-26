@@ -45,6 +45,9 @@ config.json + .env ──► config ──► app (harmonogram) ──► potok 
 | `github_api.rs` | Listy z REST API GitHuba jako feedy; token tylko dla api.github.com. |
 | `sent.rs` | `sent.json`: ID wiadomości i wpisy postów z webhooków, do późniejszej edycji. |
 | `steam_merge.rs` | Jeden post na aktualizację gry: ogłoszenie Steam i build SteamDB edytują wspólny post (`Settings.SteamMerge`). |
+| `mojang.rs` | Notki o zmianach Minecraft Java i Bedrock z plików JSON launchera; każdy wpis ma własny identyfikator. |
+| `steam_events.rs` | JSON wydarzeń sklepu Steam jako feed; łatki odróżnione od newsów po typie wydarzenia. |
+| `steam_pics.rs` | `steampics://APPID`: buildy, gałęzie i numery zmian z anonimowego SteamCMD (`Settings.SteamPics`). |
 | `preview.rs`, `rerender.rs` | `xfeeder preview` (co daje feed, czasy, benchmarki) i `xfeeder rerender` (przebudowa wysłanych postów). |
 | `profile_tests.rs` | Testy migawkowe na zapisanych feedach z produkcji (`profiles/`). |
 | `build.rs` (główny folder) | Wpisuje krótki commit gita (`XFEEDER_GIT_COMMIT`) pokazywany w dashboardzie. |

@@ -129,3 +129,7 @@ user-data-dir/
 # Local review / diagnostic artifacts
 review/
 /diagnostics/
+
+# Local agent instructions
+/AGENTS.md
+/CLAUDE.md

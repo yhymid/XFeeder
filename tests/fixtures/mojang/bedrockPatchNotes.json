@@ -1,0 +1,57 @@
+{
+ "version": 1,
+ "entries": [
+  {
+   "title": "Minecraft: Bedrock Edition 26.60 Changelog",
+   "version": "26.60",
+   "patchNoteType": "retail",
+   "date": "2026-10-27",
+   "image": {
+    "title": "26.60.jpg",
+    "url": "/v2/images/26.60.jpg"
+   },
+   "contentPath": "bedrockPatchNotes/ad31b012564ea6ec829f42bdf8cf07871513db8168d55ae15639f6a9ac409c91.json",
+   "id": "ad31b012564ea6ec829f42bdf8cf07871513db8168d55ae15639f6a9ac409c91",
+   "shortText": "Minecraft: Bedrock Edition 26.60 ChangelogBrrrr! Did the temperature just drop? Something drop related is going on, namely the addition of some experimental features from the upcoming game drop! Dive into the ice caves to check out the new icicles, ice cry",
+   "needsTranslation": false
+  },
+  {
+   "title": "26.50 - Wilderness Bound",
+   "version": "26.50",
+   "patchNoteType": "retail",
+   "date": "2026-09-15",
+   "image": {
+    "title": "26.50.jpg",
+    "url": "/v2/images/26.50.jpg"
+   },
+   "contentPath": "bedrockPatchNotes/f97d0b95c0ba1acf9d8e41bcd251320831caf6d8c0a14f0f5dbf0f124c05bcb1.json",
+   "id": "f97d0b95c0ba1acf9d8e41bcd251320831caf6d8c0a14f0f5dbf0f124c05bcb1",
+   "shortText": "Wilderness Bound is out now in Minecraft! Pack your supplies and set off on an expedition into the dappled forest where the trails end and adventure begins. Seek out abandoned camps, build outposts among the poplar trees, sleep under the stars on straw bed",
+   "needsTranslation": false
+  },
+  {
+   "title": "1.19.10 Update",
+   "version": "1.19.10",
+   "date": "2022-07-12",
+   "image": {
+    "url": "/v2/images/1VeqDwA8x9KPqrccwdfp2plauncherr19u1.jpeg",
+    "title": "launcher r19u1"
+   },
+   "contentPath": "bedrockPatchNotes/46RUEyiYqfMBKlbDmPgOOw.json",
+   "id": "46RUEyiYqfMBKlbDmPgOOw",
+   "shortText": "A new update is now available for Minecraft, featuring allay duplication, locate biome command capabilities, and a swath of new improvements.\nNew Features:\nAllay Duplication\n\nWhen an Allay hears a Jukebox playing, it will do a dance animation\nIf the Jukebo"
+  },
+  {
+   "title": "1.17.0 Update - Caves & Cliffs: Part I",
+   "version": "1.17.0",
+   "date": "2021-06-09",
+   "image": {
+    "url": "/v2/images/2admghFnyjRMErVNOZtndeBedrock1.17.0.jpeg",
+    "title": "Bedrock 1.17.0"
+   },
+   "contentPath": "bedrockPatchNotes/2riBWi5UnQguOu08miv0eP.json",
+   "id": "2riBWi5UnQguOu08miv0eP",
+   "shortText": "Delve into Part I of the Caves &#x26; Cliffs update with fun mobs, blocks, and items! Go underwater to team up with the Axolotl and swim alongside the Glow Squid. When you reach higher ground, tread carefully because the Goats might ram you! Want to build "
+  }
+ ]
+}

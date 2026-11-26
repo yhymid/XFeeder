@@ -11,7 +11,8 @@
 //! ```
 //!
 //! A pattern is a plain substring, or a regular expression when written as
-//! `/…/`. An entry passes when it matches at least one `Include` pattern (or
+//! `/…/`, matched against each field value separately (`^`/`$` anchor to
+//! one title, text or category). An entry passes when it matches at least one `Include` pattern (or
 //! `Include` is empty), matches no `Exclude` pattern and, with `MaxAgeHours`,
 //! is not older than that. Entries without a date are never dropped by age.
 
@@ -142,8 +143,11 @@ impl Filter {
         )
     }
 
-    fn haystack(&self, entry: &Value) -> String {
-        let mut out = String::new();
+    /// Every value of the searched fields on its own (each category separately),
+    /// so `^` and `$` in a pattern anchor to one value: `/^Build$/` matches
+    /// the category `Build` but not `Branch build`.
+    fn haystack(&self, entry: &Value) -> Vec<String> {
+        let mut out = Vec::new();
         for field in &self.fields {
             let value = js::get(entry, field);
             let parts: Vec<String> = match value {
@@ -152,22 +156,21 @@ impl Filter {
                 other => vec![js::to_string_or_empty(other)],
             };
             for part in parts {
-                out.push_str(&part);
-                out.push('\n');
+                out.push(if self.case_sensitive {
+                    part
+                } else {
+                    part.to_lowercase()
+                });
             }
         }
-        if self.case_sensitive {
-            out
-        } else {
-            out.to_lowercase()
-        }
+        out
     }
 
-    fn matches(pattern: &Pattern, haystack: &str) -> bool {
-        match pattern {
-            Pattern::Text(text) => haystack.contains(text.as_str()),
-            Pattern::Regex(regex) => regex.is_match(haystack),
-        }
+    fn matches(pattern: &Pattern, haystack: &[String]) -> bool {
+        haystack.iter().any(|value| match pattern {
+            Pattern::Text(text) => value.contains(text.as_str()),
+            Pattern::Regex(regex) => regex.is_match(value),
+        })
     }
 
     /// `now_ms` is passed in so tests are deterministic.

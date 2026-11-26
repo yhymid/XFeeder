@@ -450,6 +450,8 @@ A complete channel:
 
 A pattern is plain text or a regular expression written as `/…/`. In JSON the backslash
 must be doubled: `"/\\bv\\d+\\.\\d+/"` means the regex `\bv\d+\.\d+`.
+Each field value is checked on its own (the title, the text, every category), so `^` and
+`$` anchor to one value: `"/^Build$/"` matches the category `Build`, not `Branch build`.
 
 Examples:
 
@@ -503,6 +505,23 @@ A role is pinged only when it is *mentionable* (Server settings → Roles) or th
 mention everyone. Only the mentions set here notify anyone: `@everyone`, `<@&…>` or
 `<@…>` written in a feed entry are shown as text and never ping. Edits (`xfeeder rerender`,
 `SteamMerge`) never ping again. `--dry-run` shows `(ping …)` next to entries that would ping.
+
+Steam builds (`steampics://`) have the kind of change as their first category: `Build`
+(new public build), `Branch build`, `Branch added`, `Branch removed`, `Changelist`. To ping
+only for a new public build of Counter-Strike 2:
+
+```json
+"Ping": {
+  "Roles": ["123456789012345678"],
+  "Feeds": ["steampics://730"],
+  "Include": ["/^Build$/"],
+  "Fields": ["categories"],
+  "CaseSensitive": true
+}
+```
+
+`Feeds` compares text, so `steampics://730` would also match `steampics://7300`; list such
+feeds in another channel or use `Include` to tell them apart.
 
 ## 3. `ChannelDefaults`: shared channel settings
 

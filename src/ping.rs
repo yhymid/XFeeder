@@ -222,6 +222,38 @@ mod tests {
     }
 
     #[test]
+    fn steam_pics_kinds_can_be_picked() {
+        // Only a new public build of CS2: not changelists, not other branches.
+        let raw = json!({
+            "Roles": [ROLE], "Feeds": ["steampics://730"],
+            "Include": ["/^Build$/"], "Fields": ["categories"], "CaseSensitive": true
+        });
+        let (ping, problems) = Ping::parse(&raw);
+        assert!(problems.is_empty(), "{problems:?}");
+        let ping = ping.unwrap();
+        let entry = |kind: &str, branch: &str| json!({ "title": "Counter-Strike 2", "categories": [kind, format!("branch:{branch}"), "SteamPICS"] });
+        assert!(
+            ping.mention(&entry("Build", "public"), "steampics://730")
+                .is_some()
+        );
+        assert!(
+            ping.mention(&entry("Branch build", "1.42.0.0"), "steampics://730")
+                .is_none()
+        );
+        assert!(
+            ping.mention(
+                &json!({ "title": "x", "categories": ["Changelist", "SteamPICS"] }),
+                "steampics://730"
+            )
+            .is_none()
+        );
+        assert!(
+            ping.mention(&entry("Build", "public"), "steampics://570")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn bad_ids_and_empty_pings_are_reported() {
         let (ping, problems) = Ping::parse(&json!({ "Roles": ["moderators"] }));
         assert!(ping.is_none());

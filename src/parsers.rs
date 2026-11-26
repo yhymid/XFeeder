@@ -557,7 +557,7 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
     let Some(doc) = xml_doc(body) else {
         crate::info!(
             "XML Parser",
-            "Error fetching {}: not XML",
+            "{}: not an XML document, trying the next parser",
             crate::diag::sanitize_url(url)
         );
         return Vec::new();

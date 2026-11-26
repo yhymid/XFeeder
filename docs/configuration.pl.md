@@ -450,6 +450,8 @@ Przykład pełnego kanału:
 
 Wzorzec to zwykły fragment tekstu albo wyrażenie regularne zapisane jako `/…/`.
 W JSON-ie ukośnik wsteczny trzeba podwoić: `"/\\bv\\d+\\.\\d+/"` oznacza regex `\bv\d+\.\d+`.
+Każda wartość pola jest sprawdzana osobno (tytuł, tekst, każda kategoria), więc `^` i `$`
+dotyczą jednej wartości: `"/^Build$/"` pasuje do kategorii `Build`, ale nie `Branch build`.
 
 Przykłady:
 
@@ -504,6 +506,23 @@ webhook może wspominać wszystkich. Powiadamiają wyłącznie wzmianki ustawion
 `@everyone`, `<@&…>` czy `<@…>` wpisane w treści feedu są pokazywane jako tekst i nigdy
 nie pingują. Edycje (`xfeeder rerender`, `SteamMerge`) nie pingują ponownie. `--dry-run`
 pokazuje `(ping …)` przy wpisach, które by pingowały.
+
+Buildy Steama (`steampics://`) mają rodzaj zmiany jako pierwszą kategorię: `Build` (nowy
+build publiczny), `Branch build`, `Branch added`, `Branch removed`, `Changelist`. Ping tylko
+przy nowym buildzie publicznym Counter-Strike 2:
+
+```json
+"Ping": {
+  "Roles": ["123456789012345678"],
+  "Feeds": ["steampics://730"],
+  "Include": ["/^Build$/"],
+  "Fields": ["categories"],
+  "CaseSensitive": true
+}
+```
+
+`Feeds` porównuje tekst, więc `steampics://730` pasowałoby też do `steampics://7300`; takie
+feedy umieść w innym kanale albo rozróżnij je przez `Include`.
 
 ## 3. `ChannelDefaults`: wspólne ustawienia kanałów
 

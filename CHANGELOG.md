@@ -24,6 +24,12 @@ section below as its description.
   Settings: `Settings.SteamPics`.
 
 ### Fixed
+- Filters and `Ping.Include` check each field value on its own (title, text, every
+  category) instead of one joined text, so `^` and `$` anchor to one value: `/^Build$/`
+  matches a Steam build post's `Build` category, not `Branch build`. Before, a ping for only
+  new public builds was not possible. Production filters use no anchors (checked).
+- The XML parser no longer logs "Error fetching …: not XML" for JSON feeds it hands on to
+  the next parser; the line now says "not an XML document, trying the next parser".
 - Minecraft patch notes (`launchercontent.mojang.com/v2/javaPatchNotes.json` and
   `bedrockPatchNotes.json`) were never posted: their entries have no link or guid, so all
   424 + 82 got the feed's own address as one shared identity. A dedicated parser keeps each

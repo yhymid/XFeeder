@@ -1878,6 +1878,9 @@ mod tests {
 
     #[test]
     fn a_hand_edited_channel_keeps_its_history() {
+        let _stores = crate::GLOBAL_STORES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = std::env::temp_dir().join(format!("xfeeder-test-adopt-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

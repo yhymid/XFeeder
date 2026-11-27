@@ -97,6 +97,40 @@ impl std::fmt::Display for HttpError {
     }
 }
 
+// ------------------------------------------------------- public scope --
+
+tokio::task_local! {
+    static FORCED_PUBLIC: bool;
+}
+
+/// Runs `future` with every request limited to public addresses, whatever
+/// `outboundPolicy` says: the URL, every redirect and every DNS answer must
+/// be public. For URLs that come from feed content rather than the config
+/// (a feed a page advertises, images): a hostile page could otherwise make
+/// the bot read internal services and post them (feed review F10, P0/P1).
+pub async fn public<F: std::future::Future>(future: F) -> F::Output {
+    FORCED_PUBLIC.scope(true, future).await
+}
+
+/// Inside `public(…)`.
+pub fn forced_public() -> bool {
+    FORCED_PUBLIC.try_with(|v| *v).unwrap_or(false)
+}
+
+/// Redirects only to public addresses, at most 10 (a custom policy does not
+/// stop loops by itself).
+fn public_redirects() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= 10 {
+            attempt.error("too many redirects")
+        } else if validate_public_url(attempt.url()).is_err() {
+            attempt.error("redirect to a non-public address")
+        } else {
+            attempt.follow()
+        }
+    })
+}
+
 // ------------------------------------------------------------ net state --
 
 pub struct Net {
@@ -104,6 +138,7 @@ pub struct Net {
     signature: Mutex<String>,
     proxy: Mutex<Option<String>>,
     client: Mutex<Option<(String, reqwest::Client)>>,
+    public_client: Mutex<Option<(String, reqwest::Client)>>,
     http_gate: Mutex<Option<Arc<Semaphore>>>,
     scrapling_gate: Mutex<Option<Arc<Semaphore>>>,
     shutdown: CancellationToken,
@@ -125,6 +160,7 @@ pub fn net() -> &'static Net {
         signature: Mutex::new(String::new()),
         proxy: Mutex::new(None),
         client: Mutex::new(None),
+        public_client: Mutex::new(None),
         http_gate: Mutex::new(None),
         scrapling_gate: Mutex::new(None),
         shutdown: CancellationToken::new(),
@@ -177,18 +213,21 @@ impl Net {
 
     fn client(&self) -> Result<reqwest::Client, HttpError> {
         let config = self.config();
-        let proxy = if config.public_only() {
+        let public = config.public_only() || forced_public();
+        let proxy = if public {
             None
         } else {
             self.proxy.lock().expect("lock").clone()
         };
         let key = format!(
             "{proxy:?}|{}|{}|{}",
-            config.public_only(),
-            config.setup_timeout_ms,
-            config.idle_timeout_ms
+            public, config.setup_timeout_ms, config.idle_timeout_ms
         );
-        let mut cache = self.client.lock().expect("lock");
+        let mut cache = if public {
+            self.public_client.lock().expect("lock")
+        } else {
+            self.client.lock().expect("lock")
+        };
         if let Some((cached, client)) = cache.as_ref()
             && *cached == key
         {
@@ -196,8 +235,8 @@ impl Net {
         }
         let mut builder = reqwest::Client::builder()
             .user_agent(UA)
-            .redirect(if config.public_only() {
-                reqwest::redirect::Policy::none()
+            .redirect(if public {
+                public_redirects()
             } else {
                 reqwest::redirect::Policy::limited(21)
             })
@@ -208,7 +247,7 @@ impl Net {
         if config.idle_timeout_ms > 0 {
             builder = builder.read_timeout(Duration::from_millis(config.idle_timeout_ms));
         }
-        if config.public_only() {
+        if public {
             builder = builder.no_proxy().dns_resolver(Arc::new(PublicResolver));
         } else if let Some(url) = &proxy {
             let proxy = reqwest::Proxy::all(url).map_err(|e| HttpError::Network {
@@ -428,7 +467,7 @@ fn parse_url(raw: &str) -> Result<url::Url, HttpError> {
             url.scheme()
         )));
     }
-    if net().config().public_only() {
+    if net().config().public_only() || forced_public() {
         validate_public_url(&url)?;
     }
     Ok(url)
@@ -909,6 +948,34 @@ async fn post_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn addresses_from_feed_content_must_be_public() {
+        let cancel = CancellationToken::new();
+        assert!(!forced_public());
+        for url in [
+            "http://127.0.0.1:9/secret.json",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://[::1]/x",
+            "http://router.local/admin",
+        ] {
+            let result = public(async {
+                assert!(forced_public());
+                get(Get {
+                    url,
+                    headers: Vec::new(),
+                    cancel: &cancel,
+                    timeout_ms: Some(2_000),
+                })
+                .await
+            })
+            .await;
+            assert!(
+                matches!(result, Err(HttpError::Blocked(_))),
+                "{url} must be blocked: {result:?}"
+            );
+        }
+    }
 
     #[test]
     fn public_ip_policy() {

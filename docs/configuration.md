@@ -737,7 +737,7 @@ value is a config **error**, reported by `--check-config`.
 | `idleTimeoutMs` | `15000` | 0–… | How long silence may last during a download. |
 | `requestDeadlineMs` | 120000 | 1–… | A hard time limit for a whole request, retries included. |
 | `shutdownGraceMs` | `5000` | 0–60000 | How much time running tasks get when shutting down. |
-| `outboundPolicy` | `unrestricted` | `unrestricted`, `public-only` | `public-only` blocks private and local addresses (e.g. `127.0.0.1`, `192.168.…`) and disables Scrapling. |
+| `outboundPolicy` | `unrestricted` | `unrestricted`, `public-only` | `public-only` blocks private and local addresses (e.g. `127.0.0.1`, `192.168.…`) and disables Scrapling; redirects are followed only to public addresses (at most 10). Whatever is set here, addresses that come from feed content (a feed a page advertises, image checks) are always public-only, without the browser. |
 | `maxResponseBytes` | 16777216 (16 MiB) | 1–268435456 | Maximum response size after decompression. |
 
 ```json

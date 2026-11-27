@@ -171,6 +171,9 @@ pub(crate) mod tests {
 
     #[test]
     fn records_are_bounded_slim_and_persisted() {
+        let _stores = crate::GLOBAL_STORES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("xf-sent-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

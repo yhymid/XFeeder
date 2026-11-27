@@ -738,7 +738,7 @@ spoza zakresu to **błąd** configu, który zgłosi `--check-config`.
 | `idleTimeoutMs` | `15000` | 0–… | Ile może trwać cisza w trakcie pobierania. |
 | `requestDeadlineMs` | 120000 | 1–… | Twardy limit czasu całego zapytania, razem z ponowieniami. |
 | `shutdownGraceMs` | `5000` | 0–60000 | Ile czasu przy zamykaniu dać trwającym zadaniom. |
-| `outboundPolicy` | `unrestricted` | `unrestricted`, `public-only` | `public-only` blokuje adresy prywatne i lokalne (np. `127.0.0.1`, `192.168.…`) oraz wyłącza Scrapling. |
+| `outboundPolicy` | `unrestricted` | `unrestricted`, `public-only` | `public-only` blokuje adresy prywatne i lokalne (np. `127.0.0.1`, `192.168.…`) oraz wyłącza Scrapling; przekierowania działają tylko na adresy publiczne (najwyżej 10). Niezależnie od tego ustawienia adresy pochodzące z treści feedów (feed wskazany przez stronę, sprawdzanie obrazków) zawsze są tylko publiczne i bez przeglądarki. |
 | `maxResponseBytes` | 16777216 (16 MiB) | 1–268435456 | Maksymalny rozmiar odpowiedzi po rozpakowaniu. |
 
 ```json

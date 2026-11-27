@@ -432,6 +432,11 @@ async fn run_worker(options: Options) -> ExitCode {
     }
 }
 
+/// Tests that set up the process-wide stores (`clearance`, `sent`) run one
+/// at a time; `App::new` initializes both.
+#[cfg(test)]
+pub(crate) static GLOBAL_STORES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod lock_tests {
     #[test]

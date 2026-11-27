@@ -227,6 +227,9 @@ mod tests {
 
     #[test]
     fn saves_only_cloudflare_clearance_for_the_site_and_forgets_it() {
+        let _stores = crate::GLOBAL_STORES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = std::env::temp_dir().join(format!("xf-clearance-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("clearance.json");

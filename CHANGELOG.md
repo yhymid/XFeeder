@@ -180,6 +180,16 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Security: addresses that come from feed content can no longer reach internal services. A
+  page could advertise a "feed" at `http://127.0.0.1/…` (or a metadata or router address),
+  and XFeeder fetched it and posted what it said; image checks did a GET to any host. Now a
+  discovered feed and every image check use public addresses only, whatever
+  `outboundPolicy` says: the URL, every redirect and every DNS answer are checked, and no
+  browser or solver is used for them. Checked with a local page advertising
+  `127.0.0.1/secret.json`: 3.1 before this fetched it and made an entry, now the server sees
+  only the page (feed review F10).
+- `outboundPolicy: "public-only"` follows redirects to public addresses (at most 10) instead
+  of none, so feeds that moved (http → https, `/rss` → `/feed/`) work (feed review F01 F5).
 - `steampics://`: switching between account and anonymous reading (a failed login falls back
   to anonymous for 6 hours) no longer drops the changes in between. Only what both modes see
   is compared, so a new public build is still posted, and branches or depots only one mode

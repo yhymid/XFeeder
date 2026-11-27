@@ -950,12 +950,13 @@ async fn image_exists(image: &str, cancel: &CancellationToken) -> (bool, Option<
 }
 
 async fn check_image(image: &str, cancel: &CancellationToken) -> (bool, Option<u16>) {
-    let response = http::get(http::Get {
+    // Image URLs come from feed content: public addresses only.
+    let response = http::public(http::get(http::Get {
         url: image,
         headers: vec![("Range".into(), "bytes=0-1023".into())],
         cancel,
         timeout_ms: Some(8_000),
-    })
+    }))
     .await;
     let status = match &response {
         Ok(r) => Some(r.status),

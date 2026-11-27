@@ -280,7 +280,7 @@ impl Ctx<'_> {
         allow_browser: bool,
     ) -> Result<Download, Stop> {
         let solver = crate::solver::SolverConfig::from_root(&self.config.root)
-            .filter(|_| !self.config.network.public_only());
+            .filter(|_| !self.config.network.public_only() && !crate::http::forced_public());
         let forced = solver.as_ref().is_some_and(|s| s.forced(url));
         if !forced {
             let dl = self.download_direct(url, validator, allow_browser).await?;
@@ -1031,7 +1031,9 @@ impl Pipeline<'_> {
             && !looks_like_feed(&dl.data)
             && let Some(found) = parsers::discover_feed(url, &dl.data)
         {
-            let next = ctx.download(&found, None, allow_scrapling).await?;
+            // The address comes from the page, not the config: public
+            // addresses only, and no browser or solver fetching it for us.
+            let next = crate::http::public(ctx.download(&found, None, false)).await?;
             if next.ok && looks_like_feed(&next.data) {
                 crate::info!(
                     "Feed pipeline",

@@ -367,11 +367,12 @@ Channels live in keys whose name starts with `channels` (`channels`, `channels2`
 | object `{"name": …}` | `news`, `steam`     | the key `group:name`, fixed             |
 
 > **Important:** in a list group, changing `Webhook`, `Thread` or the feed list gives the
-> channel a new history key. Nothing is posted twice (the first-check rule applies, see
-> `FirstRunSend`), but the old history is no longer used. In a named group the key depends
-> only on the name, so the channel can be edited freely. A fixed key of your own can also be
-> set with `ID` / `CacheKey` (see below); to add feeds to a list channel and keep its history,
-> set `"CacheKey"` to its current key.
+> channel a new history key. XFeeder remembers which key each channel position used last and
+> carries the history over to the new key, so nothing is posted twice or lost. Changing a
+> feed's own address still starts a new history for that feed (only the first-check rule,
+> `FirstRunSend`, applies). Moving channels around in the list can carry a history to the
+> wrong channel, which is never worse than an empty one. In a named group the key depends only
+> on the name. A fixed key of your own can be set with `ID` / `CacheKey` (see below).
 
 Shorthands: instead of an object, a channel can be just a URL or a list of URLs. Then all
 other settings (e.g. `Webhook`) must come from [`ChannelDefaults`](#3-channeldefaults-shared-channel-settings):

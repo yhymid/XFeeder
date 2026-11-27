@@ -180,6 +180,11 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Editing a list channel by hand (a feed added, a webhook rotated) no longer starts its
+  history from zero. The new key used to give every feed an empty history: entries that came
+  in since the last check were marked as seen, and with `FirstRunSend` the newest of every
+  feed were posted again. `cache.json` now keeps the key each channel position used last and
+  moves the history to the new key (feed review F07-5).
 - The first check of a feed records every entry it lists, also those the channel's filter
   hides (`MaxAgeHours`, `Exclude`). Before, they were left out, and an old entry that came
   back into the window (an Atom `updated` bump after an edit) was posted as new.

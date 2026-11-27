@@ -298,8 +298,73 @@ impl App {
                 _ => channel.cache_key.clone(),
             }
         });
+        if let Some(adopted) = self.adopt_history(channel, &key) {
+            crate::info!(
+                "Cache",
+                "{}: the channel's settings changed (new history key {key}); keeping the delivery history recorded under {adopted}",
+                channel.label()
+            );
+        }
         keys.insert(channel.cache_key.clone(), key.clone());
         key
+    }
+
+    /// A hand edit of a channel without `CacheKey` (a feed added, a webhook
+    /// rotated) changes its history key. Without this, every feed of the
+    /// channel got an empty history: entries that came in since the last
+    /// check were marked as seen (lost), and with `FirstRunSend` the newest
+    /// of every feed were posted again (F07-5). The key each channel slot
+    /// (group + position) used last is kept in `cache.json`; a slot whose
+    /// new key has no history takes over the old one. Taking a wrong
+    /// slot's history is never worse than starting empty: only ids that
+    /// were really sent are carried over.
+    fn adopt_history(&self, channel: &Channel, key: &str) -> Option<String> {
+        let slot = format!("{}#{}", channel.source_key, channel.position);
+        let config = self.config();
+        let in_use = |k: &str| {
+            config
+                .channels
+                .iter()
+                .any(|c| c.cache_key == k || c.legacy_cache_key.as_deref() == Some(k))
+        };
+        let result = self.state.delivery.with(|root| {
+            let previous = root
+                .get(crate::state::META_KEY)
+                .and_then(|m| m.get("channelKeys"))
+                .and_then(|k| k.get(&slot))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let mut adopted = None;
+            if let Some(old) = previous.filter(|old| old != key)
+                && !root.contains_key(key)
+                && let Some(history) = root.get(&old).cloned()
+            {
+                root.insert(key.to_string(), history);
+                if !in_use(&old) {
+                    root.remove(&old);
+                }
+                adopted = Some(old);
+            }
+            let meta = root
+                .entry(crate::state::META_KEY)
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !meta.is_object() {
+                *meta = Value::Object(Map::new());
+            }
+            if let Some(meta) = meta.as_object_mut() {
+                let keys = meta
+                    .entry("channelKeys")
+                    .or_insert_with(|| Value::Object(Map::new()));
+                if !keys.is_object() {
+                    *keys = Value::Object(Map::new());
+                }
+                if let Some(keys) = keys.as_object_mut() {
+                    keys.insert(slot.clone(), json!(key));
+                }
+            }
+            adopted
+        });
+        result.ok().flatten()
     }
 
     fn pending(
@@ -1809,6 +1874,47 @@ mod tests {
             }
         }
         sent
+    }
+
+    #[test]
+    fn a_hand_edited_channel_keeps_its_history() {
+        let dir = std::env::temp_dir().join(format!("xfeeder-test-adopt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (config, cache) = (dir.join("config.json"), dir.join("cache.json"));
+        let write = |feeds: &[&str]| {
+            let raw = json!({ "channels": [{
+                "Webhook": "https://discord.com/api/webhooks/1/abc",
+                "RSS": feeds,
+            }] });
+            std::fs::write(&config, raw.to_string()).unwrap();
+        };
+        let bucket = "https://a.example/feed::webhook";
+        write(&["https://a.example/feed"]);
+        let app = App::new(&config, &cache, false, false).unwrap();
+        let channel = app.config().channels[0].clone();
+        let old = app.bucket_key(&channel);
+        app.state
+            .delivery
+            .with(|root| root.insert(old.clone(), json!({ bucket: ["https://a.example/1"] })))
+            .unwrap();
+        app.state.delivery.save_blocking().unwrap();
+        drop(app);
+        // A feed added by hand: a new key, the same history.
+        write(&["https://a.example/feed", "https://b.example/feed"]);
+        let app = App::new(&config, &cache, false, false).unwrap();
+        let channel = app.config().channels[0].clone();
+        let new = app.bucket_key(&channel);
+        assert_ne!(new, old);
+        let (moved, gone) = app.state.delivery.read(|root| {
+            (
+                root.get(&new).and_then(|b| b.get(bucket)).cloned(),
+                !root.contains_key(&old),
+            )
+        });
+        assert_eq!(moved, Some(json!(["https://a.example/1"])));
+        assert!(gone, "the old bucket is moved, not copied");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

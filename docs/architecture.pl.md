@@ -71,12 +71,15 @@ Układ `cache.json` (bez zmian od 2.x):
   ten jest w cache.
 - Pierwsze zobaczenie: gdy cel nie ma historii dla feedu (brak kubełka
   `<feed>::<cel>` albo jest pusty, i brak starego kubełka), obecne wpisy trafiają do
-  kubełka jako już widziane, poza `FirstRunSend` najnowszymi (wg daty). Edycja kanału
-  zmienia jego klucz cache, więc to chroni też przed powtórkami po zmianie configu. Żeby
-  dodać feedy do kanału i zachować jego historię, przypnij klucz przez
-  `"CacheKey": "<obecny klucz>"`.
-- `Filters` działają na pobranych wpisach przed wykrywaniem nowych; odfiltrowane wpisy
-  nie są zapisywane, więc złagodzenie filtra może je później przepuścić.
+  kubełka jako już widziane, poza `FirstRunSend` najnowszymi (wg daty, spośród wpisów
+  przepuszczonych przez filtr). Zapisywany jest każdy wpis z listy, także ukryty filtrem.
+- Edycja kanału z listy zmienia jego klucz cache. `__xfeeder.channelKeys` w `cache.json`
+  trzyma klucz, którego ostatnio używała każda pozycja (`<grupa>#<pozycja>`); gdy pod nowym
+  kluczem nie ma historii, stary kubełek jest do niego przenoszony (kopiowany, gdy inny kanał
+  z configu nadal używa starego klucza).
+- `Filters` decydują tylko o tym, co czeka na wysłanie: decyzje o historii widzą każdy wpis
+  z listy. Wpisy ukryte filtrem przy późniejszym sprawdzeniu nie są zapisywane, więc
+  złagodzenie filtra może je przepuścić.
 - Gdy cel jest trwale nieosiągalny (usunięty wątek lub webhook, unieważniony token,
   nieznany czat), reszta obiegu kanału go pomija; w następnym interwale jest jedna próba.
 - Zapisywane są tylko ID **potwierdzonych** wysyłek, a plik jest zapisywany po każdej,

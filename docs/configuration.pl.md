@@ -367,11 +367,12 @@ Kanały są w kluczach, których nazwa zaczyna się od `channels` (`channels`, `
 | obiekt `{"nazwa": …}` | `news`, `steam`     | klucz `grupa:nazwa`, stały                |
 
 > **Ważne:** w grupie-liście zmiana `Webhook`, `Thread` albo listy feedów daje kanałowi
-> nowy klucz historii. Nic nie zostanie wysłane podwójnie (działa pierwsze sprawdzenie, patrz
-> `FirstRunSend`), ale stara historia przestaje być używana. W grupie z nazwami klucz zależy
-> tylko od nazwy, więc kanał można dowolnie edytować. Własny stały klucz można też ustawić
-> parametrem `ID` / `CacheKey` (patrz niżej); żeby dodać feedy do kanału z listy i zachować
-> jego historię, ustaw `"CacheKey"` na jego obecny klucz.
+> nowy klucz historii. XFeeder pamięta, jakiego klucza ostatnio używała każda pozycja kanału,
+> i przenosi historię pod nowy klucz, więc nic nie idzie dwa razy ani nie ginie. Zmiana adresu
+> samego feedu nadal zaczyna dla niego nową historię (działa tylko zasada pierwszego
+> sprawdzenia, `FirstRunSend`). Przestawienie kanałów na liście może przenieść historię do
+> innego kanału, co nigdy nie jest gorsze niż pusta historia. W grupie z nazwami klucz zależy
+> tylko od nazwy. Własny stały klucz można ustawić parametrem `ID` / `CacheKey` (patrz niżej).
 
 Skróty: zamiast obiektu kanał może być samym adresem albo listą adresów. Wtedy wszystkie
 pozostałe ustawienia (np. `Webhook`) muszą przyjść z [`ChannelDefaults`](#3-channeldefaults-wspólne-ustawienia-kanałów):

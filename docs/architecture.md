@@ -72,11 +72,15 @@ config.json + .env ──► config ──► app (scheduler) ──► feed pip
 - First sight: when a destination has no history for a feed (no
   `<feed>::<target>` bucket, or an empty one, and no legacy bucket), the
   current entries are written to the bucket as already seen, except the newest
-  `FirstRunSend` (by date). Editing a channel changes its cache key, so this
-  also prevents replays after a config edit. To add feeds to a channel and keep
-  its history, pin the key with `"CacheKey": "<current key>"`.
-- `Filters` are applied to fetched entries before pending detection; filtered
-  entries are not recorded, so relaxing a filter can let them through later.
+  `FirstRunSend` (by date, among entries the filter accepts). Every listed
+  entry is recorded, also those the filter hides.
+- Editing a list channel changes its cache key. `__xfeeder.channelKeys` in
+  `cache.json` keeps the key each slot (`<group>#<position>`) used last; when
+  the new key has no history, the old bucket is moved to it (copied when
+  another configured channel still uses the old key).
+- `Filters` decide only what is pending: history decisions see every listed
+  entry. Entries hidden by a filter on a later check are not recorded, so
+  relaxing a filter can let them through.
 - When a destination is permanently unreachable (deleted thread/webhook,
   revoked token, unknown chat) the rest of that channel run skips it; the next
   interval tries again with a single request.

@@ -669,17 +669,35 @@ fn escape_html(text: &str) -> String {
 
 fn escape_limited(value: &Value, max: usize) -> String {
     let input = js::trim(&js::collapse_ws(&js::to_string_or_empty(value))).to_string();
-    let mut output = String::new();
+    let mut output = String::with_capacity(input.len());
+    // UTF-16 length of `output`, kept as it grows (was recounted per char).
+    let mut units = 0;
     let mut truncated = false;
     for ch in input.chars() {
-        let escaped = escape_html(&ch.to_string());
-        if len16(&output) + len16(&escaped) > max {
+        let escaped = match ch {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '"' => "&quot;",
+            _ => "",
+        };
+        let add = if escaped.is_empty() {
+            ch.len_utf16()
+        } else {
+            escaped.len()
+        };
+        if units + add > max {
             truncated = true;
             break;
         }
-        output.push_str(&escaped);
+        if escaped.is_empty() {
+            output.push(ch);
+        } else {
+            output.push_str(escaped);
+        }
+        units += add;
     }
-    if truncated && len16(&output) < max {
+    if truncated && units < max {
         output.push('…');
     }
     output

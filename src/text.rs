@@ -118,7 +118,7 @@ pub fn strip_html(input: &str) -> String {
     }
     let text = re(
         &DROP,
-        r"(?is)<!--.*?-->|<script\b[^>]*>.*?</script\s*>|<style\b[^>]*>.*?</style\s*>",
+        r"(?is)<!--.*?-->|<script(?-u:\b)[^>]*>.*?</script\s*>|<style(?-u:\b)[^>]*>.*?</style\s*>",
     )
     .replace_all(input, " ");
     let text = re(
@@ -150,7 +150,7 @@ pub fn html_to_text(input: &str) -> String {
     // In HTML a line break in the source is just a space (GitHub's activity
     // feed breaks lines between every tag); only `<pre>` keeps them.
     let input = if input.contains('<') {
-        let pre = re(&PRE, r"(?is)<pre\b.*?</pre\s*>");
+        let pre = re(&PRE, r"(?is)<pre(?-u:\b).*?</pre\s*>");
         let ws = re(&WS, r"\s+");
         let mut out = String::with_capacity(input.len());
         let mut last = 0;
@@ -167,7 +167,7 @@ pub fn html_to_text(input: &str) -> String {
     // WordPress feeds (blender.org) start every body with `<?xml encoding="utf-8"?>`.
     static PI: OnceLock<Regex> = OnceLock::new();
     let input = re(&PI, r"(?s)<\?.*?\?>").replace_all(&input, "");
-    let marked = re(&LI, r"(?i)<li\b[^>]*>").replace_all(&input, "\n•\n");
+    let marked = re(&LI, r"(?i)<li(?-u:\b)[^>]*>").replace_all(&input, "\n•\n");
     let text = strip_html(&marked)
         .replace(
             ['\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}', '\u{feff}'],
@@ -226,13 +226,13 @@ pub fn html_to_rich(input: &str) -> String {
     static HEADING: OnceLock<Regex> = OnceLock::new();
     static BOLD_LINE: OnceLock<Regex> = OnceLock::new();
     static ANCHOR: OnceLock<Regex> = OnceLock::new();
-    let html = re(&HEADING, r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]\s*>")
+    let html = re(&HEADING, r"(?is)<h[1-6](?-u:\b)[^>]*>(.*?)</h[1-6]\s*>")
         .replace_all(input, |c: &regex::Captures| {
             format!("<p>{HEAD_OPEN}{}{HEAD_CLOSE}</p>", &c[1])
         });
     let bold = re(
         &BOLD_LINE,
-        r"(?is)(^|<br\s*/?>|<p\b[^>]*>|</p>|\n)\s*<(?:b|strong)>([^<]{1,100})</(?:b|strong)>\s*(<br\s*/?>|</p>|\n|$)",
+        r"(?is)(^|<br\s*/?>|<p(?-u:\b)[^>]*>|</p>|\n)\s*<(?:b|strong)>([^<]{1,100})</(?:b|strong)>\s*(<br\s*/?>|</p>|\n|$)",
     );
     // Twice: two bold lines in a row share the break between them.
     let mut html = html.into_owned();
@@ -245,7 +245,7 @@ pub fn html_to_rich(input: &str) -> String {
     }
     let html = re(
         &ANCHOR,
-        r#"(?is)<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a\s*>"#,
+        r#"(?is)<a(?-u:\b)[^>]*?(?-u:\b)href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a\s*>"#,
     )
     .replace_all(&html, |c: &regex::Captures| {
         // Link text on one line, without tags (a <br> or <p> inside the

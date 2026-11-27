@@ -310,6 +310,7 @@ mod tests {
                 event("4", 28, "Community spotlight", &[], "[img]{STEAM_CLAN_IMAGE}/1/a.png[/img][p]y[/p]"),
                 event("5", 14, "7.42 Gameplay Update", &[], "")
             ]})),
+            xml: Default::default(),
         };
         let items = parse(URL, &body);
         let titles: Vec<&str> = items.iter().map(|i| i["title"].as_str().unwrap()).collect();

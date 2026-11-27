@@ -20,6 +20,8 @@ pub struct Body {
     pub text: String,
     /// Axios parsed any JSON-looking body automatically; parsers rely on it.
     pub json: Option<Value>,
+    /// XML tree, built once and shared by every parser that asks for it.
+    pub xml: OnceLock<Option<Value>>,
 }
 
 impl Body {
@@ -30,7 +32,11 @@ impl Body {
         } else {
             None
         };
-        Self { text, json }
+        Self {
+            text,
+            json,
+            xml: OnceLock::new(),
+        }
     }
 }
 
@@ -155,7 +161,7 @@ fn without_trailers(text: &str) -> String {
     );
     let kept: Vec<&str> = text
         .lines()
-        .filter(|l| !trailer.is_match(l.trim()))
+        .filter(|l| !trailer.is_match(l.trim().trim_start_matches(['*', '_', '>', ' '])))
         .collect();
     js::trim(&kept.join("\n")).to_string()
 }
@@ -167,7 +173,7 @@ fn without_read_more(text: &str) -> String {
     static POST: OnceLock<Regex> = OnceLock::new();
     let text = re(
         &POST,
-        r"(?im)^The post .{1,300} appeared first on .{1,120}\.?$",
+        r"(?im)^\*?The post .{1,400} appeared first on .{1,400}\.?\*?$",
     )
     .replace_all(text, "");
     let text = re(
@@ -186,11 +192,13 @@ fn name_from_email(email: &str) -> Option<String> {
     (!local.is_empty()).then(|| local.to_string())
 }
 
-fn xml_doc(body: &Body) -> Option<Value> {
+fn xml_doc(body: &Body) -> Option<&Value> {
     if body.json.is_some() {
         return None;
     }
-    xmltree::parse(&body.text).ok()
+    body.xml
+        .get_or_init(|| xmltree::parse(&body.text).ok())
+        .as_ref()
 }
 
 fn text_or(value: &Value, fallback: &str) -> String {
@@ -339,8 +347,11 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        // The Discord text gets the same clean-up as the snippet: commit
+        // trailers (Co-Authored-By, Signed-off-by, session links) and
+        // "The post … appeared first on …" tails are not post content.
         if let Some(Value::String(text)) = map.get_mut("contentText") {
-            *text = tidy_text(text, &title, github);
+            *text = without_read_more(&tidy_text(&without_trailers(text), &title, github));
         }
         if let Some(link) = map.get("link").and_then(Value::as_str)
             && let Some(absolute) = resolve_url(url, link)
@@ -488,7 +499,7 @@ pub fn parse_youtube(url: &str, body: &Body) -> Vec<Value> {
         );
         return Vec::new();
     };
-    let entries = as_list(path(&doc, &["feed", "entry"]));
+    let entries = as_list(path(doc, &["feed", "entry"]));
     let items: Vec<Value> = entries
         .into_iter()
         .map(|e| {
@@ -567,7 +578,7 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
     let Some(doc) = xml_doc(body) else {
         return Vec::new();
     };
-    let feed = get(&doc, "feed");
+    let feed = get(doc, "feed");
     as_list(get(feed, "entry"))
         .into_iter()
         .map(|e| {
@@ -662,17 +673,17 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
         );
         return Vec::new();
     };
-    let (kind, entries) = if truthy(path(&doc, &["rss", "channel", "item"])) {
-        ("RSS", as_list(path(&doc, &["rss", "channel", "item"])))
-    } else if truthy(path(&doc, &["feed", "entry"])) {
-        ("Atom", as_list(path(&doc, &["feed", "entry"])))
-    } else if truthy(path(&doc, &["channel", "item"])) {
-        ("RSS (no-root)", as_list(path(&doc, &["channel", "item"])))
-    } else if truthy(path(&doc, &["rdf:RDF", "item"])) {
+    let (kind, entries) = if truthy(path(doc, &["rss", "channel", "item"])) {
+        ("RSS", as_list(path(doc, &["rss", "channel", "item"])))
+    } else if truthy(path(doc, &["feed", "entry"])) {
+        ("Atom", as_list(path(doc, &["feed", "entry"])))
+    } else if truthy(path(doc, &["channel", "item"])) {
+        ("RSS (no-root)", as_list(path(doc, &["channel", "item"])))
+    } else if truthy(path(doc, &["rdf:RDF", "item"])) {
         // RSS 1.0: items are siblings of <channel>, under <rdf:RDF>.
-        ("RDF", as_list(path(&doc, &["rdf:RDF", "item"])))
-    } else if truthy(path(&doc, &["RDF", "item"])) {
-        ("RDF", as_list(path(&doc, &["RDF", "item"])))
+        ("RDF", as_list(path(doc, &["rdf:RDF", "item"])))
+    } else if truthy(path(doc, &["RDF", "item"])) {
+        ("RDF", as_list(path(doc, &["RDF", "item"])))
     } else {
         crate::info!(
             "XML Parser",
@@ -1083,13 +1094,13 @@ pub fn parse_rss(url: &str, body: &Body) -> Vec<Value> {
     static ITEM: OnceLock<Regex> = OnceLock::new();
     static ENTRY: OnceLock<Regex> = OnceLock::new();
     let mut kind = "RSS";
-    let mut blocks: Vec<String> = re(&ITEM, r"(?is)<item\b[^>]*>(.*?)</item>")
+    let mut blocks: Vec<String> = re(&ITEM, r"(?is)<item(?-u:\b)[^>]*>(.*?)</item>")
         .captures_iter(&body.text)
         .map(|c| c[1].to_string())
         .collect();
     if blocks.is_empty() {
         kind = "Atom";
-        blocks = re(&ENTRY, r"(?is)<entry\b[^>]*>(.*?)</entry>")
+        blocks = re(&ENTRY, r"(?is)<entry(?-u:\b)[^>]*>(.*?)</entry>")
             .captures_iter(&body.text)
             .map(|c| c[1].to_string())
             .collect();
@@ -1174,7 +1185,7 @@ pub fn regex_items(body: &str) -> Vec<Value> {
     }
     static ITEM: OnceLock<Regex> = OnceLock::new();
     static TAGS: OnceLock<Regex> = OnceLock::new();
-    re(&ITEM, r"<item\b[^>]*>([\s\S]*?)</item>")
+    re(&ITEM, r"<item(?-u:\b)[^>]*>([\s\S]*?)</item>")
         .captures_iter(body)
         .map(|c| {
             let block = &c[1];
@@ -1362,7 +1373,11 @@ pub fn is_blocked_page(body: &str, status: u16, headers: &serde_json::Map<String
     // solved request still carry `cf-mitigated: challenge`.
     if source.starts_with('{')
         || source.starts_with('[')
-        || re(&FEED, r"(?i)^(?:<\?xml[^>]*>\s*)?<(?:rss|feed|rdf:RDF)\b").is_match(source)
+        || re(
+            &FEED,
+            r"(?i)^(?:<\?xml[^>]*>\s*)?<(?:rss|feed|rdf:RDF)(?-u:\b)",
+        )
+        .is_match(source)
     {
         return false;
     }
@@ -1373,7 +1388,7 @@ pub fn is_blocked_page(body: &str, status: u16, headers: &serde_json::Map<String
     }
     if !re(
         &HTML,
-        r"(?i)<(?:!doctype\s+html|html|head|title|body|h1|form)\b",
+        r"(?i)<(?:!doctype\s+html|html|head|title|body|h1|form)(?-u:\b)",
     )
     .is_match(source)
     {
@@ -1582,6 +1597,27 @@ mod tests {
             &empty
         ));
         assert!(is_blocked_page("ok", 403, &empty));
+    }
+
+    #[test]
+    fn commit_trailers_and_post_tails_never_reach_the_discord_text() {
+        let items = vec![
+            json!({
+                "title": "Fix the parser",
+                "link": "https://github.com/a/b/commit/1",
+                "contentText": "Fix the parser\n\nKeeps entities.\n\nCo-Authored-By: Bot <[noreply@x.com](mailto:noreply@x.com)>\nSigned-off-by: Dev <dev@x.com>\nClaude-Session: [https://claude.ai/code/session_1](https://claude.ai/code/session_1)",
+                "contentSnippet": "Fix the parser Keeps entities. Co-Authored-By: Bot <noreply@x.com>",
+            }),
+            json!({
+                "title": "New feature",
+                "link": "https://github.blog/x",
+                "contentText": "Body text.\n\nThe post [New feature](https://github.blog/x/very/long/path/that/goes/on) appeared first on [The GitHub Blog](https://github.blog).",
+            }),
+        ];
+        let out = finish("https://github.com/a/b/commits/main.atom", items);
+        let text = out[0]["contentText"].as_str().unwrap();
+        assert_eq!(text, "Keeps entities.");
+        assert_eq!(out[1]["contentText"].as_str().unwrap(), "Body text.");
     }
 
     #[test]

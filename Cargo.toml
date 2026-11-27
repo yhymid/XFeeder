@@ -27,7 +27,7 @@ encoding_rs = "0.8.35"
 futures-util = "0.3.34"
 hex = "0.4.3"
 libc = "0.2.191"
-quick-xml = "0.41.0"
+quick-xml = { version = "0.41.0", features = ["escape-html"] }
 rand = "0.10.4"
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "gzip", "brotli", "deflate", "json", "stream", "http2", "charset"] }

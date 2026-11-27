@@ -123,6 +123,42 @@ section below as its description.
   image next, and sends no image when neither exists.
 - WordPress feeds that start every body with `<?xml encoding="utf-8"?>` (blender.org)
   showed it in the text.
+- Commit trailers (`Co-Authored-By`, `Signed-off-by`, session links) and "The post …
+  appeared first on …" tails were removed from the snippet only, so the longer Discord text
+  still showed them. On 27.11 that was 7 GitHub commit feeds, fmhy, Intel and OpenClaw
+  releases, the GitHub Blog and Xbox Wire.
+- XML feeds are parsed safely:
+  - a document nested deeper than 256 levels is refused; about 50 000 levels used to
+    overflow the stack and stop the whole process;
+  - anything after the root element is ignored: Cloudflare appends a `<script>` to
+    unrealengine.com/rss, which pushed it to the regex fallback (titles with `<p>`, no text,
+    no categories);
+  - HTML entities such as `&nbsp;` or `&eacute;` are resolved, and unknown ones stay as
+    written, where before one of them rejected the whole feed;
+  - text stays text: "1.10" no longer becomes "1.1", and 20-digit ids keep their digits.
+
+### Changed
+- Faster parsing, measured on all 278 configured feeds (27.11 download, one pass on a Steam
+  Deck OLED):
+
+  ```
+  ┌──────────────────────────────┬──────────┬──────────┐
+  │                              │ before   │ after    │
+  ├──────────────────────────────┼──────────┼──────────┤
+  │ CPU time, 3 passes (user)    │ 15.2 s   │  7.0 s   │
+  │ Instructions per pass (F09)  │ 76.9 G   │ 18.0 G   │
+  │ Allocations per pass (F09)   │ 22.6 M   │  7.6 M   │
+  └──────────────────────────────┴──────────┴──────────┘
+  ```
+
+  - HTML tag patterns use ASCII word boundaries: the Unicode `\b` made the regex engine fall
+    back to its slow path on any text with non-ASCII characters;
+  - Steam events JSON is parsed once per download instead of twice;
+  - one XML tree per download is shared by all parsers;
+  - Telegram escaping is linear instead of quadratic.
+
+  Entry identities, entry counts and the Discord and Telegram output stay the same on 264 of
+  the 278 feeds. The other 14 changed only through the fixes above.
 
 ## 3.0 - Rust Update (2026-11-21)
 

@@ -143,6 +143,19 @@ section below as its description.
   `Retry-After: 3600` held the whole schedule for about 2 hours); the feed fails that check
   and is tried at the next one.
 
+- Nothing sent twice, nothing skipped (feed review F07):
+  - when entries start sharing a link, the link's place in history goes only to the entry
+    the send record (`sent.json`) says was sent under it. Before, the oldest entry by date
+    took it, so a new entry was skipped when the sent one had left the feed, was hidden by
+    a filter, or had no date. Without a record every entry with the link is sent, so at
+    worst one post goes out twice;
+  - an entry whose guid is not a URL is also remembered by its guid, so a feed that changes
+    its links but keeps its guids posts nothing again (onet did on 24.11: 21 posts twice);
+  - history never drops the id of an entry the feed still lists. A feed with more than
+    2000 entries (openai.com lists 1430) would have sent old entries again on every check;
+  - pending entries go out oldest first, so after downtime the older ones of a fast feed
+    (onet: 20 items, about 7 new per hour) are sent before they drop off it.
+
 ### Changed
 - Faster parsing, measured on all 278 configured feeds (27.11 download, one pass on a Steam
   Deck OLED):

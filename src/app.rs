@@ -664,6 +664,7 @@ impl App {
     /// legacy bucket): record its current entries as seen, except the newest
     /// `FirstRunSend`, so a new feed, a new destination or an edited channel
     /// (whose cache key changes) does not replay the whole feed.
+    #[allow(clippy::too_many_arguments)]
     async fn baseline(
         &self,
         channel: &Channel,
@@ -672,7 +673,9 @@ impl App {
         identified: &[(String, Value)],
         kinds: &[Target],
         bucket_key: &str,
+        ids: &FetchIds,
     ) -> Result<(), Stop> {
+        let (aliases, keep) = (&ids.aliases, &ids.keep);
         let has_history = |value: Option<&Value>| real_history(source, value);
         if has_history(cache.get(source)) {
             return Ok(()); // legacy single bucket, migrated by `pending`
@@ -698,7 +701,9 @@ impl App {
             .iter()
             .enumerate()
             .filter(|(i, (id, _))| !id.is_empty() && !send.contains(i))
-            .map(|(_, (id, _))| json!(id))
+            .flat_map(|(_, (id, _))| {
+                std::iter::once(json!(id)).chain(aliases.get(id).map(|a| json!(a)))
+            })
             .collect();
         if fresh.is_empty() || seen.is_empty() {
             return Ok(());
@@ -706,7 +711,12 @@ impl App {
         for target in &fresh {
             cache.insert(
                 format!("{source}::{}", target.kind()),
-                Value::Array(push_cache(&[], &seen, CACHE_LIMIT)),
+                Value::Array(crate::state::push_cache_keeping(
+                    &[],
+                    &seen,
+                    CACHE_LIMIT,
+                    keep,
+                )),
             );
         }
         let kinds: Vec<&str> = fresh.iter().map(|t| t.kind()).collect();
@@ -762,6 +772,15 @@ impl App {
             crate::parsers::finish(source, entries)
         };
         let fetched = entries.len();
+        // Ids of everything the feed lists now (filtered or not): history
+        // trimming never drops these.
+        let mut keep: std::collections::HashSet<String> = entries
+            .iter()
+            .map(|e| entry_identity(e, discord))
+            .filter(|id| !id.is_empty())
+            .collect();
+        let aliases = guid_aliases(&entries, discord);
+        keep.extend(aliases.values().cloned());
         let entries: Vec<Value> = match &channel.filter {
             Some(filter) => {
                 let now = chrono::Utc::now().timestamp_millis();
@@ -782,16 +801,34 @@ impl App {
             .into_iter()
             .map(|e| (entry_identity(&e, discord), e))
             .collect();
-        if stabilize_shared_links(cache, source, &kinds, &mut identified, &label) {
+        let sent_guid = |link: &str| sent_guid(&channel.cache_key, source, link);
+        if stabilize_shared_links(cache, source, &kinds, &mut identified, &label, &sent_guid) {
             self.persist(&bucket_key, cache).await?;
         }
+        keep.extend(identified.iter().map(|(id, _)| id.clone()));
         self.observe_entries(channel, source, &identified);
-        self.baseline(channel, cache, source, &identified, &kinds, &bucket_key)
-            .await?;
-        let pending: Vec<&(String, Value)> = identified
+        let ids = FetchIds { aliases, keep };
+        self.baseline(
+            channel,
+            cache,
+            source,
+            &identified,
+            &kinds,
+            &bucket_key,
+            &ids,
+        )
+        .await?;
+        let FetchIds { aliases, keep } = ids;
+        if sync_guid_aliases(cache, source, &kinds, &identified, &aliases, &keep, &label) {
+            self.persist(&bucket_key, cache).await?;
+        }
+        let mut pending: Vec<&(String, Value)> = identified
             .iter()
             .filter(|(id, _)| !Self::pending(cache, source, id, &kinds).is_empty())
             .collect();
+        // Oldest first, so a long backlog (after downtime) loses nothing off
+        // the end of a rolling feed; undated entries keep their feed place.
+        oldest_first(&mut pending);
         expert(
             "channel.feed.pending",
             json!({ "channel": label, "url": source, "fetched": identified.len(), "pending": pending.len() }),
@@ -802,7 +839,7 @@ impl App {
         let selected: Vec<&(String, Value)> =
             pending.into_iter().take(channel.request_send).collect();
         let mut failed = false;
-        for (identity, entry) in selected.iter().rev() {
+        for (identity, entry) in selected.iter() {
             let entry = &self.with_working_image(entry).await;
             for target in Self::pending(cache, source, identity, &kinds) {
                 if targets.is_unreachable(target) {
@@ -839,13 +876,20 @@ impl App {
                             .and_then(Value::as_array)
                             .cloned()
                             .unwrap_or_default();
+                        let mut ids = vec![json!(identity)];
+                        if let Some(alias) = aliases.get(identity.as_str())
+                            && !existing.iter().any(|v| v.as_str() == Some(alias))
+                        {
+                            ids.push(json!(alias));
+                        }
                         if !existing.iter().any(|v| v.as_str() == Some(identity)) {
                             cache.insert(
                                 name,
-                                Value::Array(push_cache(
+                                Value::Array(crate::state::push_cache_keeping(
                                     &existing,
-                                    &[json!(identity)],
+                                    &ids,
                                     CACHE_LIMIT,
+                                    &keep,
                                 )),
                             );
                             self.persist(&bucket_key, cache).await?;
@@ -1425,8 +1469,12 @@ fn link_and_guid(entry: &Value) -> Option<(String, String)> {
 /// - a link that history already holds as `link#…` keeps `link#guid` for
 ///   every entry with it, even when it is alone in this fetch;
 /// - the first time a link is seen shared while history has only the bare
-///   link (sent when it was alone), the oldest entry with that link takes
-///   over the bare link's place, so it is not sent again and the others are.
+///   link (sent when it was alone), the bare link's place goes to the entry
+///   that was really sent under it: `sent_guid(link)` is the guid recorded
+///   when it was sent (sent.json). Without that proof, or when the sent entry
+///   is not in this fetch (it left the feed, or a filter hid it), nothing is
+///   handed over and every entry with the link is sent: at worst one post
+///   twice, never a new post skipped.
 ///
 /// Returns whether the history was changed.
 fn stabilize_shared_links(
@@ -1435,6 +1483,7 @@ fn stabilize_shared_links(
     kinds: &[Target],
     identified: &mut [(String, Value)],
     label: &str,
+    sent_guid: &dyn Fn(&str) -> Option<String>,
 ) -> bool {
     let names: Vec<String> = std::iter::once(source.to_string())
         .chain(kinds.iter().map(|t| format!("{source}::{}", t.kind())))
@@ -1458,7 +1507,8 @@ fn stabilize_shared_links(
             entry["identityKey"] = json!(id.clone());
         }
     }
-    // First time shared: the bare link in history belongs to the oldest entry.
+    // First time shared: the bare link in history belongs to the entry that
+    // was sent under it, if the send record says which one that was.
     let mut groups: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
     for (i, (id, entry)) in identified.iter().enumerate() {
         if let Some((link, guid)) = link_and_guid(entry)
@@ -1469,20 +1519,54 @@ fn stabilize_shared_links(
     }
     let mut changed = false;
     for (link, members) in groups {
-        let date = |i: usize| {
-            crate::js::get(&identified[i].1, "isoDate")
-                .as_str()
-                .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
-                .map_or(i64::MIN, |d| d.timestamp_millis())
-        };
-        // Oldest by date; without dates, the last one in the feed.
-        let Some(&owner) = members
-            .iter()
-            .min_by_key(|&&i| (date(i), std::cmp::Reverse(i)))
-        else {
+        let prefix = format!("{link}#");
+        let needs_owner = names.iter().skip(1).any(|name| {
+            cache
+                .get(name)
+                .and_then(Value::as_array)
+                .is_some_and(|list| {
+                    list.iter().any(|v| v.as_str() == Some(link.as_str()))
+                        && !list
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .any(|k| k.starts_with(&prefix))
+                })
+        });
+        if !needs_owner {
+            continue;
+        }
+        let proof = sent_guid(&link);
+        let owner = proof.as_deref().and_then(|guid| {
+            members
+                .iter()
+                .copied()
+                .find(|&i| link_and_guid(&identified[i].1).is_some_and(|(_, g)| g == guid))
+        });
+        let Some(owner) = owner else {
+            crate::info!(
+                "Channel",
+                "{label}: {} entries now share the link {}; {}, so all of them are sent",
+                members.len(),
+                sanitize_url(&link),
+                if proof.is_some() {
+                    "the one sent before is no longer in the feed"
+                } else {
+                    "no send record says which one was sent before"
+                }
+            );
+            // Mark the link as shared so this is decided only once.
+            for name in names.iter().skip(1) {
+                if let Some(list) = cache.get(name).and_then(Value::as_array)
+                    && list.iter().any(|v| v.as_str() == Some(link.as_str()))
+                {
+                    let marker = json!(format!("{link}#"));
+                    let list = crate::state::push_cache(list, &[marker], CACHE_LIMIT);
+                    cache.insert(name.clone(), Value::Array(list));
+                    changed = true;
+                }
+            }
             continue;
         };
-        let prefix = format!("{link}#");
         let owner_id = identified[owner].0.clone();
         for name in names.iter().skip(1) {
             let Some(list) = cache.get(name).and_then(Value::as_array) else {
@@ -1515,6 +1599,127 @@ fn stabilize_shared_links(
     changed
 }
 
+/// What one fetch lists: guid aliases and every id history must keep.
+struct FetchIds {
+    aliases: std::collections::HashMap<String, String>,
+    keep: std::collections::HashSet<String>,
+}
+
+/// `identity → guid:<guid>` for entries whose guid is not a URL and is unique
+/// in the fetch (onet: UUIDs). Such an entry counts as seen under either key,
+/// so a feed that changes its links but keeps its guids posts nothing twice
+/// (onet did on 2026-11-24: 21 posts went out again).
+fn guid_aliases(entries: &[Value], discord: bool) -> std::collections::HashMap<String, String> {
+    let guid = |e: &Value| {
+        crate::js::to_string_or_empty(crate::js::get(e, "guid"))
+            .trim()
+            .to_string()
+    };
+    let mut count: std::collections::HashMap<String, usize> = Default::default();
+    for e in entries {
+        *count.entry(guid(e)).or_default() += 1;
+    }
+    entries
+        .iter()
+        .filter_map(|e| {
+            let g = guid(e);
+            let id = entry_identity(e, discord);
+            (!g.is_empty()
+                && count.get(&g) == Some(&1)
+                && !g.contains("://")
+                && !id.is_empty()
+                && id != g)
+                .then(|| (id, format!("guid:{g}")))
+        })
+        .collect()
+}
+
+/// Keeps an entry's identity and its guid alias together in every bucket:
+/// an entry seen under one is recorded under the other. Returns whether the
+/// history changed.
+fn sync_guid_aliases(
+    cache: &mut Map<String, Value>,
+    source: &str,
+    kinds: &[Target],
+    identified: &[(String, Value)],
+    aliases: &std::collections::HashMap<String, String>,
+    keep: &std::collections::HashSet<String>,
+    label: &str,
+) -> bool {
+    let mut changed = false;
+    for target in kinds {
+        let name = format!("{source}::{}", target.kind());
+        let Some(list) = cache.get(&name).and_then(Value::as_array) else {
+            continue;
+        };
+        let has = |key: &str| list.iter().any(|v| v.as_str() == Some(key));
+        let mut add: Vec<Value> = Vec::new();
+        for (id, entry) in identified {
+            let Some(alias) = aliases.get(id) else {
+                continue;
+            };
+            match (has(id), has(alias)) {
+                (true, false) => add.push(json!(alias)),
+                (false, true) => {
+                    crate::info!(
+                        "Channel",
+                        "{label}: {} has a new link but the same guid; not sent again",
+                        crate::text::cut_text(
+                            crate::js::get(entry, "title").as_str().unwrap_or(""),
+                            80
+                        )
+                    );
+                    add.push(json!(id));
+                }
+                _ => {}
+            }
+        }
+        if !add.is_empty() {
+            let list = crate::state::push_cache_keeping(list, &add, CACHE_LIMIT, keep);
+            cache.insert(name, Value::Array(list));
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// Stable sort by `isoDate`, oldest first; undated entries stay right after
+/// the dated entry before them in the feed.
+fn oldest_first(pending: &mut [&(String, Value)]) {
+    let mut last = i64::MIN;
+    let keys: Vec<i64> = pending
+        .iter()
+        .rev()
+        .map(|(_, e)| {
+            if let Some(t) = crate::js::get(e, "isoDate")
+                .as_str()
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+            {
+                last = t.timestamp_millis();
+            }
+            last
+        })
+        .collect();
+    let mut keyed: Vec<(i64, usize)> = keys.into_iter().rev().zip(0..).collect();
+    keyed.sort_by_key(|&(k, i)| (k, std::cmp::Reverse(i)));
+    let order: Vec<&(String, Value)> = keyed.iter().map(|&(_, i)| pending[i]).collect();
+    pending.copy_from_slice(&order);
+}
+
+/// The guid of the entry last sent with identity `link` (the bare link) from
+/// this channel and feed, from the send records.
+fn sent_guid(channel: &str, source: &str, link: &str) -> Option<String> {
+    crate::sent::all()
+        .into_iter()
+        .rev()
+        .find(|r| r.channel == channel && r.source == source && r.identity == link)
+        .and_then(|r| {
+            let guid = crate::js::to_string_or_empty(crate::js::get(&r.entry, "guid"));
+            let guid = guid.trim();
+            (!guid.is_empty()).then(|| guid.to_string())
+        })
+}
+
 fn real_history(source: &str, bucket: Option<&Value>) -> bool {
     let own = crate::text::normalize_link(source);
     bucket
@@ -1529,6 +1734,15 @@ mod tests {
     /// One check of a feed: parse like the parsers do, stabilize, then send
     /// what is pending (recorded in history). Returns the titles sent.
     fn check(cache: &mut Map<String, Value>, items: &[(&str, &str, &str)]) -> Vec<String> {
+        check_with(cache, items, &mut std::collections::HashMap::new())
+    }
+
+    /// `sent`: identity → guid of what was sent, like the send records.
+    fn check_with(
+        cache: &mut Map<String, Value>,
+        items: &[(&str, &str, &str)],
+        sent_records: &mut std::collections::HashMap<String, String>,
+    ) -> Vec<String> {
         const SRC: &str = "https://feed.example/rss";
         let entries: Vec<Value> = items
             .iter()
@@ -1539,11 +1753,21 @@ mod tests {
             .into_iter()
             .map(|e| (entry_identity(&e, true), e))
             .collect();
-        stabilize_shared_links(cache, SRC, &[Target::Webhook], &mut identified, "test");
+        let records = sent_records.clone();
+        let proof = |link: &str| records.get(link).cloned();
+        stabilize_shared_links(
+            cache,
+            SRC,
+            &[Target::Webhook],
+            &mut identified,
+            "test",
+            &proof,
+        );
         let mut sent = Vec::new();
         for (id, entry) in &identified {
             if !App::pending(cache, SRC, id, &[Target::Webhook]).is_empty() {
                 sent.push(entry["title"].as_str().unwrap().to_string());
+                sent_records.insert(id.clone(), entry["guid"].as_str().unwrap().to_string());
                 let name = format!("{SRC}::webhook");
                 let list = cache[&name].as_array().unwrap().clone();
                 cache.insert(
@@ -1558,9 +1782,10 @@ mod tests {
     #[test]
     fn shared_links_send_nothing_twice_and_miss_nothing() {
         let mut cache = Map::new();
+        let mut sent = std::collections::HashMap::new();
         let l = "https://kernel.example/";
         assert_eq!(
-            check(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")]),
+            check_with(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")], &mut sent),
             ["A"]
         );
         // B appears with the same link: B is new, A was sent already.
@@ -1568,15 +1793,117 @@ mod tests {
             ("B", l, "2026-11-02T00:00:00Z"),
             ("A", l, "2026-11-01T00:00:00Z"),
         ];
-        assert_eq!(check(&mut cache, &ab), ["B"]);
-        assert!(check(&mut cache, &ab).is_empty());
+        assert_eq!(check_with(&mut cache, &ab, &mut sent), ["B"]);
+        assert!(check_with(&mut cache, &ab, &mut sent).is_empty());
         // Back to one entry with that link: a new one is sent, an old one is not.
         assert_eq!(
-            check(&mut cache, &[("C", l, "2026-11-03T00:00:00Z")]),
+            check_with(&mut cache, &[("C", l, "2026-11-03T00:00:00Z")], &mut sent),
             ["C"]
         );
-        assert!(check(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")]).is_empty());
-        assert!(check(&mut cache, &[("B", l, "2026-11-02T00:00:00Z")]).is_empty());
+        assert!(check_with(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")], &mut sent).is_empty());
+        assert!(check_with(&mut cache, &[("B", l, "2026-11-02T00:00:00Z")], &mut sent).is_empty());
+    }
+
+    #[test]
+    fn a_feed_that_changes_its_links_but_keeps_guids_posts_nothing_twice() {
+        // onet, 2026-11-24: same UUID guid, a new link format for a while.
+        const SRC: &str = "https://onet.example/feed";
+        let entry = |link: &str| {
+            crate::parsers::finish(
+                SRC,
+                vec![
+                    json!({ "title": "Bitwa", "link": link, "guid": "9c401436-415a-46bf-971b-dd753ed16254" }),
+                ],
+            )
+        };
+        let mut cache = Map::new();
+        let kinds = [Target::Webhook];
+        let name = format!("{SRC}::webhook");
+        // Sent under the old link: history gets the link and the guid alias.
+        let first = entry("https://onet.example/kraj/bitwa/cj9cqjm");
+        let aliases = guid_aliases(&first, true);
+        let id = entry_identity(&first[0], true);
+        let alias = aliases.get(&id).expect("alias").clone();
+        cache.insert(name.clone(), json!([id, alias]));
+        // Next check: the same article under a new link.
+        let second = entry("https://onet.example/1795482011830/4/kraj_bitwa_cj9cqjm");
+        let aliases = guid_aliases(&second, true);
+        let identified: Vec<(String, Value)> = second
+            .into_iter()
+            .map(|e| (entry_identity(&e, true), e))
+            .collect();
+        let keep = std::collections::HashSet::new();
+        assert!(sync_guid_aliases(
+            &mut cache,
+            SRC,
+            &kinds,
+            &identified,
+            &aliases,
+            &keep,
+            "t"
+        ));
+        assert!(App::pending(&mut cache, SRC, &identified[0].0, &kinds).is_empty());
+        // Guids that are URLs or repeat in the fetch get no alias.
+        let shared = vec![
+            json!({ "title": "a", "link": "https://x/1", "guid": "same" }),
+            json!({ "title": "b", "link": "https://x/2", "guid": "same" }),
+            json!({ "title": "c", "link": "https://x/3", "guid": "https://x/3?p=1" }),
+        ];
+        assert!(guid_aliases(&shared, true).is_empty());
+    }
+
+    #[test]
+    fn pending_entries_go_out_oldest_first() {
+        let e = |id: &str, date: &str| (id.to_string(), json!({ "isoDate": date }));
+        let items = [
+            e("new", "2026-11-03T00:00:00Z"),
+            e("undated", ""),
+            e("mid", "2026-11-02T00:00:00Z"),
+            e("old", "2026-11-01T00:00:00Z"),
+        ];
+        let mut pending: Vec<&(String, Value)> = items.iter().collect();
+        oldest_first(&mut pending);
+        let order: Vec<&str> = pending.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(order, ["old", "mid", "undated", "new"]);
+    }
+
+    #[test]
+    fn a_new_entry_on_a_sent_link_is_never_swallowed() {
+        let l = "https://kernel.example/";
+        // V10 F1a: the sent entry left the feed, two new ones share its link.
+        let mut cache = Map::new();
+        let mut sent = std::collections::HashMap::new();
+        check_with(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")], &mut sent);
+        let bc = [
+            ("C", l, "2026-11-03T00:00:00Z"),
+            ("B", l, "2026-11-02T00:00:00Z"),
+        ];
+        let mut got = check_with(&mut cache, &bc, &mut sent);
+        got.sort();
+        assert_eq!(got, ["B", "C"]);
+        assert!(check_with(&mut cache, &bc, &mut sent).is_empty());
+        // V10 F5 / F07: the sent entry is undated; dates never pick the owner.
+        let mut cache = Map::new();
+        let mut sent = std::collections::HashMap::new();
+        check_with(&mut cache, &[("A", l, "2026-11-01T00:00:00Z")], &mut sent);
+        let ab = [("B", l, ""), ("A", l, "2026-11-01T00:00:00Z")];
+        assert_eq!(check_with(&mut cache, &ab, &mut sent), ["B"]);
+        // No send record (older history): both are sent, nothing is lost.
+        let mut cache = Map::new();
+        check_with(
+            &mut cache,
+            &[("A", l, "2026-11-01T00:00:00Z")],
+            &mut std::collections::HashMap::new(),
+        );
+        let ab = [
+            ("B", l, "2026-11-02T00:00:00Z"),
+            ("A", l, "2026-11-01T00:00:00Z"),
+        ];
+        let mut empty = std::collections::HashMap::new();
+        let mut got = check_with(&mut cache, &ab, &mut empty);
+        got.sort();
+        assert_eq!(got, ["A", "B"]);
+        assert!(check_with(&mut cache, &ab, &mut empty).is_empty());
     }
 
     #[test]

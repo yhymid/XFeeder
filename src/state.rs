@@ -405,6 +405,34 @@ pub fn push_cache(existing: &[Value], ids: &[Value], limit: usize) -> Vec<Value>
     merged
 }
 
+/// Like `push_cache`, but an id in `keep` (the entries the feed lists right
+/// now) is never dropped: a feed longer than `limit` would otherwise lose
+/// the ids of entries it still lists and send them again. The list can
+/// grow past `limit` by as many kept ids as that.
+pub fn push_cache_keeping(
+    existing: &[Value],
+    ids: &[Value],
+    limit: usize,
+    keep: &std::collections::HashSet<String>,
+) -> Vec<Value> {
+    let mut merged: Vec<Value> = ids.to_vec();
+    merged.extend(existing.iter().cloned());
+    let mut excess = merged.len().saturating_sub(limit);
+    if excess == 0 {
+        return merged;
+    }
+    let mut out: Vec<Value> = Vec::with_capacity(merged.len());
+    for value in merged.into_iter().rev() {
+        if excess > 0 && !value.as_str().is_some_and(|id| keep.contains(id)) {
+            excess -= 1;
+            continue;
+        }
+        out.push(value);
+    }
+    out.reverse();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,6 +442,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn history_never_drops_what_the_feed_still_lists() {
+        let ids: Vec<Value> = (0..5).map(|i| Value::String(format!("e{i}"))).collect();
+        let keep: std::collections::HashSet<String> =
+            ["e3", "e4"].iter().map(|s| s.to_string()).collect();
+        let out = push_cache_keeping(&ids, &[Value::String("new".into())], 3, &keep);
+        let out: Vec<&str> = out.iter().filter_map(Value::as_str).collect();
+        assert_eq!(out, ["new", "e3", "e4"]);
     }
 
     #[test]

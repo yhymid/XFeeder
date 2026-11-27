@@ -729,12 +729,34 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
                 get(e, "content:encoded"),
                 path(e, &["content", "VALUE"]),
                 get(e, "content"),
-                path(e, &["summary", "VALUE"]),
-                get(e, "summary"),
-                path(e, &["description", "VALUE"]),
-                get(e, "description"),
             ]));
+            // An RSS item with both: the longer one is the post, the other a
+            // teaser (Godot: a one-line <summary>, full HTML <description>).
+            let raw = if raw.is_empty() {
+                let summary = node_text(or(&[path(e, &["summary", "VALUE"]), get(e, "summary")]));
+                let description = node_text(or(&[
+                    path(e, &["description", "VALUE"]),
+                    get(e, "description"),
+                ]));
+                if description.len() > summary.len() {
+                    description
+                } else {
+                    summary
+                }
+            } else {
+                raw
+            };
+            // `<image>URL</image>` in an item (Bungie, Godot): not standard,
+            // but the cover picture.
+            let plain_image = || {
+                get(e, "image")
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|u| u.starts_with("http"))
+                    .map(str::to_string)
+            };
             let image = item_image(e)
+                .or_else(plain_image)
                 .or_else(|| first_image_in_html(&raw))
                 .map_or(Value::Null, Value::String);
             let categories = category_list(get(e, "category"));

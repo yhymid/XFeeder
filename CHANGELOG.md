@@ -180,6 +180,15 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Post text and images (feed review F02, F05, F08):
+  - Steam RSS headings (`<div class="bb_h1">`, 557 of 564 in the 11 Steam RSS feeds) are
+    bold like other headings;
+  - an RSS item with both `<summary>` and `<description>` uses the longer one (Godot posted
+    a one-line teaser and lost all 15 cover images);
+  - an item's `<image>` is its picture (Bungie: 25 posts without one);
+  - the first picture of a post is a real one: emoji, icons, images 64 px or smaller,
+    `data:` and SVG are skipped (Roblox's forum posted a 20 px emoji in 14 posts), and
+    `&amp;` in its address is decoded.
 - Image checks before sending (feed review F08): each image is asked once per 6 hours
   instead of once per post and channel (a Steam game's header image was checked again for
   every post of that game), GitHub avatars are not checked at all (over half of all checks,

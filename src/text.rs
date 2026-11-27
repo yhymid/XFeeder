@@ -226,10 +226,16 @@ pub fn html_to_rich(input: &str) -> String {
     static HEADING: OnceLock<Regex> = OnceLock::new();
     static BOLD_LINE: OnceLock<Regex> = OnceLock::new();
     static ANCHOR: OnceLock<Regex> = OnceLock::new();
-    let html = re(&HEADING, r"(?is)<h[1-6](?-u:\b)[^>]*>(.*?)</h[1-6]\s*>")
-        .replace_all(input, |c: &regex::Captures| {
-            format!("<p>{HEAD_OPEN}{}{HEAD_CLOSE}</p>", &c[1])
-        });
+    // `<hN>`, and Steam's RSS form `<div class="bb_h1">` (557 of 564
+    // headings in the 11 Steam RSS feeds, 27.11).
+    let html = re(
+        &HEADING,
+        r#"(?is)<h[1-6](?-u:\b)[^>]*>(.*?)</h[1-6]\s*>|<div\s+class=["']bb_h[1-6]["'][^>]*>([^<]*(?:<(?:[^d/]|/[^d])[^<]*)*?)</div\s*>"#,
+    )
+    .replace_all(input, |c: &regex::Captures| {
+        let text = c.get(1).or_else(|| c.get(2)).map_or("", |m| m.as_str());
+        format!("<p>{HEAD_OPEN}{text}{HEAD_CLOSE}</p>")
+    });
     let bold = re(
         &BOLD_LINE,
         r"(?is)(^|<br\s*/?>|<p(?-u:\b)[^>]*>|</p>|\n)\s*<(?:b|strong)>([^<]{1,100})</(?:b|strong)>\s*(<br\s*/?>|</p>|\n|$)",
@@ -451,9 +457,28 @@ pub fn node_text(value: &Value) -> String {
 
 pub fn first_image_in_html(html: &str) -> Option<String> {
     static IMG: OnceLock<Regex> = OnceLock::new();
-    re(&IMG, r#"(?i)<img\s+[^>]*src=["']([^"']+)["']"#)
-        .captures(html)
-        .map(|c| c[1].to_string())
+    static SRC: OnceLock<Regex> = OnceLock::new();
+    static SIZE: OnceLock<Regex> = OnceLock::new();
+    let src = re(&SRC, r#"(?i)(?-u:\b)src\s*=\s*["']([^"']+)["']"#);
+    let size = re(&SIZE, r#"(?i)(?-u:\b)(?:width|height)\s*=\s*["']?(\d+)"#);
+    // The first real picture: not an emoji or icon (Discourse forums put
+    // 20 px emoji first), not inline data, not a tracking pixel.
+    re(&IMG, r"(?i)<img\s[^>]*>")
+        .find_iter(html)
+        .find_map(|tag| {
+            let tag = tag.as_str();
+            let url = decode_entities(src.captures(tag)?.get(1)?.as_str());
+            let lower = tag.to_ascii_lowercase();
+            let small = size
+                .captures_iter(tag)
+                .any(|c| c[1].parse::<u32>().is_ok_and(|n| n <= 64));
+            let junk = small
+                || lower.contains("emoji")
+                || lower.contains("class=\"icon")
+                || url.starts_with("data:")
+                || url.to_ascii_lowercase().ends_with(".svg");
+            (!junk).then_some(url)
+        })
 }
 
 const TRACKING: [&str; 8] = [
@@ -641,6 +666,28 @@ pub fn discord_time(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_real_picture_is_the_post_image() {
+        let html = r#"<p><img src="https://forum/images/emoji/twitter/tada.png?v=12" class="emoji" width="20" height="20"> Hi</p><img src="https://cdn/x.jpg?a=1&amp;b=2" width="1200">"#;
+        assert_eq!(
+            first_image_in_html(html).as_deref(),
+            Some("https://cdn/x.jpg?a=1&b=2")
+        );
+        assert_eq!(
+            first_image_in_html(r#"<img src="data:image/gif;base64,R0">"#),
+            None
+        );
+    }
+
+    #[test]
+    fn steam_rss_headings_are_bold() {
+        let out = html_to_rich(
+            r#"<div class="bb_h1">Bug Fixes and Change Notes</div><p>Fixed a crash.</p>"#,
+        );
+        assert!(out.starts_with("**Bug Fixes and Change Notes**"), "{out}");
+        assert!(out.contains("Fixed a crash."));
+    }
 
     #[test]
     fn rich_text_for_discord() {

@@ -581,6 +581,89 @@ pub fn parse_youtube(url: &str, body: &Body) -> Vec<Value> {
 
 // ------------------------------------------------------------------ Atom --
 
+/// Whether an Atom text construct is markup (`type="html"`/`"xhtml"`);
+/// `text`, the default, is plain text (RFC 4287 §3.1.1.1).
+fn atom_is_html(node: &Value) -> bool {
+    matches!(
+        path(node, &["ATTR", "type"])
+            .as_str()
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("html" | "xhtml" | "text/html")
+    )
+}
+
+/// The text of an Atom text construct, ready for the HTML helpers: plain
+/// text is escaped first, so `Vec<String>` or `5 < 6` survive.
+fn atom_body(node: &Value) -> String {
+    let text = node_text(node);
+    if atom_is_html(node) || text.is_empty() {
+        text
+    } else {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    }
+}
+
+/// An Atom title as plain text. HTML titles lose their tags; plain ones
+/// keep `<T>`-like text and lose only common HTML tags (Unreal writes
+/// `<p>` in titles without `type="html"`).
+fn atom_title(node: &Value) -> String {
+    let text = node_text(node);
+    if atom_is_html(node) {
+        return strip_html(&text);
+    }
+    static TAGS: OnceLock<Regex> = OnceLock::new();
+    let tags = re(
+        &TAGS,
+        r"(?i)</?(?:p|br|b|i|u|em|strong|span|div|a|h[1-6]|small|sup|sub)(?:\s[^>]*)?/?>",
+    );
+    js::trim(&tags.replace_all(&text, "")).to_string()
+}
+
+/// The post link of an Atom entry (RFC 4287 §4.2.7): a link without `rel`
+/// is `alternate`; `text/html` alternates first; never `self`, `edit` or
+/// `enclosure`; else an `id` that is a web address.
+fn atom_link(links: &Value, id: &Value) -> Value {
+    let rel = |l: &Value| {
+        let r = path(l, &["ATTR", "rel"])
+            .as_str()
+            .unwrap_or("alternate")
+            .trim()
+            .to_ascii_lowercase();
+        r.strip_prefix("http://www.iana.org/assignments/relation/")
+            .map_or(r.clone(), str::to_string)
+    };
+    let href = |l: &Value| {
+        path(l, &["ATTR", "href"])
+            .as_str()
+            .map(str::trim)
+            .filter(|h| !h.is_empty())
+            .map(str::to_string)
+    };
+    let list = as_list(links);
+    let alternates: Vec<&Value> = list
+        .iter()
+        .copied()
+        .filter(|l| rel(l) == "alternate")
+        .collect();
+    let html = |l: &Value| {
+        path(l, &["ATTR", "type"])
+            .as_str()
+            .is_none_or(|t| t.eq_ignore_ascii_case("text/html"))
+    };
+    let preferred = alternates.iter().find(|l| html(l)).or(alternates.first());
+    if let Some(found) = preferred.and_then(|l| href(l)) {
+        return json!(found);
+    }
+    let id = node_text(id);
+    if id.starts_with("https://") || id.starts_with("http://") {
+        return json!(id);
+    }
+    Value::Null
+}
+
 pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
     if url.contains("youtube.com") || url.contains("yt:") {
         return Vec::new();
@@ -592,12 +675,11 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
     as_list(get(feed, "entry"))
         .into_iter()
         .map(|e| {
-            let title = if truthy(get(e, "title")) {
-                strip_html(&node_text(get(e, "title")))
-            } else {
-                "No title".to_string()
-            };
-            let iso = opt_date(or(&[get(e, "updated"), get(e, "published")]));
+            let title = Some(atom_title(get(e, "title")))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "No title".to_string());
+            // When it was published, not when it was last edited (§4.2.9).
+            let iso = opt_date(or(&[get(e, "published"), get(e, "updated")]));
             let author = string_value(or(&[
                 path(e, &["author", "name", "VALUE"]),
                 path(e, &["author", "name"]),
@@ -610,16 +692,7 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                     .map_or(Value::Null, Value::String)
             };
             let links = get(e, "link");
-            let link = match links {
-                Value::Array(list) => list
-                    .iter()
-                    .find(|l| path(l, &["ATTR", "rel"]) == "alternate")
-                    .map_or(Value::Null, |l| path(l, &["ATTR", "href"]).clone()),
-                other => match path(other, &["ATTR", "href"]) {
-                    v if truthy(v) => v.clone(),
-                    _ => Value::Null,
-                },
-            };
+            let link = atom_link(links, get(e, "id"));
             let mut image = or(&[
                 path(e, &["media:thumbnail", "ATTR", "url"]),
                 path(e, &["media:content", "ATTR", "url"]),
@@ -638,20 +711,19 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                     })
                     .map_or(Value::Null, |l| path(l, &["ATTR", "href"]).clone());
             }
-            let description = node_text(or(&[
-                path(e, &["summary", "VALUE"]),
-                get(e, "summary"),
-                path(e, &["content", "VALUE"]),
-                get(e, "content"),
-            ]));
+            let (summary, content_node) = (get(e, "summary"), get(e, "content"));
+            let text_of = |first: &Value, second: &Value| {
+                let a = atom_body(first);
+                if a.trim().is_empty() {
+                    atom_body(second)
+                } else {
+                    a
+                }
+            };
+            let description = text_of(summary, content_node);
             let content = snippet(&description, 500);
             // The full content when there is one; summaries are often a teaser.
-            let full = node_text(or(&[
-                path(e, &["content", "VALUE"]),
-                get(e, "content"),
-                path(e, &["summary", "VALUE"]),
-                get(e, "summary"),
-            ]));
+            let full = text_of(content_node, summary);
             let guid = or(&[get(e, "id"), &link, &json!(title.clone())]).clone();
             let categories = category_list(get(e, "category"));
             with_text(
@@ -1744,6 +1816,54 @@ mod tests {
         assert!(parse_fallback("https://a/feed", &rss).is_empty());
         let page = Body::new("<html><head><title>Page</title></head><body></body></html>".into());
         assert_eq!(parse_html_page("https://a/", &page).len(), 1);
+    }
+
+    #[test]
+    fn atom_fields_follow_rfc_4287() {
+        let feed = |entry: &str| {
+            Body::new(format!(
+                r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>f</title>{entry}</feed>"#
+            ))
+        };
+        let one = |entry: &str| parse_atom("https://f.example/atom", &feed(entry)).remove(0);
+        // A link without rel is the alternate one; self is never the post link.
+        let e = one(
+            r#"<entry><id>x1</id><title>a</title><link href="https://f.example/a1"/><link rel="replies" href="https://f.example/r"/></entry>"#,
+        );
+        assert_eq!(e["link"], "https://f.example/a1");
+        let e = one(
+            r#"<entry><id>https://f.example/e2</id><title>a</title><link rel="self" href="https://f.example/e2.atom"/></entry>"#,
+        );
+        assert_eq!(e["link"], "https://f.example/e2");
+        let e = one(
+            r#"<entry><id>x3</id><title>a</title><link rel="alternate" type="application/pdf" href="https://f.example/a.pdf"/><link rel="http://www.iana.org/assignments/relation/alternate" type="text/html" href="https://f.example/a"/></entry>"#,
+        );
+        assert_eq!(e["link"], "https://f.example/a");
+        // Published, not the last edit.
+        let e = one(
+            r#"<entry><id>x4</id><title>a</title><link href="https://f.example/4"/><published>2026-11-10T00:00:00Z</published><updated>2026-11-26T00:00:00Z</updated></entry>"#,
+        );
+        assert_eq!(e["isoDate"], "2026-11-10T00:00:00.000Z");
+        // type="text" is plain text; Unreal's <p> in titles still goes.
+        let e = one(
+            r#"<entry><id>x5</id><title>Use Vec&lt;String&gt; in parser</title><link href="https://f.example/5"/><content type="text">Compare a &lt;b&gt; c and 5 &lt; 6</content></entry>"#,
+        );
+        assert_eq!(e["title"], "Use Vec<String> in parser");
+        assert!(
+            e["contentSnippet"]
+                .as_str()
+                .unwrap()
+                .contains("a <b> c and 5 < 6"),
+            "{e}"
+        );
+        let e = one(
+            r#"<entry><id>x6</id><title>&lt;p&gt;Over 25 games nominated</title><link href="https://f.example/6"/></entry>"#,
+        );
+        assert_eq!(e["title"], "Over 25 games nominated");
+        let e = one(
+            r#"<entry><id>x7</id><title type="html">&lt;b&gt;Bold&lt;/b&gt; news</title><link href="https://f.example/7"/></entry>"#,
+        );
+        assert_eq!(e["title"], "Bold news");
     }
 
     #[test]

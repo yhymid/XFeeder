@@ -12,15 +12,15 @@ Szczegółowe pliki są po angielsku, bo adresy, pola i formaty i tak są angiel
 
 | Plik | Co jest w środku | Wpisów |
 |---|---|---|
-| [games/steam.md](games/steam.md) | Gry na Steamie: trzy źródła Steama, odróżnianie łatek od newsów, obrazki i wszystkie gry ze sprawdzonym AppID | 203 gry |
-| [games/publishers.md](games/publishers.md) | Gry spoza Steama albo z lepszym źródłem niż Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix i inni | 49 gier |
-| [free-stuff.md](free-stuff.md) | Darmowe gry: Epic, Steam (do zatrzymania i darmowe weekendy), GOG, Xbox PC Game Pass (nowe / wkrótce / znikające / EA Play) | 4 sklepy |
-| [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon i chipset, Intel Arc i Arc Pro, Mesa | 9 źródeł |
-| [ai.md](ai.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 źródeł |
-| [game-dev.md](game-dev.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stabilne / testowe), s&box | 7 narzędzi |
-| [tracked.md](tracked.md) | Co XFeeder śledzi na produkcji: polskie newsy, darmowe gry, repozytoria, YouTube, Steam (ze SteamDB) | 49 feedów |
-| [index.md](index.md) | Wszystko powyżej od A do Z, z informacją, czy XFeeder czyta to już dziś (test z 2026-11-23) | 298 wierszy |
-| [notes/feed-quirks.md](notes/feed-quirks.md) | Dziwactwa prawdziwych feedów: formaty, daty, blokady, limity odpytywania | — |
+| [games/steam.pl.md](games/steam.pl.md) | Gry na Steamie: trzy źródła Steama, odróżnianie łatek od newsów, obrazki i wszystkie gry ze sprawdzonym AppID | 203 gry |
+| [games/publishers.pl.md](games/publishers.pl.md) | Gry spoza Steama albo z lepszym źródłem niż Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix i inni | 49 gier |
+| [free-stuff.pl.md](free-stuff.pl.md) | Darmowe gry: Epic, Steam (do zatrzymania i darmowe weekendy), GOG, Xbox PC Game Pass (nowe / wkrótce / znikające / EA Play) | 4 sklepy |
+| [drivers.pl.md](drivers.pl.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon i chipset, Intel Arc i Arc Pro, Mesa | 9 źródeł |
+| [ai.pl.md](ai.pl.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 źródeł |
+| [game-dev.pl.md](game-dev.pl.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stabilne / testowe), s&box | 7 narzędzi |
+| [tracked.pl.md](tracked.pl.md) | Co XFeeder śledzi na produkcji: polskie newsy, darmowe gry, repozytoria, YouTube, Steam (ze SteamDB) | 49 feedów |
+| [index.pl.md](index.pl.md) | Wszystko powyżej od A do Z, z informacją, czy XFeeder czyta to już dziś (test z 2026-11-23) | 298 wierszy |
+| [notes/feed-quirks.pl.md](notes/feed-quirks.pl.md) | Dziwactwa prawdziwych feedów: formaty, daty, blokady, limity odpytywania | — |
 
 ## Zasady bazy
 
@@ -39,7 +39,7 @@ Szczegółowe pliki są po angielsku, bo adresy, pola i formaty i tak są angiel
 | ❓ | jeszcze niezbadane |
 | ↪ | przekierowanie: trzeba wpisać nowy adres |
 | **RSS / Atom** | XFeeder czyta to już dziś, najwyżej z wpisem w `Filters` |
-| JSON / NEXT / HTML / MD | potrzebny adapter w XFeederze (planowany; [index.md](index.md) pokazuje, które już czyta): czysty JSON, JSON w `__NEXT_DATA__`, lista w HTML albo lista zmian w Markdown |
+| JSON / NEXT / HTML / MD | potrzebny adapter w XFeederze (planowany; [index.pl.md](index.pl.md) pokazuje, które już czyta): czysty JSON, JSON w `__NEXT_DATA__`, lista w HTML albo lista zmian w Markdown |
 
 ## Jak użyć linku w XFeederze już teraz
 

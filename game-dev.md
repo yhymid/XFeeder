@@ -1,6 +1,6 @@
 # Game development: engines and tools
 
-[← Index](README.md)
+[← Index](README.md) · [Polski](game-dev.pl.md)
 
 Checked **2026-11-23**. Every source below is official, and all but Unity work with XFeeder today, at most with a `Filters` entry.
 

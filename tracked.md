@@ -1,6 +1,6 @@
 # What XFeeder tracks in production
 
-[← Index](README.md)
+[← Index](README.md) · [Polski](tracked.pl.md)
 
 The feeds in XFeeder's live `config.json` (outside the test channel), checked on **2026-11-23**: from a home connection, and the 🖥 column from the XFeeder VPS (a datacenter IP). Webhooks, threads and tokens are not listed here, and private repositories are left out.
 

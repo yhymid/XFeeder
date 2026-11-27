@@ -1,6 +1,6 @@
 # Free stuff: free games and Game Pass
 
-[← Index](README.md)
+[← Index](README.md) · [Polski](free-stuff.pl.md)
 
 Checked **2026-11-23** with anonymous GET requests, market **PL / PLN**. All sources are official store backends. Only Xbox Wire is a real RSS feed; everything else is JSON and needs an adapter.
 

@@ -1,6 +1,6 @@
 # Games: publisher sources (not Steam, or better than Steam)
 
-[← Index](../README.md)
+[← Index](../README.md) · [Polski](publishers.pl.md)
 
 Checked **2026-11-23** with plain public GET requests, no login. "Official" means the publisher hosts the data. Unless it is a real RSS/Atom feed, it is still an **undocumented website backend** that can change shape, so read every field defensively.
 

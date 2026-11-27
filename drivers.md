@@ -1,6 +1,6 @@
 # Drivers
 
-[← Index](README.md)
+[← Index](README.md) · [Polski](drivers.pl.md)
 
 Checked **2026-11-23**: from a home connection, and the 🖥 column from the XFeeder VPS (a datacenter IP).
 

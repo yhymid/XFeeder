@@ -1,6 +1,6 @@
 # Index: everything this database covers
 
-[← Index](README.md)
+[← Index](README.md) · [Polski](index.pl.md)
 
 Every game, tool, driver and store in this database, A–Z. A game can appear twice: once with its Steam AppID and once with a publisher source.
 

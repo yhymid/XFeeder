@@ -1,6 +1,6 @@
 # AI tools
 
-[← Index](README.md)
+[← Index](README.md) · [Polski](ai.pl.md)
 
 Checked **2026-11-23**. No source here needs a headless browser.
 

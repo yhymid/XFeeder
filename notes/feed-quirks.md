@@ -1,6 +1,6 @@
 # Feed quirks seen in real sources
 
-[← Index](../README.md)
+[← Index](../README.md) · [Polski](feed-quirks.pl.md)
 
 These are odd things found while checking real feeds on 2026-11-23. Each one can break a feed reader, so they are collected here in one place. Code fixes belong in XFeeder's own branches; this file only records how the sources behave.
 
@@ -37,6 +37,7 @@ These are odd things found while checking real feeds on 2026-11-23. Each one can
 | Category as an object (`domain` / `term` attribute) | GitHub Changelog, Atom feeds | filter on the category text |
 | Noise entries in a releases feed | OpenClaw `releases.atom` (`release-publish/...`) | Include filter on the title |
 | All links temporarily point at a CI preview host | Mesa news RSS on 2026-11-25: for a while 494 entries linked `mesa.pages.freedesktop.org/-/mesa3d.org/-/jobs/<job>/artifacts/…` instead of `www.mesa3d.org`, so link-based identity saw old releases as new and reposted them; the links are back to normal | identify by host-independent slug, or refuse old entries (by date) when a whole known feed turns new at once |
+| Same entries under new links, guid unchanged | Onet Wiadomości on 2026-11-24: 21 entries got a new link format (`/1795482011830/4/...`) with the same guid and were posted again | identify by guid when it is unique; XFeeder 3.1 records a `guid:<g>` alias |
 
 ## Blocking and errors
 

@@ -1,6 +1,6 @@
 # Games on Steam
 
-[← Index](../README.md)
+[← Index](../README.md) · [Polski](steam.pl.md)
 
 Most PC games publish their patch notes as Steam announcements. Valve exposes them three ways. All three are free, need no API key, and were checked on **2026-11-23**.
 

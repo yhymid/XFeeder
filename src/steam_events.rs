@@ -7,7 +7,7 @@
 //! so the first check of the new URL relies on `FirstRunSend`):
 //!
 //! ```text
-//! https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=APPID&count_before=0&count_after=10&lang_list=0
+//! https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=APPID&count_before=0&count_after=5&lang_list=0
 //! ```
 //!
 //! Every entry gets a category: `Patch`, `Major update`, `Beta`, `Release` or
@@ -314,7 +314,7 @@ mod tests {
         );
     }
 
-    const URL: &str = "https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=730&count_before=0&count_after=10&lang_list=0";
+    const URL: &str = "https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=730&count_before=0&count_after=5&lang_list=0";
 
     fn event(gid: &str, kind: i64, name: &str, tags: &[&str], body: &str) -> Value {
         json!({

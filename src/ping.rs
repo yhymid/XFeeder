@@ -1,4 +1,4 @@
-//! Channel `Ping`: mention a role, users or @everyone above a Discord post.
+//! Channel `Ping`: mention roles, users, @everyone or @here above a Discord post.
 //!
 //! ```json
 //! "Ping": "123456789012345678"                       // one role, every post
@@ -26,6 +26,7 @@ pub struct Ping {
     roles: Vec<String>,
     users: Vec<String>,
     everyone: bool,
+    here: bool,
     feeds: Vec<String>,
     include: Option<Filter>,
     text: String,
@@ -79,10 +80,34 @@ impl Ping {
         let mut problems = Vec::new();
         let ping = match raw {
             Value::Null | Value::Bool(false) => return (None, problems),
-            Value::String(_) | Value::Number(_) | Value::Array(_) => Self {
-                roles: snowflakes(raw, "Roles", &mut problems),
-                ..Self::default()
-            },
+            // Short form: role IDs, or any mention as Discord writes it:
+            // `<@&role>`, `<@user>`, `@everyone`, `@here`.
+            Value::String(_) | Value::Number(_) | Value::Array(_) => {
+                let items: Vec<Value> = match raw {
+                    Value::Array(items) => items.clone(),
+                    other => vec![other.clone()],
+                };
+                let mut ping = Self::default();
+                let mut roles = Vec::new();
+                for item in items {
+                    let text = js::to_string_or_empty(&item);
+                    let text = text.trim();
+                    match text.trim_start_matches('<').trim_end_matches('>') {
+                        "@everyone" => ping.everyone = true,
+                        "@here" => ping.here = true,
+                        t if t.starts_with('@') && !t.starts_with("@&") => {
+                            ping.users.extend(snowflakes(
+                                &json!(t.trim_start_matches("@!").trim_start_matches('@')),
+                                "Users",
+                                &mut problems,
+                            ));
+                        }
+                        _ => roles.push(item),
+                    }
+                }
+                ping.roles = snowflakes(&Value::Array(roles), "Roles", &mut problems);
+                ping
+            }
             Value::Object(_) => {
                 let feeds = match js::get(raw, "Feeds") {
                     Value::String(s) => vec![s.clone()],
@@ -110,6 +135,7 @@ impl Ping {
                     roles: snowflakes(js::get(raw, "Roles"), "Roles", &mut problems),
                     users: snowflakes(js::get(raw, "Users"), "Users", &mut problems),
                     everyone: js::get(raw, "Everyone") == &Value::Bool(true),
+                    here: js::get(raw, "Here") == &Value::Bool(true),
                     feeds,
                     include,
                     text: js::get(raw, "Text")
@@ -123,9 +149,9 @@ impl Ping {
                 return (None, problems);
             }
         };
-        if ping.roles.is_empty() && ping.users.is_empty() && !ping.everyone {
+        if ping.roles.is_empty() && ping.users.is_empty() && !ping.everyone && !ping.here {
             if problems.is_empty() {
-                problems.push("Ping names no Roles, Users or Everyone".into());
+                problems.push("Ping names no Roles, Users, Everyone or Here".into());
             }
             return (None, problems);
         }
@@ -149,10 +175,14 @@ impl Ping {
         if self.everyone {
             parts.push("@everyone".into());
         }
+        if self.here {
+            parts.push("@here".into());
+        }
         parts.extend(self.roles.iter().map(|r| format!("<@&{r}>")));
         parts.extend(self.users.iter().map(|u| format!("<@{u}>")));
         let mut allowed = serde_json::Map::new();
-        if self.everyone {
+        // Discord's "everyone" type covers both @everyone and @here.
+        if self.everyone || self.here {
             allowed.insert("parse".into(), json!(["everyone"]));
         }
         if !self.roles.is_empty() {
@@ -250,6 +280,31 @@ mod tests {
         assert!(
             ping.mention(&entry("Build", "public"), "steampics://570")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn every_mention_form_works() {
+        let (ping, problems) = Ping::parse(&json!([
+            format!("<@&{ROLE}>"),
+            format!("<@{USER}>"),
+            "@everyone",
+            "@here"
+        ]));
+        assert!(problems.is_empty(), "{problems:?}");
+        let mention = ping.unwrap().mention(&json!({}), "https://f").unwrap();
+        assert_eq!(
+            mention.line,
+            format!("@everyone @here <@&{ROLE}> <@{USER}>")
+        );
+        assert_eq!(
+            mention.allowed,
+            json!({ "parse": ["everyone"], "roles": [ROLE], "users": [USER] })
+        );
+        let (here, _) = Ping::parse(&json!({ "Here": true }));
+        assert_eq!(
+            here.unwrap().mention(&json!({}), "https://f").unwrap().line,
+            "@here"
         );
     }
 

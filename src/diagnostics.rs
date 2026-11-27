@@ -69,7 +69,11 @@ impl Options {
         Some(Self {
             dir,
             retention_days: num("RetentionDays", 14, 1, 365),
-            max_file_bytes: num("MaxFileMB", 256, 1, 10_240) * 1024 * 1024,
+            // 0 = no limit (old days are still removed after RetentionDays).
+            max_file_bytes: match num("MaxFileMB", 256, 0, 10_240) {
+                0 => u64::MAX,
+                mb => mb * 1024 * 1024,
+            },
             summary_every: Duration::from_secs(num("SummaryMinutes", 15, 1, 1440) * 60),
         })
     }
@@ -1126,6 +1130,13 @@ mod tests {
         .unwrap();
         assert_eq!(custom.dir, PathBuf::from("/var/x"));
         assert_eq!(custom.max_file_bytes, 1024 * 1024);
+        let unlimited = Options::from_settings(
+            &json!({ "Diagnostics": { "Dir": "/var/x", "MaxFileMB": 0 } }),
+            base,
+            false,
+        )
+        .unwrap();
+        assert_eq!(unlimited.max_file_bytes, u64::MAX);
         assert!(
             Options::from_settings(&json!({ "Diagnostics": { "Enabled": false } }), base, false)
                 .is_none()

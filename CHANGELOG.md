@@ -180,6 +180,10 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- `Ping` takes every mention form: `"Here": true` for `@here`, and the short form accepts a
+  list of mentions as Discord writes them (`"<@&role>"`, `"<@user>"`, `"@everyone"`,
+  `"@here"`), not only role IDs. `Settings.Diagnostics.MaxFileMB: 0` means no daily limit
+  (old days are still removed after `RetentionDays`).
 - Discord posts show feed text as written (feed review F06, F10). Markdown characters from
   the feed are escaped: censored names like `C***p` in ban lists no longer turn bold or
   italic (195 such names on 27.11), a line starting with `# `, `-# ` or `> ` is no longer a

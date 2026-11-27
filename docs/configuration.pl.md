@@ -472,14 +472,21 @@ Tylko wpisy z numerem wersji (np. `v1.2`) w tytule.
 
 ### 2.4 `Ping`: wzmianki
 
-Wspomina rolę, osoby albo `@everyone` w linii nad postem na Discordzie, żeby ludzie
+Wspomina role, osoby, `@everyone` albo `@here` w linii nad postem na Discordzie, żeby ludzie
 dostali powiadomienie. Posty na Telegramie bez zmian.
 
 ```json
 "Ping": "123456789012345678"
 ```
 
-Krótka forma to ID roli (albo lista ID) i pinguje przy każdym poście kanału. Pełna forma
+Krótka forma pinguje przy każdym poście kanału: ID roli albo lista wzmianek zapisanych tak,
+jak pisze je Discord, w dowolnym połączeniu:
+
+```json
+"Ping": ["<@&123456789012345678>", "<@234567890123456789>", "@everyone", "@here"]
+```
+
+Samo ID to rola. Pełna forma
 ogranicza, które posty pingują:
 
 ```json
@@ -497,6 +504,7 @@ ogranicza, które posty pingują:
 |---|---|
 | `Roles`, `Users` | ID z Discorda (prawy przycisk → *Kopiuj ID* przy włączonym trybie dewelopera). Działa też `<@&ID>` / `<@ID>`. |
 | `Everyone` | `true` pinguje `@everyone`. Webhook potrzebuje uprawnienia *Wspominanie @everyone*. |
+| `Here` | `true` pinguje `@here` (tylko osoby online). To samo uprawnienie co przy `Everyone`. |
 | `Feeds` | Tylko wpisy z feedów, których adres zawiera jeden z tych tekstów. Pusto = wszystkie feedy. |
 | `Include` | Tylko wpisy pasujące do wzorca, jak w [`Filters.Include`](#23-filters-filtrowanie-wpisów) (działają też `Fields`, `CaseSensitive`). |
 | `Text` | Tekst przed wzmiankami. |
@@ -572,7 +580,7 @@ najwolniejsze feedy i wskazówki, co przyspieszyć.
 | `Dir`            | `diagnostics`   | Folder na pliki (względny = obok `config.json`). |
 | `SummaryMinutes` | `15`            | Co ile minut odświeżać raport (1–1440). |
 | `RetentionDays`  | `14`            | Ile dni trzymać pliki (1–365). Starsze są usuwane. |
-| `MaxFileMB`      | `256`           | Maksymalny rozmiar pliku zdarzeń na dzień. Po przekroczeniu zdarzenia są już tylko liczone w raporcie. |
+| `MaxFileMB`      | `256`           | Maksymalny rozmiar pliku zdarzeń na dzień. Po przekroczeniu zdarzenia są już tylko liczone w raporcie. `0` = bez limitu (pliki starsze niż `RetentionDays` i tak są usuwane). |
 
 ```json
 "Settings": {

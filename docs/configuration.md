@@ -472,14 +472,21 @@ Only entries with a version number (e.g. `v1.2`) in the title.
 
 ### 2.4 `Ping`: mentions
 
-Mentions a role, users or `@everyone` in a line above the Discord post, so people get a
+Mentions roles, users, `@everyone` or `@here` in a line above the Discord post, so people get a
 notification. Telegram posts are not affected.
 
 ```json
 "Ping": "123456789012345678"
 ```
 
-The short form is a role ID (or a list of them) and pings on every post of the channel.
+The short form pings on every post of the channel: a role ID, or a list of mentions as
+Discord writes them, in any mix:
+
+```json
+"Ping": ["<@&123456789012345678>", "<@234567890123456789>", "@everyone", "@here"]
+```
+
+A bare ID is a role.
 The full form limits which posts ping:
 
 ```json
@@ -497,6 +504,7 @@ The full form limits which posts ping:
 |---|---|
 | `Roles`, `Users` | Discord IDs (right click → *Copy ID* with Developer Mode on). `<@&ID>` / `<@ID>` also work. |
 | `Everyone` | `true` pings `@everyone`. The webhook needs the *Mention @everyone* permission. |
+| `Here` | `true` pings `@here` (only members who are online). Same permission as `Everyone`. |
 | `Feeds` | Only entries of feeds whose URL contains one of these texts. Empty = all feeds. |
 | `Include` | Only entries matching a pattern, as in [`Filters.Include`](#23-filters-filtering-entries) (`Fields`, `CaseSensitive` work too). |
 | `Text` | Text before the mentions. |
@@ -572,7 +580,7 @@ Discord, the slowest feeds and hints on what to speed up.
 | `Dir`            | `diagnostics`   | Folder for the files (relative = next to `config.json`). |
 | `SummaryMinutes` | `15`            | How often to refresh the report, in minutes (1–1440). |
 | `RetentionDays`  | `14`            | How many days to keep the files (1–365). Older ones are deleted. |
-| `MaxFileMB`      | `256`           | Maximum size of the event file per day. Beyond it, events are only counted in the report. |
+| `MaxFileMB`      | `256`           | Maximum size of the event file per day. Beyond it, events are only counted in the report. `0` = no limit (files older than `RetentionDays` are still removed). |
 
 ```json
 "Settings": {

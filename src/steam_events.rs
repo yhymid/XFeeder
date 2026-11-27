@@ -62,7 +62,7 @@ pub fn answered(url: &str, body: &Body) -> bool {
 
 static PATCH_TITLE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)\b(patch(\s*notes)?|hotfix|update\s*v?\d|release notes|changelog)\b|\bv?\d+\.\d+(\.\d+)?\b.*\b(released|stable|unstable)\b",
+        r"(?i)\b(patch(\s*notes)?|hotfix|update\s*v?\d+(\.\d+)*|release notes|changelog)\b|\bv?\d+\.\d+(\.\d+)?\b.*\b(released|stable|unstable)\b",
     )
     .unwrap()
 });
@@ -213,6 +213,16 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
                 .unwrap_or_default();
             let event_type = get(event, "event_type").as_i64().unwrap_or(0);
             let label = class(event_type, &tags, &title)?;
+            // Patch notes for a build on a beta/test branch (public-beta,
+            // latest_experimental, pre_release, …) are a Beta post, so a
+            // channel that includes only "Patch" gets public builds only.
+            let branch = js::to_string_or_empty(get(event, "build_branch"));
+            let branch = branch.trim();
+            let label = if label == "Patch" && !branch.is_empty() && branch != "public" {
+                "Beta"
+            } else {
+                label
+            };
             // Same link (and identity) as the store RSS item.
             let link = format!("https://store.steampowered.com/news/app/{app}/view/{gid}");
             let (html, body_image) =
@@ -227,9 +237,12 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
                 .filter(|_| !clan.is_empty())
                 .map(|file| format!("{IMAGES}/{clan}/{file}"))
                 .or(body_image);
-            let started = get(event, "rtime32_start_time")
+            // The post time, like the store RSS: an event's start can be
+            // months after the announcement (future dates, MaxAgeHours).
+            let started = get(announcement, "posttime")
                 .as_i64()
-                .or_else(|| get(announcement, "posttime").as_i64())
+                .filter(|t| *t > 0)
+                .or_else(|| get(event, "rtime32_start_time").as_i64())
                 .unwrap_or(0);
             Some(json!({
                 "title": if title.is_empty() { "No title".to_string() } else { title },
@@ -249,6 +262,29 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dates_branches_and_patch_titles() {
+        let body = Body {
+            text: String::new(),
+            json: Some(json!({ "success": 1, "events": [
+                { "gid": "1", "appid": 730, "published": 1, "event_type": 12, "event_name": "Beta patch",
+                  "rtime32_start_time": 1_900_000_000, "build_branch": "public-beta",
+                  "announcement_body": { "gid": "a1", "posttime": 1_795_000_000, "body": "x", "tags": [] } },
+                { "gid": "2", "appid": 730, "published": 1, "event_type": 13, "event_name": "Patch",
+                  "build_branch": "public",
+                  "announcement_body": { "gid": "a2", "posttime": 1_795_000_000, "body": "x", "tags": [] } },
+                { "gid": "3", "appid": 730, "published": 1, "event_type": 28, "event_name": "Update 21",
+                  "announcement_body": { "gid": "a3", "posttime": 1_795_000_000, "body": "x", "tags": [] } },
+            ]})),
+            xml: Default::default(),
+        };
+        let items = parse(URL, &body);
+        assert_eq!(items[0]["isoDate"], json!("2026-11-18T11:06:40.000Z"));
+        assert_eq!(items[0]["categories"][0], json!("Beta"));
+        assert_eq!(items[1]["categories"][0], json!("Patch"));
+        assert_eq!(items[2]["categories"][0], json!("Patch"));
+    }
 
     #[test]
     fn video_and_link_cards_with_text_inside() {

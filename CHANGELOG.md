@@ -175,6 +175,11 @@ section below as its description.
   - Steam events JSON is parsed once per download instead of twice;
   - one XML tree per download is shared by all parsers;
   - Telegram escaping is linear instead of quadratic.
+- Steam events (`ajaxgetadjacentpartnerevents`, feed review F04/F05): the date is the post
+  time like in the store RSS, not the event's start (93 of 1948 posts started over an hour
+  later, one 282 days later, so they had future dates); patch notes for a build on a beta
+  branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
+  "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
 - Image checks before sending (feed review F08): each image is asked once per 6 hours
   instead of once per post and channel (a Steam game's header image was checked again for
   every post of that game), GitHub avatars are not checked at all (over half of all checks,

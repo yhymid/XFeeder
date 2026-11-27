@@ -175,6 +175,10 @@ section below as its description.
   - Steam events JSON is parsed once per download instead of twice;
   - one XML tree per download is shared by all parsers;
   - Telegram escaping is linear instead of quadratic.
+- Image checks before sending (feed review F08): each image is asked once per 6 hours
+  instead of once per post and channel (a Steam game's header image was checked again for
+  every post of that game), GitHub avatars are not checked at all (over half of all checks,
+  always fine), and a `200` HTML page no longer passes as an image.
 
   Entry identities, entry counts and the Discord and Telegram output stay the same on 264 of
   the 278 feeds. The other 14 changed only through the fixes above.

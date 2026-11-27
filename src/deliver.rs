@@ -839,6 +839,11 @@ pub async fn working_image(entry: &Value, cancel: &CancellationToken) -> (Value,
     ) else {
         return (entry.clone(), None);
     };
+    // GitHub serves every avatar size: the larger one never needs a check
+    // (over half of all checks were these).
+    if image.starts_with("https://avatars.githubusercontent.com/") {
+        return (entry.clone(), None);
+    }
     let (ok, status) = image_exists(image, cancel).await;
     if ok {
         return (entry.clone(), status);
@@ -855,7 +860,36 @@ pub async fn working_image(entry: &Value, cancel: &CancellationToken) -> (Value,
     (entry, status)
 }
 
+/// Answers of recent image checks: the same image (a Steam game's header for
+/// every post of that game, one image for several channels) is asked once.
+type ImageCheck = (bool, Option<u16>, std::time::Instant);
+static IMAGE_CHECKS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, ImageCheck>>,
+> = std::sync::LazyLock::new(Default::default);
+const IMAGE_CHECK_TTL: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+
 async fn image_exists(image: &str, cancel: &CancellationToken) -> (bool, Option<u16>) {
+    if let Some(&(ok, status, at)) = IMAGE_CHECKS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(image)
+        && at.elapsed() < IMAGE_CHECK_TTL
+    {
+        return (ok, status);
+    }
+    let (ok, status) = check_image(image, cancel).await;
+    // A network failure (status 0) is not remembered: try again next time.
+    if status.is_some_and(|s| s != 0) {
+        let mut checks = IMAGE_CHECKS.lock().unwrap_or_else(|e| e.into_inner());
+        if checks.len() > 5_000 {
+            checks.retain(|_, (_, _, at)| at.elapsed() < IMAGE_CHECK_TTL);
+        }
+        checks.insert(image.to_string(), (ok, status, std::time::Instant::now()));
+    }
+    (ok, status)
+}
+
+async fn check_image(image: &str, cancel: &CancellationToken) -> (bool, Option<u16>) {
     let response = http::get(http::Get {
         url: image,
         headers: vec![("Range".into(), "bytes=0-1023".into())],
@@ -867,7 +901,12 @@ async fn image_exists(image: &str, cancel: &CancellationToken) -> (bool, Option<
         Ok(r) => Some(r.status),
         Err(e) => e.status().or(Some(0)),
     };
-    let ok = status.is_some_and(|s| (200..300).contains(&s));
+    // A 200 HTML page (a login wall, a soft 404) is not an image.
+    let html = response.as_ref().is_ok_and(|r| {
+        r.header("content-type")
+            .is_some_and(|t| t.trim_start().to_ascii_lowercase().starts_with("text/html"))
+    });
+    let ok = status.is_some_and(|s| (200..300).contains(&s)) && !html;
     crate::diag::expert(
         "delivery.image.check",
         json!({ "image": image, "ok": ok, "status": status }),

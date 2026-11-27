@@ -801,6 +801,7 @@ fn steam_status_html(server: &Server) -> String {
         return String::new();
     };
     let status = &data["status"];
+    let live = &status["live"];
     let mut login = 0;
     let mut hidden: Vec<String> = Vec::new();
     for (id, app) in apps {
@@ -814,42 +815,66 @@ fn steam_status_html(server: &Server) -> String {
             hidden.push(format!("{} ({id})", app["name"].as_str().unwrap_or("?")));
         }
     }
+    // Every changing part is its own text node, so the Polish UI can
+    // translate the fixed words around it.
     let mut rows = String::new();
     let mut row = |name: &str, value: String| {
         let _ = write!(rows, "<tr><th>{}</th><td>{}</td></tr>", esc(name), value);
     };
+    let error = status["lastError"].as_str().filter(|e| !e.is_empty());
+    let (class, state) = if error.is_some() {
+        ("bad", "SteamCMD error")
+    } else if live["connected"] == json!(true) {
+        ("good", "live (changes within seconds) + SteamCMD")
+    } else if live.is_object() {
+        ("bad", "SteamCMD only (live mode not connected)")
+    } else {
+        ("good", "SteamCMD every few minutes")
+    };
+    row(
+        "State",
+        format!("<span class=\"{class}\">{}</span>", esc(state)),
+    );
     row("Games", apps.len().to_string());
     row(
         "Read with",
         if login > 0 {
             format!("Steam account: {login}, anonymous: {}", apps.len() - login)
         } else {
-            "anonymous Steam".into()
+            esc("anonymous Steam")
         },
     );
     row(
         "Without depots",
         if hidden.is_empty() {
-            "none".into()
+            esc("none")
         } else {
             let more = hidden.len().saturating_sub(8);
-            let mut list = esc(&hidden
-                .iter()
-                .take(8)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "));
+            let mut list = format!(
+                "<span>{}</span>",
+                esc(&hidden
+                    .iter()
+                    .take(8)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "))
+            );
             if more > 0 {
-                let _ = write!(list, " and {more} more");
+                let _ = write!(list, " <span>and {more} more</span>");
             }
-            format!("{} <small>(no builds or branches for these)</small>", list)
+            let _ = write!(
+                list,
+                " <small>{}</small>",
+                esc("(no builds or branches for these)")
+            );
+            list
         },
     );
     row(
         "Last SteamCMD run",
         esc(&status["savedAt"].as_str().map_or("–".into(), ago)),
     );
-    if let Some(error) = status["lastError"].as_str() {
+    if let Some(error) = error {
         row(
             "Last error",
             format!("<span class=\"bad\">{}</span>", esc(&sanitize_text(error))),
@@ -864,25 +889,38 @@ fn steam_status_html(server: &Server) -> String {
             ),
         );
     }
-    let live = &status["live"];
     if live.is_object() {
-        let state = if live["connected"] == json!(true) {
+        if live["connected"] == json!(true) {
+            row(
+                "Live mode",
+                format!("<span class=\"good\">{}</span>", esc("connected")),
+            );
+        } else {
+            let mut cell = format!("<span class=\"bad\">{}</span>", esc("not connected"));
+            if let Some(e) = live["error"].as_str().filter(|e| !e.is_empty()) {
+                let _ = write!(cell, " <small>{}</small>", esc(&sanitize_text(e)));
+            }
+            row("Live mode", cell);
+        }
+        row(
+            "Last poll",
+            esc(&live["lastPollAt"].as_str().map_or("–".into(), ago)),
+        );
+        if let Some(n) = live["changeNumber"].as_u64() {
+            row("Steam change number", n.to_string());
+        }
+        row(
+            "Checks started by live mode",
             format!(
-                "<span class=\"good\">connected</span>, last poll {}, {} wake(s), last {}",
-                esc(&live["lastPollAt"].as_str().map_or("–".into(), ago)),
+                "{} <small>{}</small>",
                 live["wakes"].as_u64().unwrap_or(0),
                 esc(&live["lastWakeAt"].as_str().map_or("–".into(), ago))
-            )
-        } else {
-            format!(
-                "<span class=\"bad\">not connected</span> {}",
-                esc(&sanitize_text(live["error"].as_str().unwrap_or("")))
-            )
-        };
-        row("Live mode", state);
+            ),
+        );
     }
     format!(
-        "<section><h2>Steam builds (steampics://)</h2><table><tbody>{rows}</tbody></table></section>"
+        "<section><h2>{}</h2><table><tbody>{rows}</tbody></table></section>",
+        esc("Steam builds (steampics://)")
     )
 }
 
@@ -1425,7 +1463,7 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
     let external = status["externalWorker"] == json!(true) && status["managed"] != json!(true);
     if status["control"] == json!(false) {
         body.push_str(
-            "<section><h2>Worker control</h2><p class=\"muted\">Worker control is off (<code>XFEEDER_DASHBOARD_WORKER_CONTROL=off</code>): the worker runs as its own service or container. Start, stop and restart it there (for example <code>docker compose restart worker</code>); configuration changes are picked up without a restart.</p></section>",
+            "<section><h2>Worker control</h2><p class=\"muted\"><span>Worker control is off:</span> <code>XFEEDER_DASHBOARD_WORKER_CONTROL=off</code><span>. The worker runs as its own service or container; start, stop and restart it there, for example:</span> <code>docker compose restart worker</code><span>. Configuration changes are picked up without a restart.</span></p></section>",
         );
     } else if external {
         body.push_str(

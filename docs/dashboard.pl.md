@@ -67,12 +67,18 @@ zmian.
 
 - **Sterowanie workerem**: czy worker działa. Worker uruchomiony z dashboardu można tu
   uruchomić, zatrzymać i zrestartować; przy workerze z systemd zamiast przycisków jest
-  polecenie `systemctl`.
+  polecenie `systemctl`. Z `XFEEDER_DASHBOARD_WORKER_CONTROL=off` (Docker) nie ma przycisków,
+  tylko informacja.
 - Liczniki od startu workera: sprawdzenia, posty, błędy, czasy.
 - Wykresy **posty dziennie** (ostatnie 30 dni) i **posty na kanał** (ostatnie 7 dni).
 - **Ostatnie posty** z linkami do wiadomości na Discordzie oraz **ostatnie problemy**.
 - **Feedy z problemami**: feedy, które zwracają błędy, są blokowane albo odpowiadają
   wolno.
+- **Buildy Steama (steampics://)**, tylko przy takich źródłach: stan (tryb na żywo +
+  SteamCMD, tylko SteamCMD albo błąd), ile gier jest czytanych z konta Steam, gry, dla których
+  Steam nie pokazuje depotów (bez buildów i gałęzi), ostatni przebieg SteamCMD i błąd, przerwa
+  po nieudanym logowaniu oraz połączenie trybu na żywo, ostatnie zapytanie, numer zmiany
+  Steama i uruchomione przez niego sprawdzenia. Aktualizowane po każdym przebiegu SteamCMD.
 
 ### Kanały
 

@@ -1711,9 +1711,38 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(page.contains("Steam builds (steampics://)"), "{page}");
         assert!(page.contains("Steam account: 2, anonymous: 0"));
+        assert!(page.contains("Risk of Rain 2 (632360)"));
         assert!(page.contains("Risk of Rain 2 (632360)") && !page.contains("Deadlock (1422450)"));
         assert!(page.contains("anonymous for 10 more min"));
-        assert!(page.contains("connected</span>") && page.contains("3 wake(s)"));
+        assert!(page.contains("live (changes within seconds) + SteamCMD"));
+        assert!(page.contains("Checks started by live mode</th><td>3 "));
+        // The Polish UI translates every fixed word of the section.
+        let pl = [
+            ("origin", "http://127.0.0.1:3000"),
+            ("cookie", "xf_lang=pl"),
+        ];
+        let (_, _, page) = call(&server, Method::GET, "/", "", &pl).await;
+        for text in [
+            "Buildy Steama (steampics://)",
+            "konto Steam: 2, anonimowo: 0",
+            "Bez depotów",
+            "nieudane; anonimowo jeszcze przez 10 min",
+            "na żywo (zmiany w kilka sekund) + SteamCMD",
+            "Sprawdzenia uruchomione przez tryb na żywo",
+        ] {
+            assert!(page.contains(text), "missing {text:?}");
+        }
+        for english in [
+            "Read with",
+            "Without depots",
+            "Live mode",
+            "Last SteamCMD run",
+        ] {
+            assert!(
+                !page.contains(&format!(">{english}<")),
+                "untranslated {english:?}"
+            );
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -447,6 +447,53 @@ const EXACT: &[(&str, &str)] = &[
         "; zmiany w konfiguracji działają bez restartu.",
     ),
     ("Since the worker started", "Od startu workera"),
+    // Steam builds (steampics://) and Docker worker control
+    (
+        "Steam builds (steampics://)",
+        "Buildy Steama (steampics://)",
+    ),
+    ("SteamCMD error", "błąd SteamCMD"),
+    (
+        "live (changes within seconds) + SteamCMD",
+        "na żywo (zmiany w kilka sekund) + SteamCMD",
+    ),
+    (
+        "SteamCMD only (live mode not connected)",
+        "tylko SteamCMD (tryb na żywo bez połączenia)",
+    ),
+    ("SteamCMD every few minutes", "SteamCMD co kilka minut"),
+    ("Games", "Gry"),
+    ("Read with", "Odczyt przez"),
+    ("anonymous Steam", "anonimowy Steam"),
+    ("Without depots", "Bez depotów"),
+    (
+        "(no builds or branches for these)",
+        "(dla nich brak buildów i gałęzi)",
+    ),
+    ("Last SteamCMD run", "Ostatni przebieg SteamCMD"),
+    ("Last error", "Ostatni błąd"),
+    ("Steam login", "Logowanie Steam"),
+    ("Live mode", "Tryb na żywo"),
+    ("connected", "połączony"),
+    ("not connected", "bez połączenia"),
+    ("Last poll", "Ostatnie zapytanie"),
+    ("Steam change number", "Numer zmiany Steama"),
+    (
+        "Checks started by live mode",
+        "Sprawdzenia uruchomione przez tryb na żywo",
+    ),
+    (
+        "Worker control is off:",
+        "Sterowanie workerem jest wyłączone:",
+    ),
+    (
+        ". The worker runs as its own service or container; start, stop and restart it there, for example:",
+        ". Worker działa jako osobna usługa lub kontener; uruchamiaj, zatrzymuj i restartuj go tam, np.:",
+    ),
+    (
+        ". Configuration changes are picked up without a restart.",
+        ". Zmiany w konfiguracji działają bez restartu.",
+    ),
     ("Feed checks", "Sprawdzenia feedów"),
     ("Failed checks", "Nieudane sprawdzenia"),
     ("Unchanged (HTTP 304)", "Bez zmian (HTTP 304)"),
@@ -959,6 +1006,22 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule(r"^Not an http\(s\) URL: (.*)$", |c| {
             format!("To nie jest adres http(s): {}", &c[1])
         }),
+        rule(r"^Not an http\(s\) or steampics:// URL: (.*)$", |c| {
+            format!("To nie jest adres http(s) ani steampics://: {}", &c[1])
+        }),
+        rule(r"^Steam account: (\d+), anonymous: (\d+)$", |c| {
+            format!("konto Steam: {}, anonimowo: {}", &c[1], &c[2])
+        }),
+        rule(r"^and (\d+) more$", |c| format!("i {} więcej", &c[1])),
+        rule(r"^failed; anonymous for (\d+) more min$", |c| {
+            format!("nieudane; anonimowo jeszcze przez {} min", &c[1])
+        }),
+        rule(
+            r"^Worker control is off \(XFEEDER_DASHBOARD_WORKER_CONTROL=off\): the worker runs as its own service or container; start and stop it there$",
+            |_| {
+                "Sterowanie workerem jest wyłączone (XFEEDER_DASHBOARD_WORKER_CONTROL=off): worker działa jako osobna usługa lub kontener; uruchamiaj go i zatrzymuj tam".into()
+            },
+        ),
         rule(r"^(.+) must be a whole number\.$", |c| {
             format!("{} musi być liczbą całkowitą.", &c[1])
         }),

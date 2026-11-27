@@ -66,11 +66,17 @@ as they are.
 
 - **Worker control**: whether the worker is running. A worker started from the
   dashboard can be started, stopped and restarted here; a worker run by systemd shows the
-  `systemctl` command instead.
+  `systemctl` command instead. With `XFEEDER_DASHBOARD_WORKER_CONTROL=off` (Docker) there are no
+  buttons, only a note.
 - Counters since the worker started: checks, posts, errors, durations.
 - **Posts per day** (last 30 days) and **posts per channel** (last 7 days) charts.
 - **Recent posts** with links to the Discord messages, and **Recent problems**.
 - **Feeds with problems**: feeds that fail, are blocked or answer slowly.
+- **Steam builds (steampics://)**, only with such sources: the state (live mode + SteamCMD,
+  SteamCMD only, or an error), how many games are read with the Steam account, games Steam
+  shows no depots for (no builds or branches for them), the last SteamCMD run and error, a
+  failed login's anonymous pause, and live mode's connection, last poll, Steam change number
+  and the checks it started. Updated after every SteamCMD run.
 
 ### Channels
 

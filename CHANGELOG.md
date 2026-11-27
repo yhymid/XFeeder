@@ -180,6 +180,12 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- `cache.feeds.json` (feed snapshots and health) is written at most once a minute, as compact
+  JSON, instead of whole after every changed feed. Measured on production 3.0 on 27.11: a
+  6.1 MB file and 185 MB of disk writes in 5 minutes. Compact it is 4.9 MB, so the worst
+  case is now 5 writes (about 25 MB) in 5 minutes; not yet measured live. Delivery history
+  (`cache.json`) is still saved after every send, and the feed store is always written on
+  shutdown (feed review F09, item 17).
 - The last-resort RSS parser compiled a regex for every tag of every item. On a 5 000-item
   feed it took 209.5 s; now 0.78 s (release build, same synthetic feed). The regexes are
   compiled once per tag (feed review F09, F10).

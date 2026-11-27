@@ -381,6 +381,9 @@ async fn run_worker(options: Options) -> ExitCode {
                     break;
                 }
                 app.refresh(true);
+                if let Err(error) = app.state.save_feeds_if_due().await {
+                    crate::error!("Cache", "{error}");
+                }
                 let ready =
                     !app.stopping() && app.state.usable() && !app.config().channels.is_empty();
                 let publisher = publisher.clone();

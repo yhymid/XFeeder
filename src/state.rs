@@ -32,6 +32,8 @@ pub struct JsonStore {
     blocked: Mutex<Option<String>>,
     /// Serializes writers so an older snapshot never overwrites a newer one.
     write_lock: tokio::sync::Mutex<u64>,
+    /// Indented JSON (people read `cache.json`); the feed store is compact.
+    pretty: bool,
 }
 
 fn sync_dir(dir: &Path) -> std::io::Result<()> {
@@ -88,6 +90,7 @@ impl JsonStore {
             data: Mutex::new(data),
             blocked: Mutex::new(None),
             write_lock: tokio::sync::Mutex::new(0),
+            pretty: true,
         })
     }
 
@@ -185,7 +188,11 @@ impl JsonStore {
 
     fn snapshot(&self) -> Vec<u8> {
         let data = self.data.lock().expect("lock");
-        serde_json::to_vec_pretty(&*data).unwrap_or_default()
+        if self.pretty {
+            serde_json::to_vec_pretty(&*data).unwrap_or_default()
+        } else {
+            serde_json::to_vec(&*data).unwrap_or_default()
+        }
     }
 
     fn block(&self, message: String) -> UnsafeState {
@@ -235,7 +242,18 @@ pub struct StateStore {
     pub delivery: JsonStore,
     pub feeds: JsonStore,
     pub persist: bool,
+    /// Feed snapshots and health changed since the feed store was written.
+    feeds_dirty: std::sync::atomic::AtomicBool,
+    feeds_saved: Mutex<std::time::Instant>,
 }
+
+/// The feed store (snapshots, validators, health) is written at most this
+/// often, as compact JSON. It is rewritten whole, and with one save per
+/// changed feed production 3.0 wrote 185 MB in 5 minutes (6.1 MB file,
+/// 4.9 MB compact, 27.11); now at most 5 × 4.9 MB. Losing the last minute
+/// costs only an extra full download, never delivery history (`cache.json`
+/// is still written after every send).
+const FEEDS_SAVE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 
 fn snapshots_mut(map: &mut Obj) -> &mut Obj {
     let meta = map
@@ -265,8 +283,13 @@ impl StateStore {
         }
         let store = Self {
             delivery: JsonStore::open(cache_path)?,
-            feeds: JsonStore::open(&feeds_path)?,
+            feeds: JsonStore {
+                pretty: false,
+                ..JsonStore::open(&feeds_path)?
+            },
             persist,
+            feeds_dirty: std::sync::atomic::AtomicBool::new(false),
+            feeds_saved: Mutex::new(std::time::Instant::now()),
         };
         store.migrate_legacy_snapshots()?;
         if persist {
@@ -339,10 +362,30 @@ impl StateStore {
             snapshots_mut(map).insert(url.to_string(), value);
         })?;
         if self.persist {
-            self.feeds.save().await
-        } else {
-            Ok(())
+            self.feeds_dirty
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
+        Ok(())
+    }
+
+    /// Writes the feed store when it changed and the last write is at least
+    /// `FEEDS_SAVE_EVERY` ago. Called every few seconds by the worker;
+    /// `flush` writes it unconditionally at the end.
+    pub async fn save_feeds_if_due(&self) -> Result<(), UnsafeState> {
+        use std::sync::atomic::Ordering;
+        if !self.persist || !self.feeds_dirty.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if self.feeds_saved.lock().expect("lock").elapsed() < FEEDS_SAVE_EVERY {
+            return Ok(());
+        }
+        self.feeds_dirty.store(false, Ordering::SeqCst);
+        *self.feeds_saved.lock().expect("lock") = std::time::Instant::now();
+        let result = self.feeds.save().await;
+        if result.is_err() {
+            self.feeds_dirty.store(true, Ordering::SeqCst);
+        }
+        result
     }
 
     pub fn validator(&self, url: &str) -> Option<(String, String)> {
@@ -393,6 +436,8 @@ impl StateStore {
             return Ok(());
         }
         self.delivery.save().await?;
+        self.feeds_dirty
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         self.feeds.save().await
     }
 }
@@ -474,6 +519,44 @@ mod tests {
             StateStore::open(&cache, true).is_err(),
             "missing cache with quarantine present must block"
         );
+    }
+
+    #[tokio::test]
+    async fn feed_store_writes_are_batched_and_flushed() {
+        let dir = temp_dir("batched");
+        let cache = dir.join("cache.json");
+        let store = StateStore::open(&cache, true).unwrap();
+        let feeds = dir.join("cache.feeds.json");
+        let on_disk = |url: &str| {
+            std::fs::read(&feeds)
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .is_some_and(|v| v[META_KEY]["feedSnapshots"].get(url).is_some())
+        };
+        store
+            .set_feed_state("https://a", json!({ "etag": "1" }))
+            .await
+            .unwrap();
+        store
+            .set_feed_state("https://b", json!({ "etag": "2" }))
+            .await
+            .unwrap();
+        // Not written per change, and not before FEEDS_SAVE_EVERY.
+        assert!(!on_disk("https://a"));
+        store.save_feeds_if_due().await.unwrap();
+        assert!(!on_disk("https://a"));
+        // Due: written once, with both changes.
+        *store.feeds_saved.lock().unwrap() -= FEEDS_SAVE_EVERY;
+        store.save_feeds_if_due().await.unwrap();
+        assert!(on_disk("https://a") && on_disk("https://b"));
+        // The final flush writes what is left.
+        store
+            .set_feed_state("https://c", json!({ "etag": "3" }))
+            .await
+            .unwrap();
+        store.flush().await.unwrap();
+        assert!(on_disk("https://c"));
+        assert_eq!(store.feed_state("https://c")["etag"], json!("3"));
     }
 
     #[test]

@@ -6,6 +6,11 @@ section below as its description.
 ## Unreleased
 
 ### Added
+- Live mode for `steampics://` (`Settings.SteamPics.Live`, build feature `live-pics`, off by
+  default and not in release packages): an anonymous Steam connection (steam-vent 0.5.0) asks
+  every ~10 s for changed apps and wakes the SteamCMD run and the channels of a configured app
+  at once, at most every `LiveMinSeconds` (120). SteamCMD still reads and compares, so it can
+  only make posts sooner, not different; reconnects with a growing pause.
 - Docker, next to the plain binary ([docs/docker.md](docs/docker.md)): `docker/Dockerfile`
   builds three images, `slim` (the static binary on distroless, ~17 MB), `scrapling` (+ Python,
   Scrapling and Chromium) and `full` (+ SteamCMD, amd64 only), all as UID 65532 with state in

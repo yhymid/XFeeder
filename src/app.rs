@@ -1158,6 +1158,8 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
             // Something may have finished while the previous channel ran.
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}
+                // Live mode saw a Steam change: look at the steampics:// channels now.
+                () = crate::steam_pics::woken() => {}
                 () = app.stop.cancelled() => break,
                 () = app.cancel.cancelled() => break,
                 Some(done) = running.join_next(), if !running.is_empty() => {
@@ -1179,6 +1181,28 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
         let config = app.config();
         let channels = &config.channels;
         apply_requests(&app, channels, &mut schedules, &active).await;
+        let woken = crate::steam_pics::take_woken();
+        if !woken.is_empty() {
+            for channel in channels {
+                let hit = channel
+                    .feeds
+                    .iter()
+                    .filter_map(|f| crate::steam_pics::appid(f))
+                    .any(|id| woken.contains(&id));
+                if hit {
+                    schedules
+                        .entry(channel.cache_key.clone())
+                        .or_default()
+                        .next_run_at = 0;
+                    app.clear_feed_due(&channel.cache_key);
+                    crate::info!(
+                        "SteamLive",
+                        "Checking {} now (Steam change)",
+                        channel.label()
+                    );
+                }
+            }
+        }
         for channel in channels {
             if let Some(schedule) = schedules.get_mut(&channel.cache_key) {
                 apply_interval(schedule, channel.time_checker);

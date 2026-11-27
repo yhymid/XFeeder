@@ -101,6 +101,8 @@ struct Settings {
     changelists: bool,
     login: Option<String>,
     password: Option<String>,
+    live: bool,
+    live_min_gap: Duration,
 }
 
 fn settings(root: &Value) -> Settings {
@@ -151,6 +153,8 @@ fn settings(root: &Value) -> Settings {
         changelists: section.get("Changelists") == Some(&Value::Bool(true)),
         login: login_name(section.get("Login")),
         password: login_password(section.get("Password")),
+        live: section.get("Live") == Some(&Value::Bool(true)),
+        live_min_gap: Duration::from_secs_f64(number("LiveMinSeconds", 120.0, 30.0, 3600.0)),
     }
 }
 
@@ -193,6 +197,52 @@ fn login_password(value: Option<&Value>) -> Option<String> {
         return None;
     }
     Some(password.to_string())
+}
+
+// ---------------------------------------------------------------- live mode
+
+/// What live mode (`pics_live`, feature `live-pics`) needs from the config,
+/// refreshed on every `steampics://` check.
+static LIVE: LazyLock<std::sync::Mutex<(bool, Duration, BTreeSet<u32>)>> =
+    LazyLock::new(|| std::sync::Mutex::new((false, Duration::from_secs(60), BTreeSet::new())));
+/// Apps live mode saw change, for the scheduler; and a forced SteamCMD run.
+static WOKEN: LazyLock<std::sync::Mutex<BTreeSet<u32>>> = LazyLock::new(Default::default);
+static FORCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+/// `Live` (on only in builds with the `live-pics` feature) and `LiveMinSeconds`.
+#[cfg_attr(not(feature = "live-pics"), allow(dead_code))]
+pub fn live_settings() -> (bool, Duration) {
+    let live = LIVE.lock().unwrap_or_else(|e| e.into_inner());
+    (live.0 && cfg!(feature = "live-pics"), live.1)
+}
+
+/// The configured `steampics://` apps.
+#[cfg_attr(not(feature = "live-pics"), allow(dead_code))]
+pub fn tracked() -> BTreeSet<u32> {
+    LIVE.lock().unwrap_or_else(|e| e.into_inner()).2.clone()
+}
+
+/// Live mode saw these apps change: run SteamCMD at the next check and let the
+/// scheduler check their channels now.
+#[cfg_attr(not(feature = "live-pics"), allow(dead_code))]
+pub fn wake(apps: &[u32]) {
+    WOKEN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .extend(apps.iter().copied());
+    FORCE.store(true, std::sync::atomic::Ordering::SeqCst);
+    WAKE.notify_one();
+}
+
+/// Apps woken since the last call (for the scheduler).
+pub fn take_woken() -> BTreeSet<u32> {
+    std::mem::take(&mut *WOKEN.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// Resolves when live mode wakes something.
+pub async fn woken() {
+    WAKE.notified().await;
 }
 
 /// Every `steampics://` AppID in the config, in order of first appearance.
@@ -1194,12 +1244,19 @@ pub async fn fetch(
         };
     };
     let cfg = settings(root);
+    {
+        let mut tracked = BTreeSet::new();
+        configured(root, &mut tracked);
+        *LIVE.lock().unwrap_or_else(|e| e.into_inner()) = (cfg.live, cfg.live_min_gap, tracked);
+    }
     let mut runner = RUNNER.lock().await;
     runner.load(&state_path(base));
     let stale = runner
         .last_run
         .is_none_or(|at| at.elapsed() >= cfg.min_interval);
-    if stale || !runner.covered.contains(&id) {
+    // A wake from live mode runs SteamCMD now (taken by the first channel).
+    let forced = persist && FORCE.swap(false, std::sync::atomic::Ordering::SeqCst);
+    if stale || forced || !runner.covered.contains(&id) {
         let mut wanted = BTreeSet::new();
         configured(root, &mut wanted);
         wanted.insert(id);

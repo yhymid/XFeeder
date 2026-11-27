@@ -16,6 +16,8 @@ mod http;
 mod js;
 mod mojang;
 mod parsers;
+#[cfg(feature = "live-pics")]
+mod pics_live;
 mod ping;
 mod preview;
 #[cfg(test)]
@@ -398,6 +400,10 @@ async fn run_worker(options: Options) -> ExitCode {
         })
     };
 
+    #[cfg(feature = "live-pics")]
+    if queue {
+        tokio::spawn(pics_live::run(app.stop.clone()));
+    }
     app::run_queue(app.clone(), Duration::from_secs(30)).await;
     let unsafe_state = !app.state.usable();
     app.begin_stop();

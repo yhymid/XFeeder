@@ -1339,7 +1339,55 @@ pub fn is_feed_document(body: &Body) -> bool {
         .unwrap_or(false)
 }
 
+/// `Settings.HtmlFallback`: `true` = any web page without a feed becomes
+/// one entry (its title, description and image); a list = only URLs that
+/// contain one of the texts. Off by default: a login wall, a parked domain
+/// or an error page served with 200 used to become a post (feed review F10).
+static HTML_FALLBACK: std::sync::RwLock<Option<Vec<String>>> = std::sync::RwLock::new(None);
+
+pub fn set_html_fallback(root: &Value) {
+    *HTML_FALLBACK
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = html_fallback_setting(root);
+}
+
+fn html_fallback_setting(root: &Value) -> Option<Vec<String>> {
+    match js::get(js::get(root, "Settings"), "HtmlFallback") {
+        Value::Bool(true) => Some(Vec::new()),
+        Value::String(s) if !s.trim().is_empty() => Some(vec![s.trim().to_string()]),
+        Value::Array(items) => Some(
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+        )
+        .filter(|list| !list.is_empty()),
+        _ => None,
+    }
+}
+
+fn html_fallback_allows(setting: Option<&Vec<String>>, url: &str) -> bool {
+    setting.is_some_and(|list| list.is_empty() || list.iter().any(|t| url.contains(t.as_str())))
+}
+
+fn html_fallback_for(url: &str) -> bool {
+    let setting = HTML_FALLBACK
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    html_fallback_allows(setting.as_ref(), url)
+}
+
 pub fn parse_fallback(url: &str, body: &Body) -> Vec<Value> {
+    if !html_fallback_for(url) {
+        return Vec::new();
+    }
+    parse_html_page(url, body)
+}
+
+fn parse_html_page(url: &str, body: &Body) -> Vec<Value> {
     if body.json.is_some()
         || is_feed_document(body)
         || is_blocked_page(&body.text, 200, &serde_json::Map::new())
@@ -1599,7 +1647,29 @@ mod tests {
             Body::new("<rss version=\"2.0\"><channel><title>x</title></channel></rss>".into());
         assert!(parse_fallback("https://a/feed", &rss).is_empty());
         let page = Body::new("<html><head><title>Page</title></head><body></body></html>".into());
-        assert_eq!(parse_fallback("https://a/", &page).len(), 1);
+        assert_eq!(parse_html_page("https://a/", &page).len(), 1);
+    }
+
+    #[test]
+    fn web_pages_become_entries_only_when_asked() {
+        let allows = |config: Value, url: &str| {
+            html_fallback_allows(html_fallback_setting(&config).as_ref(), url)
+        };
+        // Off by default: the page parser is not even reached.
+        let page = Body::new("<html><head><title>Page</title></head><body></body></html>".into());
+        assert!(parse_fallback("https://a/", &page).is_empty());
+        assert!(!allows(json!({}), "https://a/"));
+        let list = json!({ "Settings": { "HtmlFallback": ["shop.example"] } });
+        assert!(!allows(list.clone(), "https://a/"));
+        assert!(allows(list, "https://shop.example/item"));
+        assert!(allows(
+            json!({ "Settings": { "HtmlFallback": true } }),
+            "https://a/"
+        ));
+        assert!(!allows(
+            json!({ "Settings": { "HtmlFallback": [] } }),
+            "https://a/"
+        ));
     }
 
     #[test]

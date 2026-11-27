@@ -180,6 +180,11 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- A web page with no feed no longer becomes a post by default. Any 200 answer that was not a
+  feed (a login wall, a parked domain, an error page, the page itself when the feed it
+  advertises was blocked) was turned into one entry from its title. None of the 278
+  production feeds used this on 27.11. It is now opt-in: `Settings.HtmlFallback` (`true` or
+  a list of URL texts) (feed review F10).
 - Security: addresses that come from feed content can no longer reach internal services. A
   page could advertise a "feed" at `http://127.0.0.1/…` (or a metadata or router address),
   and XFeeder fetched it and posted what it said; image checks did a GET to any host. Now a

@@ -117,6 +117,7 @@ fn load_config(path: Option<&Path>) -> Result<(config::Config, PathBuf), String>
     if path.exists() {
         let config = config::load(&path)?;
         crate::deliver::set_post_text(&config.root);
+        crate::parsers::set_html_fallback(&config.root);
         return Ok((config, path));
     }
     let empty = config::from_value(&json!({}), &config::Env::new())?;

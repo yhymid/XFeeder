@@ -173,6 +173,7 @@ impl App {
         crate::diag::set_expert(self.debug_expert || config.debug_expert());
         crate::diag::set_verbose(config.logs() || self.debug_expert);
         crate::deliver::set_post_text(&config.root);
+        crate::parsers::set_html_fallback(&config.root);
         if quiet {
             return;
         }

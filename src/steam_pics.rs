@@ -240,6 +240,28 @@ pub fn take_woken() -> BTreeSet<u32> {
     std::mem::take(&mut *WOKEN.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
+/// Live mode's connection state, for the dashboard (saved with the state).
+static LIVE_STATUS: LazyLock<std::sync::Mutex<Value>> =
+    LazyLock::new(|| std::sync::Mutex::new(Value::Null));
+
+#[cfg_attr(not(feature = "live-pics"), allow(dead_code))]
+pub fn set_live_status(update: impl FnOnce(&mut Map<String, Value>)) {
+    let mut status = LIVE_STATUS.lock().unwrap_or_else(|e| e.into_inner());
+    if !status.is_object() {
+        *status = json!({});
+    }
+    if let Some(map) = status.as_object_mut() {
+        update(map);
+    }
+}
+
+fn live_status() -> Value {
+    LIVE_STATUS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
 /// Resolves when live mode wakes something.
 pub async fn woken() {
     WAKE.notified().await;
@@ -842,8 +864,18 @@ impl Runner {
         let Some(path) = &self.path else {
             return Ok(());
         };
-        let body = serde_json::to_vec(&json!({ "version": 1, "apps": self.apps }))
-            .map_err(std::io::Error::other)?;
+        let status = json!({
+            "savedAt": iso(chrono::Utc::now().timestamp()),
+            "mode": if self.mode.is_empty() { "anonymous" } else { self.mode.as_str() },
+            "lastError": self.last_error,
+            "loginBlockedForS": self.login_blocked_until
+                .map(|t| t.saturating_duration_since(Instant::now()).as_secs())
+                .filter(|s| *s > 0),
+            "live": live_status(),
+        });
+        let body =
+            serde_json::to_vec(&json!({ "version": 1, "status": status, "apps": self.apps }))
+                .map_err(std::io::Error::other)?;
         crate::state::write_atomic(path, &body, 0o600)
     }
 

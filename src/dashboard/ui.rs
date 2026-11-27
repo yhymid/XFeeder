@@ -792,6 +792,100 @@ fn ms_time(ms: u64) -> String {
     chrono::DateTime::from_timestamp_millis(ms as i64).map_or("–".into(), |d| ago(&d.to_rfc3339()))
 }
 
+/// `steampics://` status from `steam_pics.json` (written by the worker after
+/// each SteamCMD run); empty when the config has no such sources.
+fn steam_status_html(server: &Server) -> String {
+    let dir = server.paths.cache.parent().unwrap_or(Path::new("."));
+    let data = read_json(&crate::steam_pics::state_path(dir));
+    let Some(apps) = data["apps"].as_object().filter(|a| !a.is_empty()) else {
+        return String::new();
+    };
+    let status = &data["status"];
+    let mut login = 0;
+    let mut hidden: Vec<String> = Vec::new();
+    for (id, app) in apps {
+        if app["mode"] == json!("login") {
+            login += 1;
+        }
+        let depots = app["flat"]
+            .as_object()
+            .is_some_and(|f| f.keys().any(|k| k.starts_with("depots/")));
+        if !depots {
+            hidden.push(format!("{} ({id})", app["name"].as_str().unwrap_or("?")));
+        }
+    }
+    let mut rows = String::new();
+    let mut row = |name: &str, value: String| {
+        let _ = write!(rows, "<tr><th>{}</th><td>{}</td></tr>", esc(name), value);
+    };
+    row("Games", apps.len().to_string());
+    row(
+        "Read with",
+        if login > 0 {
+            format!("Steam account: {login}, anonymous: {}", apps.len() - login)
+        } else {
+            "anonymous Steam".into()
+        },
+    );
+    row(
+        "Without depots",
+        if hidden.is_empty() {
+            "none".into()
+        } else {
+            let more = hidden.len().saturating_sub(8);
+            let mut list = esc(&hidden
+                .iter()
+                .take(8)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "));
+            if more > 0 {
+                let _ = write!(list, " and {more} more");
+            }
+            format!("{} <small>(no builds or branches for these)</small>", list)
+        },
+    );
+    row(
+        "Last SteamCMD run",
+        esc(&status["savedAt"].as_str().map_or("–".into(), ago)),
+    );
+    if let Some(error) = status["lastError"].as_str() {
+        row(
+            "Last error",
+            format!("<span class=\"bad\">{}</span>", esc(&sanitize_text(error))),
+        );
+    }
+    if let Some(seconds) = status["loginBlockedForS"].as_u64() {
+        row(
+            "Steam login",
+            format!(
+                "<span class=\"bad\">failed; anonymous for {} more min</span>",
+                seconds.div_ceil(60)
+            ),
+        );
+    }
+    let live = &status["live"];
+    if live.is_object() {
+        let state = if live["connected"] == json!(true) {
+            format!(
+                "<span class=\"good\">connected</span>, last poll {}, {} wake(s), last {}",
+                esc(&live["lastPollAt"].as_str().map_or("–".into(), ago)),
+                live["wakes"].as_u64().unwrap_or(0),
+                esc(&live["lastWakeAt"].as_str().map_or("–".into(), ago))
+            )
+        } else {
+            format!(
+                "<span class=\"bad\">not connected</span> {}",
+                esc(&sanitize_text(live["error"].as_str().unwrap_or("")))
+            )
+        };
+        row("Live mode", state);
+    }
+    format!(
+        "<section><h2>Steam builds (steampics://)</h2><table><tbody>{rows}</tbody></table></section>"
+    )
+}
+
 fn failing_feeds_html(server: &Server) -> String {
     let mut rows = String::new();
     for (url, snapshot) in feed_snapshots(server) {
@@ -1426,8 +1520,9 @@ async fn overview(server: &Server, req: &Req<'_>) -> Response {
     let labels = channel_labels(server, &config);
     let _ = write!(
         body,
-        "{}{}<section><h2>Recent posts</h2>{}<p><a href=\"/posts\">All posts →</a></p></section>",
+        "{}{}{}<section><h2>Recent posts</h2>{}<p><a href=\"/posts\">All posts →</a></p></section>",
         failing_feeds_html(server),
+        steam_status_html(server),
         charts_html(&recent_posts(server, 2000), &labels),
         posts_table(&recent_posts(server, 10), &labels)
     );

@@ -89,6 +89,10 @@ pub async fn run(stop: CancellationToken) {
         match connect().await {
             Err(error) => {
                 crate::warn!("SteamLive", "cannot connect to Steam: {error}");
+                crate::steam_pics::set_live_status(|s| {
+                    s.insert("connected".into(), json!(false));
+                    s.insert("error".into(), json!(error));
+                });
                 crate::diag::expert(
                     "pics_live.disconnected",
                     json!({ "error": error, "uptimeS": 0 }),
@@ -99,11 +103,20 @@ pub async fn run(stop: CancellationToken) {
                     "SteamLive",
                     "connected to Steam (anonymous); asking for changes every ~10 s"
                 );
+                crate::steam_pics::set_live_status(|s| {
+                    s.insert("connected".into(), json!(true));
+                    s.insert("connectedAt".into(), json!(crate::text::now_iso()));
+                    s.remove("error");
+                });
                 crate::diag::expert(
                     "pics_live.connected",
                     json!({ "cell": connection.cell_id(), "logonMs": started.elapsed().as_millis() as u64 }),
                 );
                 let error = poll(&connection, min_gap, &stop).await;
+                crate::steam_pics::set_live_status(|s| {
+                    s.insert("connected".into(), json!(false));
+                    s.insert("error".into(), json!(error));
+                });
                 let uptime = started.elapsed().as_secs();
                 if uptime > 300 {
                     attempt = 0;
@@ -199,6 +212,10 @@ async fn poll(
                     "waiting": waiting.len(), "n": n, "current": current }),
         );
         n = if full { current } else { current.max(n) };
+        crate::steam_pics::set_live_status(|s| {
+            s.insert("lastPollAt".into(), json!(crate::text::now_iso()));
+            s.insert("changeNumber".into(), json!(n));
+        });
         if !waiting.is_empty() && last_wake.is_none_or(|t| t.elapsed() >= min_gap) {
             let apps: Vec<u32> = waiting.iter().copied().collect();
             crate::info!(
@@ -213,6 +230,14 @@ async fn poll(
             );
             crate::diag::expert("pics_live.wake", json!({ "apps": apps }));
             crate::steam_pics::wake(&apps);
+            crate::steam_pics::set_live_status(|s| {
+                s.insert("lastWakeAt".into(), json!(crate::text::now_iso()));
+                let wakes = s
+                    .get("wakes")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0);
+                s.insert("wakes".into(), json!(wakes + 1));
+            });
             waiting.clear();
             last_wake = Some(Instant::now());
         }

@@ -1692,6 +1692,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn overview_shows_steam_status() {
+        let dir = std::env::temp_dir().join(format!("xfeeder-steam-ui-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), "{\"channels\": []}").unwrap();
+        let state = json!({ "version": 1,
+            "status": { "savedAt": crate::text::now_iso(), "mode": "login", "loginBlockedForS": 600,
+                        "live": { "connected": true, "wakes": 3, "lastPollAt": crate::text::now_iso() } },
+            "apps": {
+                "1422450": { "name": "Deadlock", "mode": "login", "flat": { "depots/1/manifests/public/gid": "1" } },
+                "632360": { "name": "Risk of Rain 2", "mode": "login", "flat": { "common/name": "Risk of Rain 2" } }
+            } });
+        std::fs::write(dir.join("steam_pics.json"), state.to_string()).unwrap();
+        let server = test_server(&dir, "");
+        let origin = [("origin", "http://127.0.0.1:3000")];
+        let (status, _, page) = call(&server, Method::GET, "/", "", &origin).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(page.contains("Steam builds (steampics://)"), "{page}");
+        assert!(page.contains("Steam account: 2, anonymous: 0"));
+        assert!(page.contains("Risk of Rain 2 (632360)") && !page.contains("Deadlock (1422450)"));
+        assert!(page.contains("anonymous for 10 more min"));
+        assert!(page.contains("connected</span>") && page.contains("3 wake(s)"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
     async fn worker_control_off_refuses_start() {
         let dir = std::env::temp_dir().join(format!("xfeeder-wc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

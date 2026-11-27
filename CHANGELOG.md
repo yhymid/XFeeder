@@ -6,6 +6,10 @@ section below as its description.
 ## Unreleased
 
 ### Added
+- Dashboard overview: a "Steam builds (steampics://)" section with the number of games, how
+  many are read with the Steam account, games Steam shows no depots for, the last SteamCMD run
+  and error, a failed login's anonymous pause and live mode's connection. The worker saves this
+  as `status` in `steam_pics.json`.
 - Live mode for `steampics://` (`Settings.SteamPics.Live`, build feature `live-pics`, off by
   default and not in release packages): an anonymous Steam connection (steam-vent 0.5.0) asks
   every ~10 s for changed apps and wakes the SteamCMD run and the channels of a configured app

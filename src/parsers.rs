@@ -1089,16 +1089,34 @@ pub fn parse_api_x(url: &str, body: &Body) -> Vec<Value> {
 
 // ----------------------------------------------------------- regex RSS --
 
+/// A regex built from a tag name, compiled once per pattern (the regex RSS
+/// parser asks for the same few tags for every item: 5 000 items took 19 s
+/// when each call compiled its own, F09/F10).
+fn tag_regex(pattern: String) -> Option<Regex> {
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Regex>>> =
+        std::sync::LazyLock::new(Default::default);
+    let mut cache = CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(found) = cache.get(&pattern) {
+        return Some(found.clone());
+    }
+    let compiled = Regex::new(&pattern).ok()?;
+    // Tags come from the code, not the feed; the cap only guards a mistake.
+    if cache.len() < 256 {
+        cache.insert(pattern, compiled.clone());
+    }
+    Some(compiled)
+}
+
 fn tag_content(block: &str, tag: &str) -> String {
     let pattern = format!(
         r"(?is)<{}[^>]*>(.*?)</{}>",
         regex::escape(tag),
         regex::escape(tag)
     );
-    let found = Regex::new(&pattern)
-        .ok()
-        .and_then(|r| r.captures(block))
-        .map(|c| c[1].to_string())
+    let found = tag_regex(pattern)
+        .and_then(|r| r.captures(block).map(|c| c[1].to_string()))
         .unwrap_or_default();
     static CDATA: OnceLock<Regex> = OnceLock::new();
     re(&CDATA, r"(?s)<!\[CDATA\[(.*?)\]\]>")
@@ -1113,8 +1131,7 @@ fn tag_attr(block: &str, tag: &str, attr: &str) -> Option<String> {
         regex::escape(tag),
         regex::escape(attr)
     );
-    Regex::new(&pattern)
-        .ok()?
+    tag_regex(pattern)?
         .captures(block)
         .map(|c| c[1].to_string())
 }
@@ -1223,7 +1240,7 @@ pub fn regex_items(body: &str) -> Vec<Value> {
             let block = &c[1];
             let tag = |name: &str| {
                 let pattern = format!(r"(?i)<{name}[^>]*>([\s\S]*?)</{name}>");
-                Regex::new(&pattern).ok().and_then(|r| r.captures(block)).map(|m| js::trim(&m[1]).to_string()).unwrap_or_default()
+                tag_regex(pattern).and_then(|r| r.captures(block).map(|m| js::trim(&m[1]).to_string())).unwrap_or_default()
             };
             let description = re(&TAGS, r"<[^>]+>").replace_all(&tag("description"), "").into_owned();
             let link = tag("link");

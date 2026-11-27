@@ -215,8 +215,10 @@ impl Container {
 }
 
 fn youtube_thumbnail(link: &str) -> Option<String> {
-    let re = regex::Regex::new(r"(?:v=|/)([A-Za-z0-9_-]{11})").ok()?;
-    re.captures(link)
+    static ID: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?:v=|/)([A-Za-z0-9_-]{11})").expect("static regex")
+    });
+    ID.captures(link)
         .map(|c| format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", &c[1]))
 }
 

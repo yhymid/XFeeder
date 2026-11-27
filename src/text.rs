@@ -694,14 +694,21 @@ pub fn entry_identity(entry: &Value, discord: bool) -> String {
     }
     // `sourceLink`: the link as the feed wrote it, before it was made absolute,
     // so entries delivered earlier keep their identity.
-    let direct = js::or(&[
-        js::get(entry, "sourceLink"),
-        js::get(entry, "link"),
-        js::get(entry, "guid"),
-    ]);
-    let direct = js::to_string_or_empty(direct);
+    let link = js::or(&[js::get(entry, "sourceLink"), js::get(entry, "link")]);
+    let from_guid = !js::truthy(link);
+    let direct = js::to_string_or_empty(js::or(&[link, js::get(entry, "guid")]));
     let key = normalize_link(&direct);
     if !key.is_empty() {
+        // A guid keeps its `#…`: for link-less entries it is what tells them
+        // apart (`url#<hash>` from the parsers, JSON Feed `…/changelog#v1`).
+        // Stripping it gave every such entry the feed URL (F07-7).
+        if from_guid
+            && let Some((_, fragment)) = direct.trim().split_once('#')
+            && !fragment.is_empty()
+            && !key.contains('#')
+        {
+            return format!("{key}#{fragment}");
+        }
         return key;
     }
     let parts: Vec<String> = ["title", "isoDate", "author", "contentSnippet"]
@@ -830,6 +837,25 @@ pub fn discord_time(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guid_fragments_keep_link_less_entries_apart() {
+        let a = json!({ "guid": "https://f.example/feed.json#0123456789abcdef" });
+        let b = json!({ "guid": "https://f.example/feed.json#fedcba9876543210" });
+        assert_ne!(entry_identity(&a, false), entry_identity(&b, false));
+        assert_eq!(
+            entry_identity(&json!({ "guid": "https://site/changelog#v1" }), false),
+            "https://site/changelog#v1"
+        );
+        // A link still drops its fragment, as before.
+        assert_eq!(
+            entry_identity(
+                &json!({ "link": "https://site/post#comments", "guid": "x" }),
+                false
+            ),
+            "https://site/post"
+        );
+    }
 
     #[test]
     fn feed_text_is_escaped_for_discord() {

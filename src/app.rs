@@ -671,6 +671,7 @@ impl App {
         cache: &mut Map<String, Value>,
         source: &str,
         identified: &[(String, Value)],
+        accepted: &[bool],
         kinds: &[Target],
         bucket_key: &str,
         ids: &FetchIds,
@@ -685,26 +686,7 @@ impl App {
             .copied()
             .filter(|t| !has_history(cache.get(&format!("{source}::{}", t.kind()))))
             .collect();
-        // Feeds are usually newest-first, but do not rely on it: keep the
-        // newest `FirstRunSend` by date (feed order breaks ties).
-        let mut order: Vec<usize> = (0..identified.len()).collect();
-        order.sort_by_key(|&i| {
-            std::cmp::Reverse(
-                crate::js::get(&identified[i].1, "isoDate")
-                    .as_str()
-                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
-                    .map_or(i64::MIN, |d| d.timestamp_millis()),
-            )
-        });
-        let send: Vec<usize> = order.into_iter().take(channel.first_run_send).collect();
-        let seen: Vec<Value> = identified
-            .iter()
-            .enumerate()
-            .filter(|(i, (id, _))| !id.is_empty() && !send.contains(i))
-            .flat_map(|(_, (id, _))| {
-                std::iter::once(json!(id)).chain(aliases.get(id).map(|a| json!(a)))
-            })
-            .collect();
+        let (send, seen) = first_check_split(identified, accepted, channel.first_run_send, aliases);
         if fresh.is_empty() || seen.is_empty() {
             return Ok(());
         }
@@ -781,22 +763,11 @@ impl App {
             .collect();
         let aliases = guid_aliases(&entries, discord);
         keep.extend(aliases.values().cloned());
-        let entries: Vec<Value> = match &channel.filter {
-            Some(filter) => {
-                let now = chrono::Utc::now().timestamp_millis();
-                entries
-                    .into_iter()
-                    .filter(|e| filter.accepts(e, now))
-                    .collect()
-            }
-            None => entries,
-        };
-        if entries.len() != fetched {
-            expert(
-                "channel.feed.filtered",
-                json!({ "channel": label, "url": source, "fetched": fetched, "kept": entries.len() }),
-            );
-        }
+        // History decisions (shared links, first check, guid aliases) see
+        // everything the feed lists; the filter only decides what is sent.
+        // A first check with `MaxAgeHours` used to leave the older entries
+        // unrecorded, and an edit (`updated` moving) later posted them.
+        let now = chrono::Utc::now().timestamp_millis();
         let mut identified: Vec<(String, Value)> = entries
             .into_iter()
             .map(|e| (entry_identity(&e, discord), e))
@@ -806,13 +777,31 @@ impl App {
             self.persist(&bucket_key, cache).await?;
         }
         keep.extend(identified.iter().map(|(id, _)| id.clone()));
-        self.observe_entries(channel, source, &identified);
+        let accepted: Vec<bool> = identified
+            .iter()
+            .map(|(_, e)| channel.filter.as_ref().is_none_or(|f| f.accepts(e, now)))
+            .collect();
+        let kept = accepted.iter().filter(|a| **a).count();
+        if kept != fetched {
+            expert(
+                "channel.feed.filtered",
+                json!({ "channel": label, "url": source, "fetched": fetched, "kept": kept }),
+            );
+        }
+        let shown: Vec<(String, Value)> = identified
+            .iter()
+            .zip(&accepted)
+            .filter(|(_, a)| **a)
+            .map(|(e, _)| e.clone())
+            .collect();
+        self.observe_entries(channel, source, &shown);
         let ids = FetchIds { aliases, keep };
         self.baseline(
             channel,
             cache,
             source,
             &identified,
+            &accepted,
             &kinds,
             &bucket_key,
             &ids,
@@ -824,6 +813,9 @@ impl App {
         }
         let mut pending: Vec<&(String, Value)> = identified
             .iter()
+            .zip(&accepted)
+            .filter(|(_, a)| **a)
+            .map(|(e, _)| e)
             .filter(|(id, _)| !Self::pending(cache, source, id, &kinds).is_empty())
             .collect();
         // Oldest first, so a long backlog (after downtime) loses nothing off
@@ -831,7 +823,7 @@ impl App {
         oldest_first(&mut pending);
         expert(
             "channel.feed.pending",
-            json!({ "channel": label, "url": source, "fetched": identified.len(), "pending": pending.len() }),
+            json!({ "channel": label, "url": source, "fetched": kept, "pending": pending.len() }),
         );
         if pending.is_empty() {
             return Ok(false);
@@ -1484,6 +1476,39 @@ fn link_and_guid(entry: &Value) -> Option<(String, String)> {
 ///   twice, never a new post skipped.
 ///
 /// Returns whether the history was changed.
+/// First check of a feed: which entries are sent (the newest `first_run_send`
+/// by date among those the filter accepts; feed order breaks ties) and which
+/// ids are recorded as seen (every other listed entry, filtered or not, so a
+/// later edit cannot bring an old one back).
+fn first_check_split(
+    identified: &[(String, Value)],
+    accepted: &[bool],
+    first_run_send: usize,
+    aliases: &std::collections::HashMap<String, String>,
+) -> (Vec<usize>, Vec<Value>) {
+    let mut order: Vec<usize> = (0..identified.len())
+        .filter(|&i| accepted.get(i).copied().unwrap_or(true))
+        .collect();
+    order.sort_by_key(|&i| {
+        std::cmp::Reverse(
+            crate::js::get(&identified[i].1, "isoDate")
+                .as_str()
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+                .map_or(i64::MIN, |d| d.timestamp_millis()),
+        )
+    });
+    let send: Vec<usize> = order.into_iter().take(first_run_send).collect();
+    let seen: Vec<Value> = identified
+        .iter()
+        .enumerate()
+        .filter(|(i, (id, _))| !id.is_empty() && !send.contains(i))
+        .flat_map(|(_, (id, _))| {
+            std::iter::once(json!(id)).chain(aliases.get(id).map(|a| json!(a)))
+        })
+        .collect();
+    (send, seen)
+}
+
 fn stabilize_shared_links(
     cache: &mut Map<String, Value>,
     source: &str,
@@ -1784,6 +1809,37 @@ mod tests {
             }
         }
         sent
+    }
+
+    #[test]
+    fn first_check_records_what_the_filter_hides() {
+        // F07-6: MaxAgeHours hides the old release; it must still be
+        // recorded, or a later `updated` bump posts it as new.
+        let identified: Vec<(String, Value)> = [
+            ("https://r/new", "2026-11-27T00:00:00Z"),
+            ("https://r/old", "2026-11-10T00:00:00Z"),
+            ("https://r/older", "2026-11-01T00:00:00Z"),
+        ]
+        .iter()
+        .map(|(id, date)| (id.to_string(), json!({ "isoDate": date })))
+        .collect();
+        let accepted = [true, false, false];
+        let none = std::collections::HashMap::new();
+        let (send, seen) = first_check_split(&identified, &accepted, 0, &none);
+        assert!(send.is_empty());
+        assert_eq!(
+            seen,
+            [
+                json!("https://r/new"),
+                json!("https://r/old"),
+                json!("https://r/older")
+            ]
+        );
+        // FirstRunSend picks among accepted entries only.
+        let accepted = [false, true, false];
+        let (send, seen) = first_check_split(&identified, &accepted, 1, &none);
+        assert_eq!(send, [1]);
+        assert_eq!(seen, [json!("https://r/new"), json!("https://r/older")]);
     }
 
     #[test]

@@ -180,6 +180,14 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- The first check of a feed records every entry it lists, also those the channel's filter
+  hides (`MaxAgeHours`, `Exclude`). Before, they were left out, and an old entry that came
+  back into the window (an Atom `updated` bump after an edit) was posted as new.
+  `FirstRunSend` still picks only entries the filter lets through (feed review F07-6).
+- Entries with no link keep the `#…` of their guid in their identity, so link-less entries
+  (a JSON feed without `url`/`id`, a JSON Feed `id` like `…/changelog#v1`) no longer all share
+  the feed URL and stop being posted after the first. Identities of all 278 feeds checked on
+  27.11 are unchanged (feed review F07-7).
 - `cache.feeds.json` (feed snapshots and health) is written at most once a minute, as compact
   JSON, instead of whole after every changed feed. Measured on production 3.0 on 27.11: a
   6.1 MB file and 185 MB of disk writes in 5 minutes. Compact it is 4.9 MB, so the worst

@@ -687,8 +687,12 @@ wpisujesz jak zwykły feed:
 Token (w `.env`: `GITHUB_TOKEN=...`) jest wysyłany **tylko** do api.github.com. Daje limit
 5000 zapytań na godzinę zamiast 60 oraz dostęp do prywatnych repo. XFeeder wyłącznie czyta
 (GET), więc wystarczy token fine-grained z uprawnieniami *Read-only* (Contents, Issues,
-Pull requests, Metadata). Niezmienione odpowiedzi (HTTP 304) nie zużywają limitu. Token
-jest maskowany w logach. Bez tokena publiczne repo też działają, w granicach 60 zapytań/h.
+Pull requests, Metadata). Z tokenem niezmienione odpowiedzi (HTTP 304) nie zużywają limitu,
+bez tokena zużywają. Token jest maskowany w logach. Bez tokena publiczne repo też działają,
+w granicach 60 zapytań/h: 13 adresów API sprawdzanych co 30 minut zużywa już 26 z nich. Gdy
+limit się skończy (albo GitHub poprosi o zwolnienie), XFeeder nie wysyła żadnego zapytania do
+API aż do czasu resetu podanego przez GitHuba, dla wszystkich adresów API naraz, a ostrzeżenie
+zapisuje raz na godzinę.
 
 Nie dodawaj commitów z API dla gałęzi, która ma już feed Atom z commitami w tym samym
 kanale: historia jest zapisywana osobno dla każdego adresu feedu, więc ten sam commit

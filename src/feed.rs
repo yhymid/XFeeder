@@ -436,6 +436,21 @@ impl Ctx<'_> {
         url: &str,
         validator: Option<&(String, String)>,
     ) -> Result<Download, Stop> {
+        // GitHub asks clients to wait out a used-up or secondary rate limit
+        // instead of retrying (it can block the integration): one shared
+        // "blocked until" for every api.github.com URL.
+        let now_s = chrono::Utc::now().timestamp().max(0) as u64;
+        let until = GITHUB_BLOCKED_UNTIL.load(std::sync::atomic::Ordering::Relaxed);
+        if now_s < until {
+            return Ok(Download {
+                reason: Some("HTTP_RATE_LIMITED"),
+                error: Some(format!(
+                    "GitHub API limit reached; waiting {} more s before asking again",
+                    until - now_s
+                )),
+                ..Default::default()
+            });
+        }
         let mut headers = crate::github_api::headers(&self.config.root);
         if let Some((etag, modified)) = validator {
             if !etag.is_empty() {
@@ -471,11 +486,25 @@ impl Ctx<'_> {
                     "github.api",
                     json!({ "url": url, "status": response.status, "rateRemaining": left }),
                 );
-                if left.parse::<u32>().is_ok_and(|n| n < 50) {
-                    crate::warn!(
-                        "GitHub",
-                        "API limit almost used up ({left} requests left this hour); set Auth.GitHubToken or check fewer URLs"
-                    );
+                let reset = header(&response.headers, "x-ratelimit-reset")
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if let (Ok(remaining), Ok(limit)) = (
+                    left.parse::<u64>(),
+                    header(&response.headers, "x-ratelimit-limit").parse::<u64>(),
+                ) {
+                    if remaining == 0 && reset > now_s {
+                        GITHUB_BLOCKED_UNTIL.store(reset, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    // Below 10 % of the limit, once per limit window.
+                    let last = GITHUB_WARNED_RESET.load(std::sync::atomic::Ordering::Relaxed);
+                    if remaining * 10 < limit && last != reset {
+                        GITHUB_WARNED_RESET.store(reset, std::sync::atomic::Ordering::Relaxed);
+                        crate::warn!(
+                            "GitHub",
+                            "API limit almost used up ({remaining} of {limit} requests left this hour); set Auth.GitHubToken or check fewer URLs"
+                        );
+                    }
                 }
                 Ok(Download {
                     ok: true,
@@ -493,10 +522,27 @@ impl Ctx<'_> {
             Err(HttpError::Cancelled) => Err(Stop::Cancelled),
             Err(error) => {
                 let status = error.status();
-                let limited = error.response().is_some_and(|r| {
-                    matches!(r.status, 403 | 429)
-                        && header(&r.headers, "x-ratelimit-remaining") == "0"
+                // Primary limit: remaining 0, wait until x-ratelimit-reset.
+                // Secondary limit: Retry-After (or one minute, per GitHub).
+                let wait = error.response().and_then(|r| {
+                    if !matches!(r.status, 403 | 429) {
+                        return None;
+                    }
+                    let reset = header(&r.headers, "x-ratelimit-reset").parse::<u64>().ok();
+                    let retry = crate::http::retry_after_ms(&r.headers).map(|ms| now_s + ms / 1000);
+                    if header(&r.headers, "x-ratelimit-remaining") == "0" {
+                        reset.or(retry).or(Some(now_s + 60))
+                    } else if r.status == 429 {
+                        retry.or(Some(now_s + 60))
+                    } else {
+                        // 403 without these is a permission error, not a limit.
+                        retry
+                    }
                 });
+                if let Some(until) = wait {
+                    GITHUB_BLOCKED_UNTIL.store(until, std::sync::atomic::Ordering::Relaxed);
+                }
+                let limited = wait.is_some();
                 Ok(Download {
                     status,
                     reason: Some(if limited {
@@ -1221,6 +1267,11 @@ impl Pipeline<'_> {
         ))
     }
 }
+
+/// Unix seconds until which no api.github.com request is sent.
+static GITHUB_BLOCKED_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The limit window (`x-ratelimit-reset`) last warned about.
+static GITHUB_WARNED_RESET: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests {

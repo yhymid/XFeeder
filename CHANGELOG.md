@@ -189,6 +189,12 @@ section below as its description.
   - the first picture of a post is a real one: emoji, icons, images 64 px or smaller,
     `data:` and SVG are skipped (Roblox's forum posted a 20 px emoji in 14 posts), and
     `&amp;` in its address is decoded.
+- GitHub API (feed review F04): when the limit is used up or GitHub asks to slow down
+  (`403`/`429` with `x-ratelimit-remaining: 0` or `Retry-After`), no API request is sent
+  until GitHub's reset time, for all API URLs at once, as GitHub asks. The "limit almost
+  used up" warning comes below 10 % of the limit, once per hour (it fired on almost every
+  request after the 10th without a token). The docs no longer say a `304` is free without
+  a token: it is free only with one.
 - One failing feed no longer delays its whole channel: a feed that fails backs off on its
   own, and only failed deliveries back off the channel. With 232 feeds in one channel, a
   single broken one made the others wait 2 to 8 times their interval (feed review F01, F10).

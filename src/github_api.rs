@@ -18,8 +18,9 @@
 //!
 //! `Auth.GitHubToken` (e.g. `"${GITHUB_TOKEN}"`) is sent only to
 //! api.github.com: 5000 requests/hour instead of 60, and private repos.
-//! XFeeder only reads (GET). Unchanged answers (HTTP 304) do not count
-//! against the limit.
+//! XFeeder only reads (GET) and sends the last ETag, so unchanged lists
+//! answer 304. With a token a 304 does not count against the limit;
+//! without one it does (GitHub REST docs, "Best practices").
 
 use serde_json::{Value, json};
 

@@ -688,8 +688,11 @@ write the API URL like any feed:
 The token (in `.env`: `GITHUB_TOKEN=...`) is sent **only** to api.github.com. It gives a limit
 of 5000 requests per hour instead of 60 and access to private repos. XFeeder only reads
 (GET), so a fine-grained token with *Read-only* permissions (Contents, Issues, Pull
-requests, Metadata) is enough. Unchanged answers (HTTP 304) do not use up the limit. The
-token is masked in logs. Without a token, public repos also work, within 60 requests/h.
+requests, Metadata) is enough. With a token, unchanged answers (HTTP 304) do not use up the
+limit; without one they do. The token is masked in logs. Without a token, public repos also
+work, within 60 requests/h: 13 API URLs checked every 30 minutes already use 26 of them.
+When the limit is used up (or GitHub asks to slow down), XFeeder sends no API request until
+GitHub's reset time, for every API URL at once, and logs the warning once per hour.
 
 Do not add API commits for a branch that already has an Atom commit feed in the same
 channel: history is kept per feed URL, so the same commit would be posted twice.

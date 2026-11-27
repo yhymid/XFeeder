@@ -180,6 +180,14 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- A deeply nested HTML page can no longer stall the worker. Parsing got quadratic with depth:
+  10 000 nested `<div>` took 0.47 s for the challenge and feed-link checks (release build),
+  200 000 more than 5 minutes (F10). Pages nested deeper than 512 are no longer parsed (a
+  linear scan that ignores void elements, optional end tags and script text), challenge
+  detection reads the first 256 KiB and feed discovery only `<head>`. Now 200 000 nested
+  `<div>` take 0.09 ms. Checked on 283 feed bodies and 16 large real pages (Wikipedia,
+  GitHub, Steam, onet, BBC…): none flagged, and all 8 pages that advertise a feed still find
+  it (feed review F10, item 41).
 - A web page with no feed no longer becomes a post by default. Any 200 answer that was not a
   feed (a login wall, a parked domain, an error page, the page itself when the feed it
   advertises was blocked) was turned into one entry from its title. None of the 278

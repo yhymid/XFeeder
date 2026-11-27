@@ -1286,12 +1286,94 @@ fn select_text(doc: &Html, selector: &str, first: bool) -> String {
     }
 }
 
+/// Nesting above which a page is not parsed as HTML. html5ever's tree
+/// building gets quadratic with depth: 10 000 nested `<div>` took 0.47 s for
+/// two parses, 200 000 more than 5 minutes (F10); real pages stay far below
+/// 512.
+const HTML_MAX_DEPTH: usize = 512;
+/// Challenge pages and `<head>` links are near the start of a page.
+const HTML_HEAD_BYTES: usize = 256 * 1024;
+
+/// Upper bound of the element nesting, in one linear pass (void elements,
+/// self-closing tags, comments and `<!…>`/`<?…>` do not nest).
+pub(crate) fn html_too_deep(html: &str) -> bool {
+    // Void elements, and elements whose end tag may be left out (an
+    // unclosed `<p>`, `<li>` or `<td>` does not make a page deep).
+    const FLAT: [&str; 31] = [
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
+        "source", "track", "wbr", "p", "li", "dt", "dd", "td", "th", "tr", "tbody", "thead",
+        "tfoot", "option", "optgroup", "colgroup", "caption", "html", "head", "body",
+    ];
+    let bytes = html.as_bytes();
+    let (mut depth, mut i) = (0usize, 0usize);
+    while let Some(off) = memchr_lt(&bytes[i..]) {
+        i += off + 1;
+        match bytes.get(i) {
+            Some(b'/') => depth = depth.saturating_sub(1),
+            Some(b'!' | b'?') => {}
+            Some(c) if c.is_ascii_alphabetic() => {
+                let name_end = bytes[i..]
+                    .iter()
+                    .position(|b| !b.is_ascii_alphanumeric())
+                    .map_or(bytes.len(), |p| i + p);
+                let name = html[i..name_end].to_ascii_lowercase();
+                // Script and style text is not markup (`a<b` in JavaScript).
+                if matches!(name.as_str(), "script" | "style" | "textarea") {
+                    static RAW_END: OnceLock<Regex> = OnceLock::new();
+                    match re(&RAW_END, r"(?i)</(?:script|style|textarea)").find_at(html, name_end) {
+                        Some(end) => {
+                            i = end.start() + 1;
+                            continue;
+                        }
+                        None => break,
+                    }
+                }
+                let close = bytes[name_end..].iter().position(|b| *b == b'>');
+                let self_closing = close.is_some_and(|c| c > 0 && bytes[name_end + c - 1] == b'/');
+                if !FLAT.contains(&name.as_str()) && !self_closing {
+                    depth += 1;
+                    if depth > HTML_MAX_DEPTH {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn memchr_lt(bytes: &[u8]) -> Option<usize> {
+    bytes.iter().position(|b| *b == b'<')
+}
+
+/// The start of a page, cut on a character boundary.
+fn html_head(html: &str) -> &str {
+    if html.len() <= HTML_HEAD_BYTES {
+        return html;
+    }
+    let mut end = HTML_HEAD_BYTES;
+    while !html.is_char_boundary(end) {
+        end -= 1;
+    }
+    &html[..end]
+}
+
 /// Feed advertised by an HTML page (`<link rel="alternate"
 /// type="application/rss+xml" href="…">`, also Atom and JSON Feed), resolved
 /// against the page URL. RSS is preferred over Atom over JSON Feed.
 pub fn discover_feed(page_url: &str, html: &str) -> Option<String> {
     let base = url::Url::parse(page_url).ok()?;
-    let doc = Html::parse_document(html);
+    // `<link rel="alternate">` lives in `<head>`.
+    let head = html_head(html);
+    let head = match head.to_ascii_lowercase().find("</head") {
+        Some(end) => &head[..end],
+        None => head,
+    };
+    if html_too_deep(head) {
+        return None;
+    }
+    let doc = Html::parse_document(head);
     let selector = scraper::Selector::parse("link[href][type]").ok()?;
     let mut best: Option<(usize, String)> = None;
     for link in doc.select(&selector) {
@@ -1388,6 +1470,14 @@ pub fn parse_fallback(url: &str, body: &Body) -> Vec<Value> {
 }
 
 fn parse_html_page(url: &str, body: &Body) -> Vec<Value> {
+    if html_too_deep(&body.text) {
+        crate::warn!(
+            "Fallback Parser",
+            "{}: page nested too deep to parse",
+            crate::diag::sanitize_url(url)
+        );
+        return Vec::new();
+    }
     if body.json.is_some()
         || is_feed_document(body)
         || is_blocked_page(&body.text, 200, &serde_json::Map::new())
@@ -1492,6 +1582,12 @@ pub fn is_blocked_page(body: &str, status: u16, headers: &serde_json::Map<String
     .is_match(source)
     {
         return interstitial().is_match(source);
+    }
+    // A challenge page is small; only its start is parsed, and never a
+    // page nested deep enough to stall the parser.
+    let source = html_head(source);
+    if html_too_deep(source) {
+        return false;
     }
     let doc = Html::parse_document(source);
     let mut labels = vec![
@@ -1648,6 +1744,30 @@ mod tests {
         assert!(parse_fallback("https://a/feed", &rss).is_empty());
         let page = Body::new("<html><head><title>Page</title></head><body></body></html>".into());
         assert_eq!(parse_html_page("https://a/", &page).len(), 1);
+    }
+
+    #[test]
+    fn deeply_nested_pages_are_not_parsed() {
+        let page = |n: usize| {
+            format!(
+                "<html><body>{}{}</body></html>",
+                "<div>".repeat(n),
+                "</div>".repeat(n)
+            )
+        };
+        assert!(!html_too_deep(&page(100)));
+        assert!(html_too_deep(&page(600)));
+        // Void and self-closing elements do not nest.
+        assert!(!html_too_deep(&"<br><img src=x><p/>".repeat(5000)));
+        assert!(!html_too_deep(&"<p>a</p>".repeat(5000)));
+        let started = std::time::Instant::now();
+        assert!(!is_blocked_page(
+            &page(200_000),
+            200,
+            &serde_json::Map::new()
+        ));
+        assert!(discover_feed("https://a/", &page(200_000)).is_none());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
     #[test]

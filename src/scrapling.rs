@@ -666,7 +666,9 @@ pub fn detect_format(body: &str) -> &'static str {
 }
 
 pub fn html_to_items(html: &str, options: &Value) -> Vec<Value> {
-    if crate::parsers::is_blocked_page(html, 200, &Map::new()) {
+    if crate::parsers::is_blocked_page(html, 200, &Map::new())
+        || crate::parsers::html_too_deep(html)
+    {
         return Vec::new();
     }
     let doc = Html::parse_document(html);

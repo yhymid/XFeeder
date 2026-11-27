@@ -1110,7 +1110,12 @@ async fn run_steamcmd(
         // What SteamCMD said about the login (the password is already
         // replaced): app_info_print also prints SteamCMD's cached app info
         // after a failed login, so app info alone proves nothing.
-        let mut said: Vec<&str> = clean
+        // Only what comes before the app info: app data has words like
+        // "error" in launch arguments.
+        let login_part = HEADER
+            .find(&clean)
+            .map_or(&clean[..], |m| &clean[..m.start()]);
+        let mut said: Vec<&str> = login_part
             .lines()
             .map(str::trim)
             .filter(|l| {

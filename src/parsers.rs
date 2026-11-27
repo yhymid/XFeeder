@@ -87,7 +87,8 @@ fn with_text(mut entry: Value, raw: &str) -> Value {
 /// author wrapped at ~72 columns ("…, gated\nby GPU generation").
 fn tidy_text(text: &str, title: &str, rejoin: bool) -> String {
     let plain = |s: &str| s.trim().trim_matches('*').trim().to_lowercase();
-    let mut lines: Vec<&str> = text.lines().collect();
+    let short: Vec<String> = text.lines().map(short_mentions).collect();
+    let mut lines: Vec<&str> = short.iter().map(String::as_str).collect();
     if lines
         .first()
         .is_some_and(|l| !title.is_empty() && plain(l) == plain(title))
@@ -117,6 +118,31 @@ fn tidy_text(text: &str, title: &str, rejoin: bool) -> String {
         }
     }
     out.join("\n")
+}
+
+/// A line that is only a long list of `[@name](url)` links (GitHub release
+/// thanks: OpenClaw lists 80+) becomes a few plain names and a count, so it
+/// does not use up the post text.
+fn short_mentions(line: &str) -> String {
+    const SHOWN: usize = 12;
+    static MENTION: OnceLock<Regex> = OnceLock::new();
+    let mention = re(&MENTION, r"\[(@[\w.-]+)\]\([^)\s]+\)");
+    let names: Vec<&str> = mention
+        .captures_iter(line)
+        .map(|c| c.get(1).map_or("", |m| m.as_str()))
+        .collect();
+    let rest = mention.replace_all(line, "");
+    let only = rest
+        .chars()
+        .all(|c| c.is_whitespace() || matches!(c, ',' | '·' | '•' | '-' | '&'));
+    if names.len() <= SHOWN || !only {
+        return line.to_string();
+    }
+    format!(
+        "{} … and {} more",
+        names[..SHOWN].join(" "),
+        names.len() - SHOWN
+    )
 }
 
 /// Commit trailers are noise in a message card (and `Claude-Session` links
@@ -1376,6 +1402,22 @@ pub fn is_blocked_page(body: &str, status: u16, headers: &serde_json::Map<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_mention_lists_are_shortened() {
+        let line: Vec<String> = (0..20)
+            .map(|i| format!("[@u{i}](https://github.com/u{i})"))
+            .collect();
+        let text = format!("**Thanks**\n{}", line.join(" "));
+        let out = tidy_text(&text, "x", false);
+        assert_eq!(
+            out,
+            "**Thanks**\n@u0 @u1 @u2 @u3 @u4 @u5 @u6 @u7 @u8 @u9 @u10 @u11 … and 8 more"
+        );
+        // A few, or mixed with other text: unchanged.
+        let few = "[@a](https://github.com/a) and [@b](https://github.com/b) fixed it";
+        assert_eq!(tidy_text(few, "x", false), few);
+    }
 
     #[test]
     fn post_text_tidy() {

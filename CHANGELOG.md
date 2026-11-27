@@ -6,6 +6,13 @@ section below as its description.
 ## Unreleased
 
 ### Added
+- Docker, next to the plain binary ([docs/docker.md](docs/docker.md)): `docker/Dockerfile`
+  builds three images, `slim` (the static binary on distroless, ~17 MB), `scrapling` (+ Python,
+  Scrapling and Chromium) and `full` (+ SteamCMD, amd64 only), all as UID 65532 with state in
+  `/data`. `compose.yaml` runs the worker and, with `--profile dashboard`, the dashboard on
+  `127.0.0.1:3000` with worker control off. `.github/workflows/docker.yml` (run by hand) pushes
+  them to ghcr.io for a release. `build.rs` takes the commit from `XFEEDER_GIT_COMMIT` when
+  there is no `.git`.
 - Only one worker per `cache.json`: the worker holds an exclusive lock on `cache.json.lock`
   (also across containers sharing the directory), and a second one exits with "another XFeeder
   worker is already using …". `--dry-run` does not lock. `XFEEDER_DASHBOARD_WORKER_CONTROL=off`
@@ -65,6 +72,8 @@ section below as its description.
   hidden characters in the post. `sent.json` keeps at most 1500 characters of post text.
 - Post text: a first line that only repeats the title is dropped (Mesa, GitHub), and GitHub
   release notes wrapped at ~72 columns are joined back into sentences.
+- Post text: a line that is only a long list of `[@name](url)` links (GitHub release thanks,
+  OpenClaw has 80+) shows 12 names and "… and N more" instead of using up the text.
 - Steam posts keep their line breaks. A body like `· fix one\n· fix two` (Hades II, Marvel
   Rivals, The Isle) was joined into one long line, because a line break in HTML is a space.
   Checked on 585 posts of 195 games: lists glued into one line 9 → 0, lines over 400

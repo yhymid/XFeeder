@@ -133,3 +133,6 @@ review/
 # Local agent instructions
 /AGENTS.md
 /CLAUDE.md
+
+# Docker quick start keeps real data and secrets here
+/data/

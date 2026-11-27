@@ -1152,6 +1152,9 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
     let mut next_key: Option<String> = None;
     let mut running: JoinSet<(String, String, u64, Result<ChannelResult, Stop>)> = JoinSet::new();
     let mut active: Vec<String> = Vec::new();
+    // Channels live mode woke while they were running: checked again as soon
+    // as that run ends (its reschedule would otherwise push the wake back).
+    let mut rewake: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut first = true;
     loop {
         if !first {
@@ -1190,19 +1193,25 @@ pub async fn run_queue(app: Arc<App>, delay: Duration) {
                     .filter_map(|f| crate::steam_pics::appid(f))
                     .any(|id| woken.contains(&id));
                 if hit {
-                    schedules
-                        .entry(channel.cache_key.clone())
-                        .or_default()
-                        .next_run_at = 0;
-                    app.clear_feed_due(&channel.cache_key);
-                    crate::info!(
-                        "SteamLive",
-                        "Checking {} now (Steam change)",
-                        channel.label()
-                    );
+                    rewake.insert(channel.cache_key.clone());
                 }
             }
         }
+        rewake.retain(|key| {
+            if active.contains(key) {
+                return true;
+            }
+            if let Some(channel) = channels.iter().find(|c| &c.cache_key == key) {
+                schedules.entry(key.clone()).or_default().next_run_at = 0;
+                app.clear_feed_due(key);
+                crate::info!(
+                    "SteamLive",
+                    "Checking {} now (Steam change)",
+                    channel.label()
+                );
+            }
+            false
+        });
         for channel in channels {
             if let Some(schedule) = schedules.get_mut(&channel.cache_key) {
                 apply_interval(schedule, channel.time_checker);

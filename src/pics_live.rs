@@ -57,10 +57,31 @@ async fn connect() -> Result<Connection, String> {
         .map_err(|e| format!("logon: {e:?}"))
 }
 
-/// ±50 % jitter so several instances do not poll in step.
+/// ±50 % jitter so several instances do not reconnect in step.
 fn jitter(base: Duration) -> Duration {
     let factor = 0.5 + rand::random::<f64>();
     base.mul_f64(factor)
+}
+
+/// Poll pause: never below `POLL` (Steam silently drops faster polling).
+fn poll_pause() -> Duration {
+    POLL.mul_f64(1.0 + rand::random::<f64>() * 0.5)
+}
+
+/// Kept across connections: the last change number asked for and the apps
+/// that changed but were not woken yet, so a reconnect loses nothing (an N
+/// that is too old makes Steam answer `force_full_*`: every app is woken).
+#[derive(Default)]
+struct Progress {
+    n: u32,
+    waiting: BTreeSet<u32>,
+    last_wake: Option<Instant>,
+}
+
+enum End {
+    Stopped,
+    TurnedOff,
+    Lost(String),
 }
 
 async fn pause(duration: Duration, stop: &CancellationToken) -> bool {
@@ -74,11 +95,20 @@ async fn pause(duration: Duration, stop: &CancellationToken) -> bool {
 /// off or no `steampics://` source has been checked yet.
 pub async fn run(stop: CancellationToken) {
     let mut attempt: u32 = 0;
+    let mut progress = Progress::default();
+    let mut warned = false;
     loop {
         if stop.is_cancelled() {
             return;
         }
-        let (enabled, min_gap) = crate::steam_pics::live_settings();
+        let (enabled, _) = crate::steam_pics::live_settings();
+        if crate::steam_pics::live_requested() && !enabled && !warned {
+            warned = true;
+            crate::warn!(
+                "SteamLive",
+                "Settings.SteamPics.Live is on, but this build has no live mode (build with --features live-pics)"
+            );
+        }
         if !enabled || crate::steam_pics::tracked().is_empty() {
             if !pause(POLL, &stop).await {
                 return;
@@ -112,18 +142,28 @@ pub async fn run(stop: CancellationToken) {
                     "pics_live.connected",
                     json!({ "cell": connection.cell_id(), "logonMs": started.elapsed().as_millis() as u64 }),
                 );
-                let error = poll(&connection, min_gap, &stop).await;
-                crate::steam_pics::set_live_status(|s| {
-                    s.insert("connected".into(), json!(false));
-                    s.insert("error".into(), json!(error));
-                });
+                let end = poll(&connection, &mut progress, &stop).await;
                 let uptime = started.elapsed().as_secs();
                 if uptime > 300 {
                     attempt = 0;
                 }
-                match error {
-                    None => return,
-                    Some(error) => {
+                let error = match &end {
+                    End::Lost(e) => e.clone(),
+                    End::TurnedOff => "live mode turned off".into(),
+                    End::Stopped => "stopped".into(),
+                };
+                crate::steam_pics::set_live_status(|s| {
+                    s.insert("connected".into(), json!(false));
+                    s.insert("error".into(), json!(error));
+                });
+                match end {
+                    End::Stopped => return,
+                    // Off in the config: idle until it is turned on again.
+                    End::TurnedOff => {
+                        attempt = 0;
+                        continue;
+                    }
+                    End::Lost(error) => {
                         crate::warn!(
                             "SteamLive",
                             "connection lost after {uptime} s: {error}; reconnecting"
@@ -150,28 +190,25 @@ pub async fn run(stop: CancellationToken) {
     }
 }
 
-/// Polls one connection; returns the error that ended it (`None` = stopped).
-async fn poll(
-    connection: &Connection,
-    min_gap: Duration,
-    stop: &CancellationToken,
-) -> Option<String> {
-    let mut n = match since(connection, 0).await {
-        Ok(r) => r.current_change_number(),
-        Err(error) => return Some(error),
-    };
+/// Polls one connection until it fails, live mode is turned off or `stop`.
+async fn poll(connection: &Connection, progress: &mut Progress, stop: &CancellationToken) -> End {
+    if progress.n == 0 {
+        progress.n = match since(connection, 0).await {
+            Ok(r) => r.current_change_number(),
+            Err(error) => return End::Lost(error),
+        };
+    }
     let mut failures = 0;
-    let mut waiting: BTreeSet<u32> = BTreeSet::new();
-    let mut last_wake: Option<Instant> = None;
     loop {
-        if !pause(jitter(POLL), stop).await {
-            return None;
+        if !pause(poll_pause(), stop).await {
+            return End::Stopped;
         }
-        let (enabled, _) = crate::steam_pics::live_settings();
+        let (enabled, min_gap) = crate::steam_pics::live_settings();
         if !enabled {
             crate::info!("SteamLive", "live mode turned off; disconnecting");
-            return None;
+            return End::TurnedOff;
         }
+        let n = progress.n;
         let started = Instant::now();
         let response = match since(connection, n).await {
             Ok(r) => {
@@ -182,7 +219,7 @@ async fn poll(
                 failures += 1;
                 // A closed connection fails at once; a lost one times out.
                 if failures >= 2 || error.contains("Closed") || error.contains("AlreadyClosed") {
-                    return Some(error);
+                    return End::Lost(error);
                 }
                 continue;
             }
@@ -196,9 +233,9 @@ async fn poll(
                 "Steam cannot list changes since {n} (now {current}); checking every app"
             );
             crate::diag::expert("pics_live.gap", json!({ "n": n, "current": current }));
-            waiting.extend(tracked.iter().copied());
+            progress.waiting.extend(tracked.iter().copied());
         } else {
-            waiting.extend(
+            progress.waiting.extend(
                 response
                     .app_changes
                     .iter()
@@ -209,15 +246,16 @@ async fn poll(
         crate::diag::expert(
             "pics_live.poll",
             json!({ "latencyMs": started.elapsed().as_millis() as u64, "appChanges": response.app_changes.len(),
-                    "waiting": waiting.len(), "n": n, "current": current }),
+                    "waiting": progress.waiting.len(), "n": n, "current": current }),
         );
-        n = if full { current } else { current.max(n) };
+        progress.n = if full { current } else { current.max(n) };
         crate::steam_pics::set_live_status(|s| {
             s.insert("lastPollAt".into(), json!(crate::text::now_iso()));
-            s.insert("changeNumber".into(), json!(n));
+            s.insert("changeNumber".into(), json!(progress.n));
         });
-        if !waiting.is_empty() && last_wake.is_none_or(|t| t.elapsed() >= min_gap) {
-            let apps: Vec<u32> = waiting.iter().copied().collect();
+        if !progress.waiting.is_empty() && progress.last_wake.is_none_or(|t| t.elapsed() >= min_gap)
+        {
+            let apps: Vec<u32> = progress.waiting.iter().copied().collect();
             crate::info!(
                 "SteamLive",
                 "change seen for {} app(s) ({}); checking now",
@@ -238,8 +276,8 @@ async fn poll(
                     .unwrap_or(0);
                 s.insert("wakes".into(), json!(wakes + 1));
             });
-            waiting.clear();
-            last_wake = Some(Instant::now());
+            progress.waiting.clear();
+            progress.last_wake = Some(Instant::now());
         }
     }
 }

@@ -325,6 +325,8 @@ fn reserved_secret(name: &str) -> bool {
             upper.as_str(),
             "BASH_ENV" | "ENV" | "PATH" | "HOME" | "SHELL"
         )
+        // An account password, not a webhook: set it in the terminal only.
+        || upper == "STEAMCMD_PASSWORD"
 }
 
 fn replace_secret(env_text: &str, name: &str, value: &str) -> Result<String, &'static str> {

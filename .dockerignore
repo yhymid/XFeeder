@@ -11,6 +11,12 @@ config.json
 cache.json*
 sent.json*
 steam_pics*
+# compose keeps the real data and secrets in ./data
+data
+**/.env
+**/*.env
+**/cache.json*
+**/sent.json*
 *.jsonl
 scrapling/.venv
 scrapling/__pycache__

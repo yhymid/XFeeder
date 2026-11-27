@@ -217,6 +217,12 @@ pub fn live_settings() -> (bool, Duration) {
     (live.0 && cfg!(feature = "live-pics"), live.1)
 }
 
+/// `Live` is on in the config, whatever this build supports.
+#[cfg_attr(not(feature = "live-pics"), allow(dead_code))]
+pub fn live_requested() -> bool {
+    LIVE.lock().unwrap_or_else(|e| e.into_inner()).0
+}
+
 /// The configured `steampics://` apps.
 #[cfg_attr(not(feature = "live-pics"), allow(dead_code))]
 pub fn tracked() -> BTreeSet<u32> {
@@ -858,6 +864,13 @@ impl Runner {
         self.last_run = None;
         self.covered.clear();
         self.last_error = None;
+        // A failed login's pause survives a restart, so restarts do not
+        // send Steam a new password login (a new approval request) each time.
+        let now = chrono::Utc::now().timestamp();
+        self.login_blocked_until = data["status"]["loginBlockedUntil"]
+            .as_i64()
+            .filter(|until| *until > now)
+            .map(|until| Instant::now() + Duration::from_secs((until - now) as u64));
     }
 
     fn save(&self) -> std::io::Result<()> {
@@ -868,6 +881,9 @@ impl Runner {
             "savedAt": iso(chrono::Utc::now().timestamp()),
             "mode": if self.mode.is_empty() { "anonymous" } else { self.mode.as_str() },
             "lastError": self.last_error,
+            "loginBlockedUntil": self.login_blocked_until
+                .and_then(|t| t.checked_duration_since(Instant::now()))
+                .map(|left| chrono::Utc::now().timestamp() + left.as_secs() as i64),
             "loginBlockedForS": self.login_blocked_until
                 .map(|t| t.saturating_duration_since(Instant::now()).as_secs())
                 .filter(|s| *s > 0),
@@ -1060,6 +1076,11 @@ enum RunError {
     Login(String),
 }
 
+/// SteamCMD's line after a successful account login (seen 2026-11-27:
+/// "Waiting for user info...Waiting for compat in post-logon took: 0.5sOK").
+static LOGIN_OK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)Waiting for user info\.\.\..*OK").expect("static regex"));
+
 /// SteamCMD output that means the saved session is gone (it would otherwise
 /// wait for a password or a Steam Guard code).
 static LOGIN_FAILED: LazyLock<Regex> = LazyLock::new(|| {
@@ -1232,8 +1253,15 @@ async fn run_steamcmd(
             "SteamCMD login: {}",
             crate::diag::sanitize_text(&said.join(" | "))
         );
-        if let Some(found) = LOGIN_FAILED.find(&clean) {
+        if let Some(found) = LOGIN_FAILED.find(login_part) {
             return Err(RunError::Login(found.as_str().to_string()));
+        }
+        // After a failed login SteamCMD still prints its cached app info, so
+        // only its own success line proves the account was used.
+        if !LOGIN_OK.is_match(login_part) {
+            return Err(RunError::Login(
+                "no 'Waiting for user info...OK' from SteamCMD".into(),
+            ));
         }
     }
     if !HEADER.is_match(&clean) {
@@ -1300,6 +1328,11 @@ pub async fn fetch(
         });
         let first = login.map_or(Login::Anonymous, Login::Saved);
         let mut result = run_steamcmd(&cfg.command, first, &wanted, cfg.timeout, cancel).await;
+        // The password only replaces a missing or expired saved session; a
+        // network error or rate limit must not send it (each try is a new
+        // Steam Guard request).
+        let no_session = matches!(&result, Err(RunError::Login(found))
+            if found.to_lowercase().contains("cached credentials"));
         runner.mode = if login.is_some() {
             "login"
         } else {
@@ -1308,9 +1341,7 @@ pub async fn fetch(
         .into();
         // No saved session yet (or it expired): log in with the password once;
         // Steam may ask to approve it in the Steam Mobile app.
-        if let (Err(RunError::Login(_)), Some(name), Some(password)) =
-            (&result, login, cfg.password.as_deref())
-        {
+        if let (true, Some(name), Some(password)) = (no_session, login, cfg.password.as_deref()) {
             crate::warn!(
                 "SteamPics",
                 "Logging in to Steam as {name} with the password from .env. If Steam asks, approve the login in the Steam Mobile app now: SteamCMD waits only about 1 minute.",
@@ -1334,6 +1365,9 @@ pub async fn fetch(
             );
             runner.login_blocked_until = Some(Instant::now() + Duration::from_secs(6 * 3600));
             runner.mode = "anonymous".into();
+            if persist && let Err(error) = runner.save() {
+                crate::warn!("SteamPics", "cannot save the login pause: {error}");
+            }
             result =
                 run_steamcmd(&cfg.command, Login::Anonymous, &wanted, cfg.timeout, cancel).await;
         }
@@ -1342,6 +1376,9 @@ pub async fn fetch(
                 runner.last_error = Some(format!("Steam login: {message}"));
             }
             Err(RunError::Cancelled) => {
+                if forced {
+                    FORCE.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
                 return Fetched {
                     items: runner.items(id),
                     failure: None,
@@ -1351,6 +1388,18 @@ pub async fn fetch(
             Err(RunError::Failed(message)) => {
                 crate::warn!("SteamPics", "{message}");
                 runner.last_error = Some(message);
+                // A run live mode asked for failed: try again at the next check.
+                if forced {
+                    FORCE.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                // The dashboard shows the error (status block).
+                if persist && let Err(error) = runner.save() {
+                    crate::warn!(
+                        "SteamPics",
+                        "cannot save {}: {error}",
+                        state_path(base).display()
+                    );
+                }
             }
             Ok(text) => {
                 let apps = parse_output(&text);
@@ -1362,6 +1411,7 @@ pub async fn fetch(
                     json!({ "apps": wanted.len(), "unknown": unknown, "changedApps": log.len(),
                             "elapsedMs": started.elapsed().as_millis() as u64 }),
                 );
+                runner.last_error = None;
                 if persist {
                     if let Err(error) = runner.save() {
                         crate::warn!(
@@ -1758,6 +1808,87 @@ mod tests {
             .insert("depots/branches/public/buildid".into(), "26900001".into());
         runner.apply(next, None, true, 30);
         assert_eq!(runner.items(730).len(), before + 1);
+    }
+
+    #[tokio::test]
+    async fn login_is_judged_by_steamcmd_login_lines_only() {
+        let dir = std::env::temp_dir().join(format!("xf-loginlines-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/steam-pics/app_info_print.txt"
+        ))
+        .unwrap();
+        let header = fixture.find("AppID : ").unwrap();
+        let (login_lines, apps_part) = fixture.split_at(header);
+        let script = dir.join("steamcmd");
+        let apps: BTreeSet<u32> = [730].into();
+        use std::os::unix::fs::PermissionsExt;
+        let run = |out: String| {
+            let out_file = dir.join("out.txt");
+            std::fs::write(&out_file, out).unwrap();
+            std::fs::write(&script, format!("#!/bin/sh\ncat {}\n", out_file.display())).unwrap();
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        };
+        // A good login, then app data with words that look like a failure.
+        run(format!(
+            "{login_lines}{apps_part}\n\"launch\" \"-server password: x ERROR (Timeout)\"\n"
+        ));
+        let ok = run_steamcmd(
+            script.to_str().unwrap(),
+            Login::Saved("feed_bot1"),
+            &apps,
+            Duration::from_secs(10),
+            &CancellationToken::new(),
+        )
+        .await;
+        assert!(ok.is_ok(), "app data must not count as a login failure");
+        // A failed login still followed by cached app info: a failure.
+        run(format!(
+            "Logging in user 'feed_bot1' to Steam Public...FAILED (No Connection)\n{apps_part}"
+        ));
+        let failed = run_steamcmd(
+            script.to_str().unwrap(),
+            Login::Saved("feed_bot1"),
+            &apps,
+            Duration::from_secs(10),
+            &CancellationToken::new(),
+        )
+        .await;
+        assert!(matches!(failed, Err(RunError::Login(_))));
+        // An unknown failure text without SteamCMD's OK line: also a failure.
+        run(format!(
+            "Logging in user 'feed_bot1' to Steam Public...something new\n{apps_part}"
+        ));
+        let unknown = run_steamcmd(
+            script.to_str().unwrap(),
+            Login::Saved("feed_bot1"),
+            &apps,
+            Duration::from_secs(10),
+            &CancellationToken::new(),
+        )
+        .await;
+        assert!(matches!(unknown, Err(RunError::Login(_))));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn login_pause_survives_a_restart() {
+        let dir = std::env::temp_dir().join(format!("xf-loginpause-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = state_path(&dir);
+        let mut runner = Runner::default();
+        runner.load(&path);
+        runner.login_blocked_until = Some(Instant::now() + Duration::from_secs(3 * 3600));
+        runner.save().unwrap();
+        let mut restarted = Runner::default();
+        restarted.load(&path);
+        let left = restarted
+            .login_blocked_until
+            .expect("pause restored")
+            .saturating_duration_since(Instant::now());
+        assert!(left > Duration::from_secs(2 * 3600) && left <= Duration::from_secs(3 * 3600));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]

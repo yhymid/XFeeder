@@ -87,18 +87,20 @@ Z `EProtoClanEventType` Valve, sprawdzone na prawdziwych postach:
   - Drugie sprawdzenie 2026-11-23 ze wszystkimi 10 śledzonymi aplikacjami i jednym fałszywym AppID trwało **9,3 s**.
   - **Narzędzia Valve** (nazwy tak, jak podaje je Steam, sprawdzone 2026-11-23 anonimowym SteamCMD):
 
-    | Narzędzie | AppID | Buildy widoczne anonimowo? |
-    |---|---|---|
-    | Steam Linux Runtime 1.0 (scout) | 1070560 | ✅ |
-    | Steam Linux Runtime 2.0 (soldier) | 1391110 | ✅ |
-    | Steam Linux Runtime 3.0 (sniper) | 1628350 | ✅ |
-    | SteamVR | 250820 | ✅ |
-    | Steamworks Common Redistributables | 228980 | ✅ |
-    | Proton 6.3 | 1580130 | ✅ |
-    | Proton 3.16 / 7.0 / 8.0 / 9.0 / 10.0 | 961940 / 1887720 / 2348590 / 2805730 / 3658110 | ❌ brak depotów |
-    | Proton EasyAntiCheat Runtime / BattlEye Runtime | 1826330 / 1161040 | ❌ brak depotów |
+    | Narzędzie | AppID | Buildy widoczne anonimowo? | Z kontem (2026-11-27) |
+    |---|---|---|---|
+    | Steam Linux Runtime 1.0 (scout) | 1070560 | ✅ | ✅ |
+    | Steam Linux Runtime 2.0 (soldier) | 1391110 | ✅ | ✅ |
+    | Steam Linux Runtime 3.0 (sniper) | 1628350 | ✅ | ✅ |
+    | SteamVR | 250820 | ✅ | ✅ |
+    | Steamworks Common Redistributables | 228980 | ✅ | ✅ |
+    | Proton 6.3 | 1580130 | ✅ | ✅ gałęzie `debug`, `issue5102` |
+    | Proton 3.16 / 7.0 / 8.0 / 9.0 / 10.0 | 961940 / 1887720 / 2348590 / 2805730 / 3658110 | ❌ brak depotów | ✅ build public w każdej; 7.0, 9.0 i 10.0 mają też `release-candidate`, wszystkie poza 3.16 `debug` |
+    | Proton EasyAntiCheat Runtime / BattlEye Runtime | 1826330 / 1161040 | ❌ brak depotów | ✅ (EasyAntiCheat ma też gałąź `test`) |
 
-    Proton Experimental (1493710) wrócił w przebiegu zbiorczym jako zniekształcony blok `AppID : 1715812046 … 1970`, więc tą drogą się nie da.
+    Proton Experimental (1493710) wrócił w anonimowym przebiegu zbiorczym jako zniekształcony blok `AppID : 1715812046 … 1970`. Z kontem (2026-11-27, wystarczy dowolne konto: Proton jest darmowy) parsuje się normalnie: build public 26920586 i gałęzie `bleeding-edge`, `bleeding-edge-10`, `bleeding-edge-debug`, `debug`, `experimental-10`.
+
+    To samo dla gier: z kontem NARAKA: BLADEPOINT (free to play) pokazuje build public 26771036 i 6 depotów, Deadlock (posiadany) 6 depotów; Risk of Rain 2 (632360) nadal pokazuje tylko `common`. Steam daje depoty tylko kontom, które mają aplikację, więc płatne gry konto musi posiadać.
   - **Więcej gier do śledzenia: top 100 samego Steama.** `https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/` (bez klucza) wypisuje 100 najczęściej granych AppID. 2026-11-23 32 z nich nie było jeszcze na tej stronie; wszystkie 32 pokazały buildy anonimowo. Test PICS XFeedera śledzi 241 aplikacji (ta strona + top 100 + narzędzia z ✅ powyżej).
   - **Wszystkie 203 AppID z tej strony w jednym przebiegu: 94 s**, 3,7 MB wyjścia, każdy AppID znany.
   - Grafika aplikacji do postów: pionowa okładka (`common/library_assets_full/library_capsule/image/english` → `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/<APPID>/library_600x900.jpg`) i ikona 32×32 (hash `common/icon` → `https://shared.fastly.steamstatic.com/community_assets/images/apps/<APPID>/<hash>.jpg`); obie 200 dnia 2026-11-23. Miniatura Components V2 na Discordzie przycina pionowy obrazek do kwadratu, klasyczna miniatura embeda nie.

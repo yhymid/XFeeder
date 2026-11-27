@@ -87,18 +87,20 @@ SteamDB's `https://steamdb.info/app/<APPID>/history/` shows, per changelist, `pu
   - A second check on 2026-11-23 with all 10 tracked apps plus one bogus AppID took **9.3 s**.
   - **Valve tools** (names as Steam gives them, checked 2026-11-23 with anonymous SteamCMD):
 
-    | Tool | AppID | Builds visible anonymously? |
-    |---|---|---|
-    | Steam Linux Runtime 1.0 (scout) | 1070560 | ✅ |
-    | Steam Linux Runtime 2.0 (soldier) | 1391110 | ✅ |
-    | Steam Linux Runtime 3.0 (sniper) | 1628350 | ✅ |
-    | SteamVR | 250820 | ✅ |
-    | Steamworks Common Redistributables | 228980 | ✅ |
-    | Proton 6.3 | 1580130 | ✅ |
-    | Proton 3.16 / 7.0 / 8.0 / 9.0 / 10.0 | 961940 / 1887720 / 2348590 / 2805730 / 3658110 | ❌ no depots |
-    | Proton EasyAntiCheat Runtime / BattlEye Runtime | 1826330 / 1161040 | ❌ no depots |
+    | Tool | AppID | Builds visible anonymously? | With an account (2026-11-27) |
+    |---|---|---|---|
+    | Steam Linux Runtime 1.0 (scout) | 1070560 | ✅ | ✅ |
+    | Steam Linux Runtime 2.0 (soldier) | 1391110 | ✅ | ✅ |
+    | Steam Linux Runtime 3.0 (sniper) | 1628350 | ✅ | ✅ |
+    | SteamVR | 250820 | ✅ | ✅ |
+    | Steamworks Common Redistributables | 228980 | ✅ | ✅ |
+    | Proton 6.3 | 1580130 | ✅ | ✅ branches `debug`, `issue5102` |
+    | Proton 3.16 / 7.0 / 8.0 / 9.0 / 10.0 | 961940 / 1887720 / 2348590 / 2805730 / 3658110 | ❌ no depots | ✅ public build each; 7.0, 9.0 and 10.0 also `release-candidate`, all but 3.16 `debug` |
+    | Proton EasyAntiCheat Runtime / BattlEye Runtime | 1826330 / 1161040 | ❌ no depots | ✅ (EasyAntiCheat also has a `test` branch) |
 
-    Proton Experimental (1493710) came back as a garbled `AppID : 1715812046 … 1970` block in a batch run, so it is not usable this way.
+    Proton Experimental (1493710) came back as a garbled `AppID : 1715812046 … 1970` block in an anonymous batch run. With an account (2026-11-27, any account works: Proton is free) it parses normally: public build 26920586 and the branches `bleeding-edge`, `bleeding-edge-10`, `bleeding-edge-debug`, `debug`, `experimental-10`.
+
+    Same check for games: with the account NARAKA: BLADEPOINT (free to play) shows public build 26771036 and 6 depots, Deadlock (owned) 6 depots; Risk of Rain 2 (632360) still shows only `common`. Steam gives depots only to accounts that own the app, so for paid games the account must own them.
   - **More games to watch: Steam's own top 100.** `https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/` (no key) lists the 100 most played AppIDs. On 2026-11-23, 32 of them were not on this page yet; all 32 showed builds anonymously. The XFeeder PICS test tracks 241 apps (this page + top 100 + the ✅ tools above).
   - **All 203 AppIDs of this page in one run: 94 s**, 3.7 MB of output, every AppID known.
   - App art for posts: the portrait capsule (`common/library_assets_full/library_capsule/image/english` → `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/<APPID>/library_600x900.jpg`) and the 32×32 icon (`common/icon` hash → `https://shared.fastly.steamstatic.com/community_assets/images/apps/<APPID>/<hash>.jpg`); both 200 on 2026-11-23. Discord's Components V2 thumbnail crops a portrait image to a square, a classic embed thumbnail does not.

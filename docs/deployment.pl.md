@@ -2,6 +2,8 @@
 
 [English](deployment.md) · **Polski**
 
+Zamiast tego z Dockerem: [docker.pl.md](docker.pl.md).
+
 Buduj na docelowej maszynie (albo na takiej z tą samą lub starszą glibc). Plik zbudowany
 na dystrybucji rolling-release może nie wystartować na starszym Ubuntu/Debianie przez
 wersje symboli glibc.

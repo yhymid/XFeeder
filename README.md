@@ -27,7 +27,7 @@
 
 ## Why XFeeder
 
-- **One small binary.** Written in Rust: no Node.js, no Docker, nothing to install next to it.
+- **One small binary.** Written in Rust: no Node.js, nothing to install next to it. Docker images are optional ([docs/docker.md](docs/docker.md)).
 - **Light.** About 35 MB of memory and 1.5 % CPU with 10 channels and 32 feeds.
 - **Never posts twice.** Delivery history is kept per destination and survives crashes and
   restarts; a new feed does not flood the channel with old entries.

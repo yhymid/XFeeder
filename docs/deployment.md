@@ -2,6 +2,8 @@
 
 **English** · [Polski](deployment.pl.md)
 
+With Docker instead: [docker.md](docker.md).
+
 Build on the target machine (or on one with the same or an older glibc). A
 binary built on a rolling-release distribution may not start on an older
 Ubuntu/Debian because of glibc symbol versions.

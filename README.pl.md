@@ -27,7 +27,7 @@
 
 ## Dlaczego XFeeder
 
-- **Jeden mały plik.** Napisany w Rust: bez Node.js, bez Dockera, nic nie trzeba instalować obok.
+- **Jeden mały plik.** Napisany w Rust: bez Node.js, nic nie trzeba instalować obok. Obrazy Dockera są opcjonalne ([docs/docker.pl.md](docs/docker.pl.md)).
 - **Lekki.** Około 35 MB pamięci i 1,5 % CPU przy 10 kanałach i 32 feedach.
 - **Nigdy nie wysyła dwa razy.** Historia wysyłek jest zapisywana osobno dla każdego celu
   i przetrwa awarie oraz restarty; nowy feed nie zasypuje kanału starymi wpisami.

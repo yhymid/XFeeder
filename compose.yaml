@@ -1,0 +1,57 @@
+# XFeeder with Docker Compose (see docs/docker.md).
+#
+#   mkdir -p data && cp config.json.example data/config.json && cp .env.example data/.env
+#   sudo chown -R 65532:65532 data          # the images run as UID 65532
+#   docker compose up -d                     # worker
+#   docker compose --profile dashboard up -d # + dashboard on 127.0.0.1:3000
+#
+# Image: XFEEDER_IMAGE=xfeeder:slim (default), xfeeder:scrapling or xfeeder:full,
+# built with docker/Dockerfile (`docker compose build` builds the one named here).
+
+x-xfeeder: &xfeeder
+  image: ${XFEEDER_IMAGE:-xfeeder:slim}
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    target: ${XFEEDER_TARGET:-slim}
+  restart: unless-stopped
+  init: true
+  # Longer than the worker's shutdown (it finishes sends and saves state).
+  stop_grace_period: 45s
+  volumes:
+    # A directory, never single files: state is written by rename.
+    - ./data:/data
+    # For the full image, keep SteamCMD and its Steam login:
+    # - steam-home:/home/xfeeder
+  tmpfs:
+    - /tmp
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  worker:
+    <<: *xfeeder
+    command: ["run", "--config", "/data/config.json", "--cache", "/data/cache.json"]
+
+  dashboard:
+    <<: *xfeeder
+    profiles: ["dashboard"]
+    command: ["dashboard", "--data-dir", "/data"]
+    environment:
+      XFEEDER_DASHBOARD_HOST: "0.0.0.0"
+      XFEEDER_DASHBOARD_PORT: "3000"
+      # Must match the address in the browser, port included.
+      XFEEDER_DASHBOARD_PUBLIC_ORIGIN: "http://127.0.0.1:3000"
+      # The worker is the other container: no Start/Stop here.
+      XFEEDER_DASHBOARD_WORKER_CONTROL: "off"
+      # Required when listening on 0.0.0.0. Better put it in data/.env.
+      # XFEEDER_DASHBOARD_PASSWORD: "${XFEEDER_DASHBOARD_PASSWORD:?set a password}"
+    ports:
+      # Only this machine; from elsewhere: ssh -L 3000:127.0.0.1:3000 user@server
+      - "127.0.0.1:3000:3000"
+
+# volumes:
+#   steam-home:

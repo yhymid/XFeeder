@@ -1,0 +1,86 @@
+name: Docker images
+
+# Builds the three images from docker/Dockerfile and pushes them to
+# ghcr.io/<owner>/xfeeder. Run by hand only, for a release (see docs/docker.md):
+#   <version>, latest              slim       (linux/amd64, linux/arm64)
+#   <version>-scrapling, scrapling scrapling  (linux/amd64)
+#   <version>-full, full           full       (linux/amd64; SteamCMD is x86 only)
+# A new ghcr.io package starts private; make it public in the package settings.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version tag, e.g. 3.1 (must match the release)"
+        required: true
+      latest:
+        description: "Also move the latest / scrapling / full tags"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: slim
+            suffix: ""
+            moving: latest
+            platforms: linux/amd64,linux/arm64
+          - target: scrapling
+            suffix: "-scrapling"
+            moving: scrapling
+            platforms: linux/amd64
+          - target: full
+            suffix: "-full"
+            moving: full
+            platforms: linux/amd64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ $VERSION =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] || { echo "version must look like 3.1"; exit 1; }
+          grep -qE "^## ${VERSION//./\\.} - " CHANGELOG.md || { echo "no CHANGELOG.md heading for $VERSION"; exit 1; }
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: contains(matrix.platforms, 'arm64')
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags
+        id: tags
+        env:
+          VERSION: ${{ inputs.version }}
+          LATEST: ${{ inputs.latest }}
+          SUFFIX: ${{ matrix.suffix }}
+          MOVING: ${{ matrix.moving }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          image="ghcr.io/${OWNER,,}/xfeeder"
+          tags="$image:$VERSION$SUFFIX"
+          if [[ $LATEST == true ]]; then tags="$tags,$image:$MOVING"; fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platforms }}
+          build-args: GIT_COMMIT=${{ steps.tags.outputs.commit }}
+          tags: ${{ steps.tags.outputs.tags }}
+          push: true
+          sbom: true
+          provenance: mode=max

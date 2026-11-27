@@ -1,0 +1,16 @@
+# Build context for docker/Dockerfile: sources only, never local data or secrets.
+.git
+target
+debug
+AGENTS.md
+CLAUDE.md
+.env
+*.env
+!.env.example
+config.json
+cache.json*
+sent.json*
+steam_pics*
+*.jsonl
+scrapling/.venv
+scrapling/__pycache__

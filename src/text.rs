@@ -226,6 +226,13 @@ pub fn html_to_rich(input: &str) -> String {
     static HEADING: OnceLock<Regex> = OnceLock::new();
     static BOLD_LINE: OnceLock<Regex> = OnceLock::new();
     static ANCHOR: OnceLock<Regex> = OnceLock::new();
+    // The private-use characters below mark headings, links and kept bold
+    // while a text is built; a feed must not be able to send them.
+    let cleaned: String = input
+        .chars()
+        .filter(|c| !('\u{E010}'..='\u{E016}').contains(c))
+        .collect();
+    let input = cleaned.as_str();
     // `<hN>`, and Steam's RSS form `<div class="bb_h1">` (557 of 564
     // headings in the 11 Steam RSS feeds, 27.11).
     let html = re(
@@ -281,14 +288,145 @@ pub fn html_to_rich(input: &str) -> String {
     out.join("\n")
 }
 
+/// Feed text as Discord markdown that shows exactly what the feed says:
+/// `*`, `_`, `~`, `|`, `` ` `` and `\` are escaped (censored names like
+/// `C***p` no longer turn bold), so are `[`/`]` of a fake masked link and
+/// `<@…>`/`<#…>`/`<t:…>` syntax. Bare URLs stay as they are (Discord links
+/// them; a `\` would break them), and a balanced `**bold**` or `` `code` ``
+/// span the author wrote is kept.
+pub fn escape_markdown(text: &str) -> String {
+    static URL: OnceLock<Regex> = OnceLock::new();
+    static KEEP: OnceLock<Regex> = OnceLock::new();
+    let url = re(&URL, r"https?://[^\s<>]+[^\s<>.,;:!?)\]]");
+    let keep = re(
+        &KEEP,
+        r"\*\*[^*\s](?:[^*\n]{0,98}[^*\s])?\*\*|`[^`\n]{1,80}`",
+    );
+    let fake_link = text.contains("](");
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut last = 0;
+    let plain = |part: &str, out: &mut String| {
+        let mut kept = 0;
+        // Only a span the author meant: it starts and ends at a word
+        // boundary ("C***p, q***q" is not "**p, q**").
+        let edge =
+            |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric() && c != '*' && c != '\\');
+        for span in keep.find_iter(part).filter(|m| {
+            edge(part[..m.start()].chars().next_back()) && edge(part[m.end()..].chars().next())
+        }) {
+            escape_plain(&part[kept..span.start()], fake_link, out);
+            out.push_str(span.as_str());
+            kept = span.end();
+        }
+        escape_plain(&part[kept..], fake_link, out);
+    };
+    for found in url.find_iter(text) {
+        plain(&text[last..found.start()], &mut out);
+        out.push_str(found.as_str());
+        last = found.end();
+    }
+    plain(&text[last..], &mut out);
+    out
+}
+
+fn escape_plain(part: &str, brackets: bool, out: &mut String) {
+    let mut chars = part.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' | '*' | '_' | '~' | '|' | '`' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '[' | ']' if brackets => {
+                out.push('\\');
+                out.push(c);
+            }
+            '<' if chars
+                .peek()
+                .is_some_and(|n| matches!(n, '@' | '#' | ':' | 't' | 'a' | '/')) =>
+            {
+                out.push_str("\\<");
+            }
+            _ => out.push(c),
+        }
+    }
+    // Visual only: allowed_mentions already stops pings.
+    if out.contains("@everyone") || out.contains("@here") {
+        let fixed = out
+            .replace("@everyone", "@\u{200B}everyone")
+            .replace("@here", "@\u{200B}here");
+        *out = fixed;
+    }
+}
+
+/// Markdown a line would start with by accident: `# `, `-# `, `> `, `1. `.
+fn escape_line_start(line: String) -> String {
+    static START: OnceLock<Regex> = OnceLock::new();
+    let start = re(&START, r"^(?:(#{1,3}) |(-#) |(>{1,3}) |(\d{1,4})([.)]) )");
+    let Some(c) = start.captures(&line) else {
+        return line;
+    };
+    let end = c.get(0).map_or(0, |m| m.end());
+    let head = if let Some(h) = c.get(1) {
+        format!("\\{} ", h.as_str())
+    } else if c.get(2).is_some() {
+        "\\-# ".to_string()
+    } else if let Some(q) = c.get(3) {
+        format!("\\{} ", q.as_str())
+    } else {
+        format!("{}\\{} ", &c[4], &c[5])
+    };
+    format!("{head}{}", &line[end..])
+}
+
 fn rich_line(line: &str) -> Option<String> {
     static LINK: OnceLock<Regex> = OnceLock::new();
     let link = re(
         &LINK,
         "\u{E012}([^\u{E013}]*)\u{E013}([^\u{E014}]*)\u{E014}",
     );
+    // Decorative rules ("______", "=====") are not text.
+    static RULE: OnceLock<Regex> = OnceLock::new();
+    if re(&RULE, r"^\s*[_\-=~*]{5,}\s*$").is_match(line) {
+        return None;
+    }
+    // Bold the author wrote around whole phrases, links included
+    // (Cursor: "**[Google Drive](…):** search files"), is kept: its `**`
+    // become a marker that escaping leaves alone.
+    static AUTHOR_BOLD: OnceLock<Regex> = OnceLock::new();
+    let edge = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric() && c != '*' && c != '\\');
+    let bold = re(
+        &AUTHOR_BOLD,
+        r"\*\*[^*\s][^*]{0,300}?[^*\s]\*\*|\*\*[^*\s]\*\*",
+    );
+    let mut marked = String::with_capacity(line.len());
+    let mut last = 0;
+    for m in bold.find_iter(line) {
+        if !(edge(line[..m.start()].chars().next_back()) && edge(line[m.end()..].chars().next())) {
+            continue;
+        }
+        marked.push_str(&line[last..m.start()]);
+        marked.push(AUTHOR_BOLD_MARK);
+        marked.push_str(&m.as_str()[2..m.len() - 2]);
+        marked.push(AUTHOR_BOLD_MARK);
+        last = m.end();
+    }
+    marked.push_str(&line[last..]);
+    let line = marked.as_str();
+    // Feed text is escaped piece by piece; the links and bold built around
+    // it are not.
+    let mut escaped = String::with_capacity(line.len() + 8);
+    let mut last = 0;
+    for found in link.find_iter(line) {
+        escaped.push_str(&escape_markdown(&line[last..found.start()]));
+        escaped.push_str(found.as_str());
+        last = found.end();
+    }
+    escaped.push_str(&escape_markdown(&line[last..]));
+    let line = escaped.as_str();
     let line = link.replace_all(line, |c: &regex::Captures| {
-        let text = c[1].trim().replace(['[', ']'], "");
+        let raw = c[1].trim().replace(['[', ']'], "");
+        let text = escape_markdown(&raw);
         let url = c[2].trim();
         let web = url.starts_with("https://") || url.starts_with("http://");
         // Text that looks like an address shows the real one: no
@@ -300,7 +438,7 @@ fn rich_line(line: &str) -> Option<String> {
         );
         if !web || url.contains([' ', ')']) {
             text
-        } else if text.is_empty() || text == url || address.is_match(&text) {
+        } else if raw.is_empty() || raw == url || address.is_match(&raw) {
             url.to_string()
         } else {
             format!("[{text}]({url})")
@@ -337,8 +475,12 @@ fn rich_line(line: &str) -> Option<String> {
     if line.is_empty() {
         return None;
     }
+    let line = escape_line_start(line).replace(AUTHOR_BOLD_MARK, "**");
     Some(named_url(&line).unwrap_or(line))
 }
+
+/// Stands for an author's `**` while a line is escaped.
+const AUTHOR_BOLD_MARK: char = '\u{E016}';
 
 /// A line that is only a URL becomes a short named link.
 fn named_url(line: &str) -> Option<String> {
@@ -368,6 +510,18 @@ pub fn cut_text(text: &str, max: usize) -> String {
     if js::len16(text) <= max {
         return text.to_string();
     }
+    let out = cut_raw(text, max);
+    // An escape cut off from its character would escape the "…".
+    let body = out.trim_end_matches(['…', '\n']);
+    let slashes = body.len() - body.trim_end_matches('\\').len();
+    if slashes % 2 == 1 {
+        let rest = &out[body.len()..];
+        return format!("{}{rest}", &body[..body.len() - 1]);
+    }
+    out
+}
+
+fn cut_raw(text: &str, max: usize) -> String {
     let cut = js::prefix16(text, max.saturating_sub(2));
     // The cut already ends a word or a line.
     let next = text[cut.len()..].chars().next();
@@ -666,6 +820,61 @@ pub fn discord_time(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feed_text_is_escaped_for_discord() {
+        let r = |html: &str| html_to_rich(html);
+        assert_eq!(
+            r("<p># PST 11.25.2026 – revised</p>"),
+            "\\# PST 11.25.2026 – revised"
+        );
+        assert_eq!(r("<p>-# small</p>"), "\\-# small");
+        assert_eq!(r("<p>&gt; A: When Ready</p>"), "\\> A: When Ready");
+        assert_eq!(r("<p>C***pBiet, q***q</p>"), "C\\*\\*\\*pBiet, q\\*\\*\\*q");
+        assert_eq!(
+            r("<h2>*** INCOMING ***</h2>"),
+            "**\\*\\*\\* INCOMING \\*\\*\\***"
+        );
+        assert_eq!(
+            r("<p>node_modules/, operator.local.*, *.sqlite*</p>"),
+            "node\\_modules/, operator.local.\\*, \\*.sqlite\\*"
+        );
+        assert_eq!(
+            r("<p>See https://en.wikipedia.org/wiki/Foo_(bar)_baz now</p>"),
+            "See https://en.wikipedia.org/wiki/Foo_(bar)_baz now"
+        );
+        assert_eq!(
+            r("<p>[click](https://evil.example)</p>"),
+            "\\[click\\](https://evil.example)"
+        );
+        assert_eq!(
+            r("<p>Ping &lt;@&amp;123&gt; at &lt;t:1795093098:R&gt; @everyone</p>"),
+            "Ping \\<@&123> at \\<t:1795093098:R> @\u{200B}everyone"
+        );
+        assert_eq!(
+            r("<p>**Start voice chat** lets you</p>"),
+            "**Start voice chat** lets you"
+        );
+        assert_eq!(r("<p>a ** b</p>"), "a \\*\\* b");
+        assert_eq!(r("<p>______________________________</p><p>x</p>"), "x");
+        assert_eq!(
+            r("<p>1. Back up saves</p><p>2. Right-click</p>"),
+            "1\\. Back up saves\n2\\. Right-click"
+        );
+        assert_eq!(r("<p>- White Fox</p>"), "- White Fox");
+        assert_eq!(r("<p>Use `npx init` now</p>"), "Use `npx init` now");
+        assert_eq!(
+            r(r#"<p><a href="https://a.example/x">snake_case beta</a></p>"#),
+            "[snake\\_case beta](https://a.example/x)"
+        );
+        assert_eq!(
+            r(r#"<p>**<a href="https://c.example/gd">Google Drive</a>:** search files</p>"#),
+            "**[Google Drive](https://c.example/gd):** search files"
+        );
+        // An escape never dangles before the "…" of a cut.
+        let cut = cut_text("aaaaaaaa \\*bbbbbbbbbbbbbbbbbbbbbbbb", 12);
+        assert!(!cut.contains("\\…"), "{cut}");
+    }
 
     #[test]
     fn the_first_real_picture_is_the_post_image() {

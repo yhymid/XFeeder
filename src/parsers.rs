@@ -77,7 +77,11 @@ pub(crate) fn snippet(raw: &str, max: usize) -> String {
 /// [`crate::text::html_to_rich`]); `contentSnippet` stays as it was, because
 /// entries without a link or guid are identified by it.
 pub(crate) fn rich(raw: &str) -> String {
-    crate::text::cut_text(&crate::text::html_to_rich(raw), 4000)
+    // Long @mention lists are shortened before the cut, or the cut keeps
+    // a page of links and the shortening never applies (OpenClaw).
+    let text = crate::text::html_to_rich(raw);
+    let text: Vec<String> = text.lines().map(short_mentions).collect();
+    crate::text::cut_text(&text.join("\n"), 4000)
 }
 
 fn with_text(mut entry: Value, raw: &str) -> Value {
@@ -92,7 +96,13 @@ fn with_text(mut entry: Value, raw: &str) -> Value {
 /// that only repeats the title (Mesa, GitHub), and for GitHub join lines the
 /// author wrapped at ~72 columns ("…, gated\nby GPU generation").
 fn tidy_text(text: &str, title: &str, rejoin: bool) -> String {
-    let plain = |s: &str| s.trim().trim_matches('*').trim().to_lowercase();
+    let plain = |s: &str| {
+        s.trim()
+            .trim_matches('*')
+            .trim()
+            .replace('\\', "")
+            .to_lowercase()
+    };
     let short: Vec<String> = text.lines().map(short_mentions).collect();
     let mut lines: Vec<&str> = short.iter().map(String::as_str).collect();
     if lines
@@ -132,7 +142,7 @@ fn tidy_text(text: &str, title: &str, rejoin: bool) -> String {
 fn short_mentions(line: &str) -> String {
     const SHOWN: usize = 12;
     static MENTION: OnceLock<Regex> = OnceLock::new();
-    let mention = re(&MENTION, r"\[(@[\w.-]+)\]\([^)\s]+\)");
+    let mention = re(&MENTION, r"\[(@(?:[\w.-]|\\_)+)\]\([^)\s]+\)");
     let names: Vec<&str> = mention
         .captures_iter(line)
         .map(|c| c.get(1).map_or("", |m| m.as_str()))

@@ -79,8 +79,21 @@ fn post_body(entry: &Value) -> String {
         Some(text) if length > 0 && !text.trim().is_empty() => {
             crate::text::cut_text(text.trim(), length)
         }
-        _ => truncate(get(entry, "contentSnippet"), 800),
+        // The snippet is plain text (Telegram uses it as is): escaped here.
+        _ => crate::text::escape_markdown(&truncate(get(entry, "contentSnippet"), 800)),
     }
+}
+
+/// A title on one line, without HTML (Gitea/Forgejo activity titles carry
+/// `<a href>`), as Discord markdown that shows it literally.
+fn post_title(title: &Value) -> String {
+    let text = js::to_string(js::or(&[title, &json!("New entry")]));
+    let text = if text.contains("</") || text.contains("<a ") {
+        crate::text::strip_html(&text)
+    } else {
+        text
+    };
+    crate::text::escape_markdown(&js::collapse_ws(&text).trim().replace('\n', " "))
 }
 
 fn safe_text(value: &Value, max: usize) -> String {
@@ -372,10 +385,7 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         c.button("Open", link);
         label = format!("Discord message from {}", js::to_string(&username));
     } else {
-        let heading = format!(
-            "📰 **{}**",
-            js::to_string(js::or(&[title, &json!("New entry")]))
-        );
+        let heading = format!("📰 **{}**", post_title(title));
         let body = post_body(entry);
         let image = get(entry, "enclosure");
         if crate::text::is_avatar(image) {
@@ -391,7 +401,10 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         // Who wrote it, or else which site it is from (feeds like Steam,
         // SteamDB and onet name no author), and when.
         let who = if truthy(get(entry, "author")) {
-            Some(format!("👤 {}", js::to_string(get(entry, "author"))))
+            Some(format!(
+                "👤 {}",
+                crate::text::escape_markdown(&js::to_string(get(entry, "author")))
+            ))
         } else {
             link.as_str()
                 .and_then(|l| url::Url::parse(l).ok())

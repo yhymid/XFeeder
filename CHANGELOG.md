@@ -180,6 +180,15 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Discord posts show feed text as written (feed review F06, F10). Markdown characters from
+  the feed are escaped: censored names like `C***p` in ban lists no longer turn bold or
+  italic (195 such names on 27.11), a line starting with `# `, `-# ` or `> ` is no longer a
+  heading or quote, `1. ` stays text, a literal `[text](url)` is not a link, and
+  `<@…>`/`<t:…>` syntax is shown, not rendered. Bare URLs, the generated headings and links,
+  and bold or `` `code` `` the author wrote (Cursor's changelog) are kept. Titles lose HTML
+  tags (Gitea activity) and are escaped too, and so are authors. Decorative lines
+  (`______`) are dropped. Long `@mention` lists are shortened before the text is cut.
+  Older posts are not changed.
 - Post text and images (feed review F02, F05, F08):
   - Steam RSS headings (`<div class="bb_h1">`, 557 of 564 in the 11 Steam RSS feeds) are
     bold like other headings;

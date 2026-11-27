@@ -316,11 +316,18 @@ pub fn normalize_network(input: &Value) -> Result<NetworkConfig, Vec<Issue>> {
     let idle = integer("idleTimeoutMs", 0, 2_147_000_000, &mut errors)
         .flatten()
         .unwrap_or(15_000);
-    let deadline = integer("requestDeadlineMs", 1, 2_147_000_000, &mut errors).flatten();
+    // Defaults keep one bad server from holding a request forever or
+    // filling memory (a 0.25 MB gzip answer can decode to 256 MiB). The
+    // largest real feed seen is under 1 MB (27.11, 278 feeds).
+    let deadline = integer("requestDeadlineMs", 1, 2_147_000_000, &mut errors)
+        .flatten()
+        .or(Some(120_000));
     let grace = integer("shutdownGraceMs", 0, 60_000, &mut errors)
         .flatten()
         .unwrap_or(5_000);
-    let max_bytes = integer("maxResponseBytes", 1, 268_435_456, &mut errors).flatten();
+    let max_bytes = integer("maxResponseBytes", 1, 268_435_456, &mut errors)
+        .flatten()
+        .or(Some(16 * 1024 * 1024));
     let outbound = match get("outboundPolicy") {
         None => "unrestricted".to_string(),
         Some(Value::String(text)) if text == "unrestricted" || text == "public-only" => {

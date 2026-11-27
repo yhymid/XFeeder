@@ -723,10 +723,10 @@ value is a config **error**, reported by `--check-config`.
 | `scraplingResourceSaving` | `true` | – | The browser does not load images or fonts (does not apply to solving Cloudflare). |
 | `setupTimeoutMs` | `15000` | 0–… | Connection setup timeout. |
 | `idleTimeoutMs` | `15000` | 0–… | How long silence may last during a download. |
-| `requestDeadlineMs` | none | 1–… | A hard time limit for a whole request. |
+| `requestDeadlineMs` | 120000 | 1–… | A hard time limit for a whole request, retries included. |
 | `shutdownGraceMs` | `5000` | 0–60000 | How much time running tasks get when shutting down. |
 | `outboundPolicy` | `unrestricted` | `unrestricted`, `public-only` | `public-only` blocks private and local addresses (e.g. `127.0.0.1`, `192.168.…`) and disables Scrapling. |
-| `maxResponseBytes` | none | 1–268435456 | Maximum response size. |
+| `maxResponseBytes` | 16777216 (16 MiB) | 1–268435456 | Maximum response size after decompression. |
 
 ```json
 "network": { "networkFriendlyMode": true, "requestDeadlineMs": 60000 }

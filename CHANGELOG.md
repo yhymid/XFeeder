@@ -136,6 +136,12 @@ section below as its description.
   - HTML entities such as `&nbsp;` or `&eacute;` are resolved, and unknown ones stay as
     written, where before one of them rejected the whole feed;
   - text stays text: "1.10" no longer becomes "1.1", and 20-digit ids keep their digits.
+- Network defaults: a request has 120 s in total (`requestDeadlineMs`) and at most 16 MiB
+  after decompression (`maxResponseBytes`); both were unlimited, so a slow server could hold
+  a request forever and a 0.25 MB gzip answer could grow memory to 1.8 GB. A `Retry-After`
+  longer than 30 s is no longer waited out inside the request (one `429` with
+  `Retry-After: 3600` held the whole schedule for about 2 hours); the feed fails that check
+  and is tried at the next one.
 
 ### Changed
 - Faster parsing, measured on all 278 configured feeds (27.11 download, one pass on a Steam

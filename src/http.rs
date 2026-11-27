@@ -737,6 +737,9 @@ fn jitter() -> u64 {
     }
 }
 
+/// Longest `Retry-After` waited out inside one request.
+const MAX_RETRY_AFTER_MS: u64 = 30_000;
+
 /// GET with up to three attempts for transient failures (`getWithFallback`).
 pub async fn get(get: Get<'_>) -> Result<Response, HttpError> {
     let url = parse_url(get.url)?;
@@ -762,7 +765,18 @@ pub async fn get(get: Get<'_>) -> Result<Response, HttpError> {
                     );
                     return Ok(response);
                 }
-                Err(error) if error.retryable() && attempt + 1 < max_attempts => {
+                Err(error)
+                    if error.retryable()
+                        && attempt + 1 < max_attempts
+                        // A long Retry-After is not waited out inside one
+                        // request (it held the whole schedule): the feed
+                        // just fails this check and is tried again later.
+                        && error
+                            .response()
+                            .filter(|r| matches!(r.status, 429 | 503))
+                            .and_then(|r| retry_after_ms(&r.headers))
+                            .is_none_or(|ms| ms <= MAX_RETRY_AFTER_MS) =>
+                {
                     let status = error.status();
                     let delay = match error
                         .response()

@@ -6,6 +6,17 @@
 
 **Newsy, aktualizacje gier, commity i filmy na Discordzie i Telegramie w chwili, gdy się pojawią.**
 
+</div>
+
+XFeeder to jeden program działający na Twoim serwerze. Każdy kanał w `config.json` ma listę
+feedów (RSS, Atom, JSON Feed, YouTube, GitHub, Steam) i miejsce, gdzie trafiają posty
+(webhook Discorda, czat na Telegramie). XFeeder sprawdza każdy feed co ustalony czas,
+zostawia to, co przechodzi przez filtry kanału, wysyła wpisy, których jeszcze nie wysłał,
+i zapisuje je na dysku, więc po restarcie nic nie przychodzi drugi raz. Zmiany w
+`config.json` i `.env` działają bez restartu; panel WWW pokazuje i zmienia te same ustawienia.
+
+<div align="center">
+
 ![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust)
 ![Version](https://img.shields.io/badge/version-3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -47,69 +58,7 @@
 wydania, gałęzie), newsy ze Steama i SteamDB, każda strona, która linkuje swój feed, kanały Discorda.
 **Cele:** webhooki Discorda (kanały i wątki forum), Telegram (czaty, kanały, tematy).
 
-### Jak działa „nigdy nie wysyła dwa razy”
-
-Każdy wpis dostaje identyfikator, pierwszy z tych, który istnieje:
-
-1. klucz nadany przez źródło (buildy Steama, notatki Minecrafta);
-2. jego link, oczyszczony z `utm_*` i innych parametrów śledzących oraz z `#…`, więc
-   `https://strona.pl/post?utm_source=rss` i `https://strona.pl/post` to ten sam wpis;
-3. jego guid;
-4. skrót z tytułu, daty, autora i tekstu, dla wpisów bez linku i guida.
-
-Wysłane identyfikatory są trzymane osobno dla każdego kanału i celu (Discord, Telegram) w
-`cache.json`, do 2000 na feed, a plik jest zapisywany od razu po każdej udanej wysyłce
-(przez plik tymczasowy i zmianę nazwy, więc awaria nie zostawi go w połowie zapisanego).
-Z jednego `cache.json` może korzystać tylko jeden worker.
-
-Przykłady:
-
-- **Nowy feed** z 50 starymi wpisami: pierwsze sprawdzenie oznacza je jako widziane i nic
-  nie wysyła albo tylko `FirstRunSend` najnowszych. Kanał nie zostaje zasypany.
-- **Poprawiony wpis** (nowy tytuł lub tekst, ten sam link): nie idzie drugi raz.
-- **Feed z dwoma wpisami pod jednym linkiem** (kernel.org, strony z notatkami wydań): każdy
-  ma od tej pory własny identyfikator (`link#guid`), więc żaden nie wraca, gdy drugi zniknie.
-- **Restart albo awaria**: historia jest na dysku, więc po restarcie idą tylko naprawdę nowe
-  wpisy.
-
-Ograniczenia:
-
-- Strona, która zmieni linki starych wpisów (nowy schemat adresów, nowa domena), zrobi z
-  nich nowe wpisy.
-- Historia należy do adresu feedu: zmiana adresu zaczyna nową historię i stare wpisy
-  powstrzymuje tylko zasada pierwszego sprawdzenia (`FirstRunSend`).
-- Feed, który pokazuje naraz więcej niż 2000 wpisów, może ponowić wpisy, które wypadły z
-  historii.
-- Jeśli worker zostanie zabity dokładnie między przyjęciem posta przez Discorda a zapisem
-  historii, ten jeden post może przyjść ponownie.
-
-### Jak pobierane są strony za Cloudflare
-
-1. Każdy feed najpierw jest pobierany zwykłym zapytaniem (ułamek sekundy).
-2. Dopiero gdy strona odpowie 403/429/503 albo stroną sprawdzania („Just a moment…”),
-   XFeeder otwiera prawdziwą przeglądarkę przez [Scrapling](scrapling/README.md) (Chromium
-   z Patchright), która przechodzi sprawdzenie Cloudflare jak odwiedzający, albo pyta
-   FlareSolverr. Feedy, które nie blokują, nigdy nie uruchamiają przeglądarki.
-3. Z `Scrapling.ReuseClearance` ciasteczko zdobyte przez przeglądarkę służy zwykłym
-   zapytaniom, dopóki nie wygaśnie.
-
-Przykład z produkcji: boop.pl przez przeglądarkę to około 26 s na sprawdzenie, a z
-ponownie użytym ciasteczkiem 8–11 ms; gry-wideo.pl przestał blokować i z `"fallback": true`
-sam wrócił z 10,5 s do 0,3 s.
-
-Ograniczenia:
-
-- Scrapling musi być zainstalowany obok XFeedera (albo użyty obraz Dockera `scrapling`):
-  około 1,6 GB z Chromium i kilkaset MB pamięci, gdy przeglądarka działa.
-- Przechodzi automatyczne sprawdzenie Cloudflare. Strona, która każe człowiekowi rozwiązać
-  CAPTCHA, reguła zapory przeciw IP serwera (403 bez `cf-mitigated`) albo inne usługi
-  (DataDome, Akamai) mogą dalej blokować.
-- Służy do publicznych feedów, które otwiera przeglądarka; nie loguje się i nie omija
-  paywalli. Pamiętaj o regulaminie strony.
-
-Krok po kroku: [przewodnik konfiguracji, poziom 3](docs/configuration.pl.md#poziom-3-trudny-strony-które-blokują-boty-cloudflare).
-
-## Szybki start
+## Szybka instalacja
 
 Najprościej: pobierz `XFeeder.zip` z [Releases](https://github.com/yhymid/XFeeder/releases/latest),
 rozpakuj i postępuj według `Instruction.pl.md` w środku (gotowy plik dla Linuksa x86_64). Ze źródeł:
@@ -137,20 +86,54 @@ Najmniejszy działający `config.json`:
 }
 ```
 
+Aktualizacja z 2.x: zostaw `config.json`, `.env` i `cache.json` i uruchom `xfeeder` w tym
+samym folderze; nic nie zostanie wysłane ponownie.
+
+## Instalacja w Dockerze
+
+```sh
+git clone https://github.com/yhymid/XFeeder && cd XFeeder
+mkdir -p data
+cp config.json.example data/config.json   # potem go edytuj
+cp .env.example data/.env                 # webhooki, tokeny
+sudo chown -R 65532:65532 data            # obrazy działają jako UID 65532
+docker compose build && docker compose up -d
+```
+
+Trzy obrazy: `slim` (~17 MB), `scrapling` (z przeglądarką dla stron za Cloudflare) i `full`
+(z SteamCMD dla `steampics://`). Szczegóły: [docs/docker.pl.md](docs/docker.pl.md).
+
+## Omijanie Cloudflare
+
+Każdy feed jest najpierw pobierany zwykłym zapytaniem. Dopiero gdy strona odpowie blokadą albo
+stroną z wyzwaniem („Just a moment…”), XFeeder otwiera prawdziwą przeglądarkę przez
+[Scrapling](scrapling/README.pl.md) albo pyta FlareSolverr, a zdobyte ciasteczko może
+wykorzystać w zwykłych zapytaniach. Zmierzone na produkcji: boop.pl przez przeglądarkę to
+około 26 s, z ciasteczkiem 8–11 ms. Przechodzi automatyczne sprawdzenie Cloudflare, nie
+CAPTCHA, którą musi rozwiązać człowiek. Jak to działa: [docs/architecture.pl.md](docs/architecture.pl.md#jak-pobierane-są-strony-za-cloudflare);
+krok po kroku: [przewodnik konfiguracji, poziom 3](docs/configuration.pl.md#poziom-3-trudny-strony-które-blokują-boty-cloudflare).
+
+## Bez duplikatów
+
+Każdy wpis dostaje identyfikator: klucz od źródła, a jeśli go nie ma, link bez parametrów
+śledzących, guid albo skrót treści. Identyfikatory potwierdzonych wysyłek są zapisywane osobno
+dla kanału i celu zaraz po każdej wysyłce, więc restart, awaria, poprawiony wpis ani link z
+`?utm_source=` nie wysyłają niczego ponownie. Nowy feed nie wysyła starych wpisów albo tylko
+najnowsze `FirstRunSend`. Przykłady i ograniczenia:
+[docs/architecture.pl.md](docs/architecture.pl.md#jak-działa-nigdy-nie-wysyła-dwa-razy).
+
 ## Dokumentacja
 
 | | |
 |---|---|
 | [Konfiguracja](docs/configuration.pl.md) | Ustawienie łatwe → średnie → trudne (Cloudflare) i opis każdej opcji |
 | [Dashboard](docs/dashboard.pl.md) | Każda strona panelu WWW, dostęp przez SSH, bezpieczeństwo |
+| [Docker](docs/docker.pl.md) | Trzy obrazy, folder danych, panel i buildy Steama w Dockerze |
 | [Wdrożenie](docs/deployment.pl.md) | Budowanie na serwerze i uruchamianie przez systemd ([pliki unit](deploy/systemd)) |
 | [Scrapling](scrapling/README.pl.md) | Instalacja przeglądarki dla stron blokujących boty |
-| [Architektura](docs/architecture.pl.md) | Jak zorganizowany jest kod |
+| [Architektura](docs/architecture.pl.md) | Jak zorganizowany jest kod, jak XFeeder unika duplikatów, jak pobiera strony za Cloudflare |
 | [Plan rozwoju](docs/roadmap.pl.md) | Co wzięto z podobnych projektów i co może dojść |
 | [Lista zmian](CHANGELOG.md) | Co się zmieniło, z pomiarami (po angielsku) |
-
-Aktualizacja z 2.x: zostaw `config.json`, `.env` i `cache.json` i uruchom `xfeeder` w tym
-samym folderze; nic nie zostanie wysłane ponownie.
 
 ## Licencja
 

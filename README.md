@@ -6,6 +6,17 @@
 
 **News, game updates, commits and videos delivered to Discord and Telegram the moment they are found.**
 
+</div>
+
+XFeeder is one program that runs on your server. Every channel in `config.json` lists
+feeds (RSS, Atom, JSON Feed, YouTube, GitHub, Steam) and where to post them (a Discord
+webhook, a Telegram chat). XFeeder checks each feed at its interval, keeps what passes the
+channel's filters, posts entries it has not posted before, and remembers them on disk, so
+nothing comes twice after a restart. Changes to `config.json` and `.env` apply without a
+restart; the web dashboard shows and edits the same settings.
+
+<div align="center">
+
 ![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust)
 ![Version](https://img.shields.io/badge/version-3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -48,70 +59,7 @@ releases, branches), Steam and SteamDB news, any page that links its feed, Disco
 **Destinations:** Discord webhooks (channels and forum threads), Telegram (chats, channels,
 topics).
 
-### How "never posts twice" works
-
-Every entry gets an identity, the first of these that exists:
-
-1. a key the source gives it (Steam builds, Minecraft patch notes);
-2. its link, cleaned of `utm_*` and other tracking parameters and of `#…`, so
-   `https://site.com/post?utm_source=rss` and `https://site.com/post` are the same entry;
-3. its guid;
-4. a hash of title, date, author and text, for entries with neither.
-
-The identities already sent are kept per channel and per destination (Discord, Telegram) in
-`cache.json`, up to 2000 per feed, and the file is rewritten right after each successful
-send (written to a temporary file and renamed, so a crash never leaves it half written).
-Only one worker can use a `cache.json` at a time.
-
-Examples:
-
-- **A new feed** with 50 old entries: the first check marks them all as seen and posts none,
-  or only the newest `FirstRunSend` of them. The channel is not flooded.
-- **An edited post** (new title or text, same link): not posted again.
-- **A feed that lists two entries under one link** (kernel.org, release notes pages): each
-  keeps its own identity (`link#guid`) from then on, so neither is posted again when the
-  other one disappears.
-- **A restart or a crash**: history is on disk, so after the restart only really new
-  entries are sent.
-
-Limits:
-
-- A site that changes the links of its old entries (a new address scheme, a new domain)
-  makes them new entries.
-- History belongs to the feed URL: changing a feed's address starts a new history, and only
-  the first-check rule (`FirstRunSend`) keeps the old entries from being posted.
-- A feed that shows more than 2000 entries at a time can repost entries that fell out of
-  the history.
-- If the worker is killed in the moment between Discord accepting a post and the history
-  being saved, that one post can come again.
-
-### How sites behind Cloudflare are fetched
-
-1. Every feed is first fetched with a plain request (a fraction of a second).
-2. Only when the site answers 403/429/503 or with a challenge page ("Just a moment…"),
-   XFeeder opens a real browser through [Scrapling](scrapling/README.md) (Chromium with
-   Patchright), which passes Cloudflare's check like a visitor would, or asks
-   FlareSolverr. Feeds that never block never start a browser.
-3. With `Scrapling.ReuseClearance`, the cookie the browser got is reused for plain
-   requests until it expires.
-
-Example from production: boop.pl takes about 26 s per check through the browser and 8–11 ms
-when the cookie is reused; gry-wideo.pl stopped blocking, and with `"fallback": true` went
-from 10.5 s back to 0.3 s on its own.
-
-Limits:
-
-- Scrapling must be installed next to XFeeder (or the `scrapling` Docker image used): about
-  1.6 GB with Chromium, and a few hundred MB of memory while a browser runs.
-- It passes Cloudflare's automatic check. A page that wants a person to solve a CAPTCHA,
-  a firewall rule against your server's IP (403 without `cf-mitigated`), or other services
-  (DataDome, Akamai) may still block.
-- It is meant for public feeds that a browser can open; it does not log in or get around
-  paywalls. Mind the site's terms.
-
-Step by step: [configuration guide, level 3](docs/configuration.md#level-3-hard-sites-that-block-bots-cloudflare).
-
-## Quick start
+## Quick Install
 
 The easiest way: download `XFeeder.zip` from [Releases](https://github.com/yhymid/XFeeder/releases/latest),
 unzip it and follow `Instruction.md` inside (a ready-to-run Linux x86_64 binary). From source:
@@ -139,20 +87,54 @@ The smallest working `config.json`:
 }
 ```
 
+Upgrading from 2.x: keep `config.json`, `.env` and `cache.json` and start `xfeeder` in the
+same folder; nothing is posted again.
+
+## Docker Install
+
+```sh
+git clone https://github.com/yhymid/XFeeder && cd XFeeder
+mkdir -p data
+cp config.json.example data/config.json   # then edit it
+cp .env.example data/.env                 # webhooks, tokens
+sudo chown -R 65532:65532 data            # the images run as UID 65532
+docker compose build && docker compose up -d
+```
+
+Three images: `slim` (~17 MB), `scrapling` (with a browser for Cloudflare sites) and `full`
+(with SteamCMD for `steampics://`). Details: [docs/docker.md](docs/docker.md).
+
+## Cloudflare Bypass
+
+Every feed is first fetched with a plain request. Only when a site answers with a block or a
+challenge page ("Just a moment…") does XFeeder open a real browser through
+[Scrapling](scrapling/README.md), or ask FlareSolverr, and it can reuse the cookie it got for
+plain requests. Measured in production: boop.pl takes about 26 s through the browser and
+8–11 ms with the reused cookie. It passes Cloudflare's automatic check, not a CAPTCHA that
+needs a person. How it works: [docs/architecture.md](docs/architecture.md#how-sites-behind-cloudflare-are-fetched);
+setup step by step: [configuration guide, level 3](docs/configuration.md#level-3-hard-sites-that-block-bots-cloudflare).
+
+## No Duplicate Feeds
+
+Each entry gets an identity: a key from the source, else its link without tracking
+parameters, else its guid, else a hash of its content. Identities of confirmed sends are
+saved per channel and destination right after each send, so a restart, a crash, an edited
+post or a link with `?utm_source=` does not post anything again. A new feed posts none of
+its old entries, or only the newest `FirstRunSend`. Examples and limits:
+[docs/architecture.md](docs/architecture.md#how-never-posts-twice-works).
+
 ## Documentation
 
 | | |
 |---|---|
 | [Configuration guide](docs/configuration.md) | Easy → medium → hard (Cloudflare) setup, and every setting explained |
 | [Dashboard](docs/dashboard.md) | Every page of the web dashboard, access over SSH, security |
+| [Docker](docs/docker.md) | The three images, data folder, dashboard and Steam builds in Docker |
 | [Deployment](docs/deployment.md) | Building on a server and running under systemd ([unit files](deploy/systemd)) |
 | [Scrapling](scrapling/README.md) | Installing the browser for sites that block bots |
-| [Architecture](docs/architecture.md) | How the code is organised |
+| [Architecture](docs/architecture.md) | How the code is organised, how duplicates are prevented, how Cloudflare sites are fetched |
 | [Roadmap](docs/roadmap.md) | What was taken from similar projects and what may come next |
 | [Changelog](CHANGELOG.md) | What changed, with measurements |
-
-Upgrading from 2.x: keep `config.json`, `.env` and `cache.json` and start `xfeeder` in the
-same folder; nothing is posted again.
 
 ## License
 

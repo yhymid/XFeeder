@@ -922,23 +922,18 @@ impl Runner {
                 .get("mode")
                 .and_then(Value::as_str)
                 .unwrap_or("anonymous");
-            if old_mode != mode && entry.get("flat").is_some() {
-                // The other mode sees other depots and branches: start over
-                // from this answer instead of posting the difference.
+            // The other mode sees other depots and branches. Only keys both
+            // answers have are compared, so a build both can see is still
+            // posted, and what only one mode shows is not "added"/"removed"
+            // (V10 F3: a switch used to drop every change since the last run).
+            let switched = old_mode != mode && entry.get("flat").is_some();
+            if switched {
                 crate::info!(
                     "SteamPics",
-                    "{} ({}): now read as {mode} (was {old_mode}); comparing from this run",
+                    "{} ({}): now read as {mode} (was {old_mode}); comparing only what both can see",
                     app_name(&app.flat, app.appid),
                     app.appid
                 );
-                let mut fresh = entry;
-                fresh.insert("change".into(), json!(app.change));
-                fresh.insert("name".into(), json!(app_name(&app.flat, app.appid)));
-                fresh.insert("flat".into(), json!(app.flat));
-                fresh.insert("mode".into(), json!(mode));
-                self.apps
-                    .insert(app.appid.to_string(), Value::Object(fresh));
-                continue;
             }
             let old_change = entry.get("change").and_then(Value::as_u64);
             // Change numbers only go up; a lower one is stale cached info, and
@@ -963,9 +958,27 @@ impl Runner {
                     .insert(app.appid.to_string(), Value::Object(entry));
                 continue;
             }
-            let old_flat: Option<BTreeMap<String, String>> = entry
+            let mut old_flat: Option<BTreeMap<String, String>> = entry
                 .get("flat")
                 .and_then(|f| serde_json::from_value(f.clone()).ok());
+            let shared_new: Option<BTreeMap<String, String>> = if switched {
+                let old = old_flat.take().unwrap_or_default();
+                let new: BTreeMap<String, String> = app
+                    .flat
+                    .iter()
+                    .filter(|(k, _)| old.contains_key(*k))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                old_flat = Some(
+                    old.into_iter()
+                        .filter(|(k, _)| app.flat.contains_key(k))
+                        .collect(),
+                );
+                Some(new)
+            } else {
+                None
+            };
+            let compare_with = shared_new.as_ref().unwrap_or(&app.flat);
             let mut events: Vec<Value> = match entry.get("events") {
                 Some(Value::Array(list)) => list.clone(),
                 _ => Vec::new(),
@@ -973,7 +986,7 @@ impl Runner {
             if let Some(old) = &old_flat
                 && old_change != Some(app.change)
             {
-                let mut d = diff(app.appid, app.change, old, &app.flat, ignore, now);
+                let mut d = diff(app.appid, app.change, old, compare_with, ignore, now);
                 let kinds: Vec<Value> = d
                     .events
                     .iter()
@@ -990,7 +1003,7 @@ impl Runner {
                         event["identityKey"] = json!(format!("{identity}#change:{}", app.change));
                     }
                 }
-                if changelists && d.events.is_empty() {
+                if changelists && d.events.is_empty() && !switched {
                     d.events
                         .push(changelist(app.appid, app.change, &app.flat, &d.raw, now));
                 }
@@ -1783,12 +1796,13 @@ mod tests {
     }
 
     #[test]
-    fn switching_login_mode_posts_nothing() {
+    fn switching_login_mode_posts_only_what_both_modes_see() {
         let mut runner = Runner::default();
         let apps = parse_output(&fixture());
         runner.apply(apps.clone(), None, true, 10);
         let before = runner.items(730).len();
-        // The account sees another build and a new branch: only a new baseline.
+        // The account also sees a `staff` branch (not a new branch), and the
+        // public build really changed in the meantime: that one is posted.
         let mut seen = apps.clone();
         seen[0].change += 1;
         seen[0]
@@ -1798,8 +1812,16 @@ mod tests {
             .flat
             .insert("depots/branches/public/buildid".into(), "26900000".into());
         runner.mode = "login".into();
-        assert!(runner.apply(seen.clone(), None, true, 20).is_empty());
-        assert_eq!(runner.items(730).len(), before);
+        runner.apply(seen.clone(), None, true, 20);
+        let items = runner.items(730);
+        assert_eq!(items.len(), before + 1, "{items:#?}");
+        let text = serde_json::to_string(&items).unwrap();
+        assert!(text.contains("26900000"));
+        assert!(
+            !text.contains("staff"),
+            "a branch only one mode sees is not \"added\""
+        );
+        let before = items.len();
         // Later changes in the same mode are compared as usual.
         let mut next = seen;
         next[0].change += 1;

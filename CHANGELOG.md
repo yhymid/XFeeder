@@ -180,6 +180,10 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- `steampics://`: switching between account and anonymous reading (a failed login falls back
+  to anonymous for 6 hours) no longer drops the changes in between. Only what both modes see
+  is compared, so a new public build is still posted, and branches or depots only one mode
+  shows are not reported as added or removed (review V10 F3).
 - Editing a list channel by hand (a feed added, a webhook rotated) no longer starts its
   history from zero. The new key used to give every feed an empty history: entries that came
   in since the last check were marked as seen, and with `FirstRunSend` the newest of every

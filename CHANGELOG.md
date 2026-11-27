@@ -6,6 +6,8 @@ section below as its description.
 ## Unreleased
 
 ### Added
+- README (EN/PL): how "never posts twice" and the Cloudflare handling work, with examples
+  and limits.
 - Dashboard overview: a "Steam builds (steampics://)" section with the number of games, how
   many are read with the Steam account, games Steam shows no depots for, the last SteamCMD run
   and error, a failed login's anonymous pause and live mode's connection. The worker saves this

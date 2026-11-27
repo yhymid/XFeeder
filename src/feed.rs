@@ -107,7 +107,13 @@ impl Ctx<'_> {
         if ok_feed {
             signals.blocked = signals.status_blocked || signals.header_blocked;
         }
-        signals.blocked |= parsers::is_blocked_page(body, status.unwrap_or(200), headers);
+        // A plain error (404, 410, 500, 502, …) is not a challenge: it must
+        // not start the browser and its 30-minute cooldown. Bot protection
+        // answers 401/403/429/503, or a page the checks below recognise.
+        let plain_error = status.is_some_and(|s| s >= 400 && !matches!(s, 401 | 403 | 429 | 503));
+        if !plain_error {
+            signals.blocked |= parsers::is_blocked_page(body, status.unwrap_or(200), headers);
+        }
         if cfg.should_use(url, status)
             || ((cfg.auto_fallback() || cfg.url_fallback(url)) && anti.enabled && signals.blocked)
         {

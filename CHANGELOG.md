@@ -189,6 +189,13 @@ section below as its description.
   - the first picture of a post is a real one: emoji, icons, images 64 px or smaller,
     `data:` and SVG are skipped (Roblox's forum posted a 20 px emoji in 14 posts), and
     `&amp;` in its address is decoded.
+- One failing feed no longer delays its whole channel: a feed that fails backs off on its
+  own, and only failed deliveries back off the channel. With 232 feeds in one channel, a
+  single broken one made the others wait 2 to 8 times their interval (feed review F01, F10).
+- A plain `404`, `410` or `500` is an error, not a Cloudflare challenge: it no longer starts
+  the browser fallback (up to 3 tries) and its 30-minute cooldown. Feeds whose prolog has a
+  comment or `<?xml-stylesheet?>` (Steam store RSS, World of Tanks) are recognised as feeds
+  before any challenge check (feed review F10).
 - Image checks before sending (feed review F08): each image is asked once per 6 hours
   instead of once per post and channel (a Steam game's header image was checked again for
   every post of that game), GitHub avatars are not checked at all (over half of all checks,

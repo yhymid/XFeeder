@@ -1050,8 +1050,15 @@ impl App {
                     json!({ "channel": label, "url": url, "minutes": interval as f64 / 60_000.0, "reason": reason }),
                 );
             }
+            // A feed that fails backs off on its own (feed health); it does
+            // not hold back the channel's other feeds (channels12: 232 feeds
+            // waited 2–8× their interval for one broken one). Only failed
+            // deliveries back off the whole channel.
             if let Some(error) = outcome.failure {
-                failure.get_or_insert(error);
+                expert(
+                    "channel.feed.failed",
+                    json!({ "channel": label, "url": url, "error": { "message": error } }),
+                );
             }
             if outcome.items.is_empty() {
                 expert(

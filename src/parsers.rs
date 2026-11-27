@@ -1397,7 +1397,9 @@ pub fn is_blocked_page(body: &str, status: u16, headers: &serde_json::Map<String
         || source.starts_with('[')
         || re(
             &FEED,
-            r"(?i)^(?:<\?xml[^>]*>\s*)?<(?:rss|feed|rdf:RDF)(?-u:\b)",
+            // A prolog may carry comments and a stylesheet (Steam store RSS,
+            // World of Tanks).
+            r"(?is)^(?:<\?xml[^>]*>\s*|<!--.*?-->\s*|<\?xml-stylesheet[^>]*>\s*|<!DOCTYPE[^>]*>\s*)*<(?:rss|feed|rdf:RDF)(?-u:\b)",
         )
         .is_match(source)
     {
@@ -1619,6 +1621,10 @@ mod tests {
             &empty
         ));
         assert!(is_blocked_page("ok", 403, &empty));
+        let prolog = "<?xml version=\"1.0\"?><!-- generated --><?xml-stylesheet href=\"x.xsl\"?>\n<rss><channel><title>Not Found</title></channel></rss>";
+        let mut cf = serde_json::Map::new();
+        cf.insert("cf-mitigated".into(), Value::String("challenge".into()));
+        assert!(!is_blocked_page(prolog, 200, &cf));
     }
 
     #[test]

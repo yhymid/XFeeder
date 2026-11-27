@@ -189,6 +189,11 @@ section below as its description.
   tags (Gitea activity) and are escaped too, and so are authors. Decorative lines
   (`______`) are dropped. Long `@mention` lists are shortened before the text is cut.
   Older posts are not changed.
+- Telegram posts keep their line breaks: paragraphs and list items were run into one block
+  (697 of 822 sampled snippets had line breaks). A `PostText.Length` above 1800 no longer
+  cuts the text a second time mid-word; the body gets what the title and the lines under it
+  leave of Discord's 4000 characters. A cut text no longer ends with a heading that has
+  nothing under it (feed review F06).
 - Post text and images (feed review F02, F05, F08):
   - Steam RSS headings (`<div class="bb_h1">`, 557 of 564 in the 11 Steam RSS feeds) are
     bold like other headings;

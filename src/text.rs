@@ -510,7 +510,17 @@ pub fn cut_text(text: &str, max: usize) -> String {
     if js::len16(text) <= max {
         return text.to_string();
     }
-    let out = cut_raw(text, max);
+    let mut out = cut_raw(text, max);
+    // A heading with nothing under it is not worth keeping before the "…"
+    // (19 % of cut posts ended like that on 27.11).
+    if let Some(body) = out.strip_suffix("\n…")
+        && let Some((before, last)) = body.trim_end().rsplit_once('\n')
+        && last.starts_with("**")
+        && last.ends_with("**")
+        && !before.trim().is_empty()
+    {
+        out = format!("{}\n…", before.trim_end());
+    }
     // An escape cut off from its character would escape the "…".
     let body = out.trim_end_matches(['…', '\n']);
     let slashes = body.len() - body.trim_end_matches('\\').len();
@@ -871,6 +881,8 @@ mod tests {
             r(r#"<p>**<a href="https://c.example/gd">Google Drive</a>:** search files</p>"#),
             "**[Google Drive](https://c.example/gd):** search files"
         );
+        let text = format!("{}\n\n**Next section**\n{}", "a".repeat(60), "b".repeat(80));
+        assert_eq!(cut_text(&text, 90), format!("{}\n…", "a".repeat(60)));
         // An escape never dangles before the "…" of a cut.
         let cut = cut_text("aaaaaaaa \\*bbbbbbbbbbbbbbbbbbbbbbbb", 12);
         assert!(!cut.contains("\\…"), "{cut}");

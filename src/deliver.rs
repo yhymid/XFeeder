@@ -12,7 +12,10 @@ use crate::js::{self, get, len16, prefix16, truthy};
 use crate::text::discord_time;
 
 const COMPONENTS_V2: u64 = 1 << 15;
-const MAX_TEXT: usize = 1800;
+/// One text block (Discord allows 4000; `PostText.Length` is at most 3500).
+const MAX_TEXT: usize = 3600;
+/// All text of one Components V2 message together (Discord: 4000).
+const TOTAL_TEXT: usize = 4000;
 const MAX_BUTTON: usize = 80;
 const MAX_MEDIA: usize = 10;
 const MAX_429_RETRIES: u32 = 3;
@@ -126,12 +129,21 @@ fn http_url(value: &Value) -> Option<String> {
     matches!(parsed.scheme(), "http" | "https").then(|| text.to_string())
 }
 
-struct Container(Vec<Value>);
+/// Components of a message and the text length used so far.
+struct Container(Vec<Value>, usize);
 
 impl Container {
+    fn room(&self) -> usize {
+        MAX_TEXT.min(TOTAL_TEXT.saturating_sub(self.1))
+    }
     fn text(&mut self, value: impl Into<Value>) {
-        let content = safe_text(&value.into(), MAX_TEXT);
+        let room = self.room();
+        if room < 16 {
+            return;
+        }
+        let content = safe_text(&value.into(), room);
         if !content.is_empty() {
+            self.1 += len16(&content);
             self.0.push(json!({ "type": 10, "content": content }));
         }
     }
@@ -155,13 +167,19 @@ impl Container {
     }
     /// Texts with a small picture on the right (Section + Thumbnail).
     fn section(&mut self, texts: Vec<String>, thumbnail: &Value) {
-        let texts: Vec<Value> = texts
-            .into_iter()
-            .map(|t| safe_text(&json!(t), MAX_TEXT))
-            .filter(|t| !t.is_empty())
-            .take(3)
-            .map(|t| json!({ "type": 10, "content": t }))
-            .collect();
+        let mut texts_out: Vec<Value> = Vec::new();
+        for t in texts.into_iter().take(3) {
+            let room = self.room();
+            if room < 16 {
+                break;
+            }
+            let t = safe_text(&json!(t), room);
+            if !t.is_empty() {
+                self.1 += len16(&t);
+                texts_out.push(json!({ "type": 10, "content": t }));
+            }
+        }
+        let texts = texts_out;
         match http_url(thumbnail) {
             Some(url) if !texts.is_empty() => self.0.push(json!({
                 "type": 9,
@@ -297,7 +315,7 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
     if get(entry, "steamPics").is_object() && !truthy(get(entry, "merged")) {
         return steam_pics_embed(entry, get(entry, "steamPics"));
     }
-    let mut c = Container(Vec::new());
+    let mut c = Container(Vec::new(), 0);
     let link = get(entry, "link");
     let title = get(entry, "title");
     let link_text = link.as_str().unwrap_or("");
@@ -386,7 +404,10 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
         label = format!("Discord message from {}", js::to_string(&username));
     } else {
         let heading = format!("📰 **{}**", post_title(title));
-        let body = post_body(entry);
+        // The body gets what the heading and the lines under it leave of the
+        // 4000 a message may hold, cut at a line like PostText does.
+        let budget = TOTAL_TEXT.saturating_sub(len16(&heading) + 400);
+        let body = crate::text::cut_text(&post_body(entry), budget);
         let image = get(entry, "enclosure");
         if crate::text::is_avatar(image) {
             c.section(vec![heading, body], image);
@@ -682,6 +703,30 @@ fn escape_html(text: &str) -> String {
 
 fn escape_limited(value: &Value, max: usize) -> String {
     let input = js::trim(&js::collapse_ws(&js::to_string_or_empty(value))).to_string();
+    escape_limited_text(&input, max)
+}
+
+/// Like `escape_limited`, but line breaks stay (at most one empty line in a
+/// row): a Telegram post keeps its paragraphs and list items instead of
+/// running them into one block.
+fn escape_limited_lines(value: &Value, max: usize) -> String {
+    let raw = js::to_string_or_empty(value);
+    let mut lines: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        let line = js::collapse_ws(line).trim().to_string();
+        if line.is_empty() && lines.last().is_none_or(String::is_empty) {
+            continue;
+        }
+        lines.push(line);
+    }
+    while lines.last().is_some_and(String::is_empty) {
+        lines.pop();
+    }
+    escape_limited_text(&lines.join("\n"), max)
+}
+
+fn escape_limited_text(input: &str, max: usize) -> String {
+    let input = input.to_string();
     let mut output = String::with_capacity(input.len());
     // UTF-16 length of `output`, kept as it grows (was recounted per char).
     let mut units = 0;
@@ -721,7 +766,7 @@ const TELEGRAM_CAPTION_MAX: usize = 1024;
 pub fn telegram_text(entry: &Value) -> Result<String, String> {
     const MAX: usize = 4096;
     let title = escape_limited(js::or(&[get(entry, "title"), &json!("New entry")]), 480);
-    let snippet = escape_limited(
+    let snippet = escape_limited_lines(
         js::or(&[
             get(entry, "contentSnippet"),
             get(entry, "content"),

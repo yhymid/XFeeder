@@ -3,7 +3,20 @@
 Releases are cut by hand when enough has changed. Each release on GitHub uses the matching
 section below as its description.
 
-## Unreleased
+## 3.1 - Tracker Update (2026-11-28)
+
+XFeeder 3.1 follows game updates the way patch trackers do: Steam builds and branches straight
+from Steam (`steampics://`, with an optional Steam account and a live mode), Steam news sorted
+into patches, betas and news, and posts that read like the original (headings, tables, lists,
+code, quotes, spoilers, links). It also runs in Docker, never posts an entry twice in the cases
+found in review, and keeps feed content from reaching internal addresses.
+
+Upgrading from 3.0: replace the binary and restart; `config.json`, `.env`, `cache.json` and the
+feed state are read as they are, and no setting has to change. Checked on 278 production feeds:
+delivery identities stay the same, so nothing old is posted again. One exception is intended: a
+post whose identity was shared with an older one (OpenAI "retell-ai", 27.10) was never sent, and
+is sent once after the upgrade. New settings are off or keep the previous behaviour unless noted
+below; `config.json.example` shows `PostText` and a Steam patches channel with a `Ping`.
 
 ### Added
 - README (EN/PL): how "never posts twice" and the Cloudflare handling work, with examples
@@ -157,6 +170,9 @@ section below as its description.
     (onet: 20 items, about 7 new per hour) are sent before they drop off it.
 
 ### Changed
+- Version 3.1.0. `config.json.example` adds `Settings.PostText` and a `channels3` "games"
+  channel: Steam events for one app (`count_after=5`), patches only, with a role `Ping`. It
+  still passes `--check-config` with `.env.example` as it is.
 - Faster parsing, measured on all 278 configured feeds (27.11 download, one pass on a Steam
   Deck OLED):
 

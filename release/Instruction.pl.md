@@ -1,4 +1,4 @@
-# XFeeder 3.0 - Rust Update
+# XFeeder 3.1 - Tracker Update
 
 [English](Instruction.md) · **Polski**
 
@@ -16,7 +16,7 @@ nie trzeba instalować.
 | `systemd/` | Pliki usług do uruchomienia XFeedera i dashboardu 24/7. |
 | `dashboard-tunnel.sh` | Otwiera dashboard z serwera na Twoim komputerze przez SSH. |
 | `scrapling/requirements.lock.txt` | Opcjonalnie: wersje przeglądarki, która przechodzi przez Cloudflare. |
-| `CHANGELOG.md`, `LICENSE` | Co się zmieniło w 3.0 i licencja MIT. |
+| `CHANGELOG.md`, `LICENSE` | Co się zmieniło w 3.1 i licencja MIT. |
 
 Pełna dokumentacja (opis każdego ustawienia) jest na GitHubie:
 <https://github.com/yhymid/XFeeder/tree/main/docs> (pliki `*.pl.md` po polsku).
@@ -131,7 +131,7 @@ ustaw `"Telegram": { "Enabled": true, ... }` w `config.json`.
 uruchom. `config.json`, `.env` i `cache.json` są czytane bez zmian; nic nie zostanie
 wysłane ponownie. `node_modules`, `package.json` i pliki `.js` nie są już potrzebne.
 
-**Z wcześniejszej wersji 3.0:**
+**Z wersji 3.0 (albo wcześniejszej 3.x):** w `config.json` ani `.env` nic nie trzeba zmieniać i nic starego nie zostanie wysłane ponownie.
 
 ```sh
 cp cache.json cache.json.backup

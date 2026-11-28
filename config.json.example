@@ -4,6 +4,9 @@
     "DebugExpert": false,
     "MaxConcurrentChannels": 2,
     "FirstRunSend": 0,
+    "PostText": {
+      "Length": 1500
+    },
     "Diagnostics": {
       "Enabled": false,
       "RetentionDays": 14,
@@ -189,6 +192,25 @@
         ],
         "MaxAgeHours": 72
       }
+    }
+  },
+  "channels3": {
+    "games": {
+      "Webhook": "${DISCORD_WEBHOOK_MAIN}",
+      "Feeds": [
+        "https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=730&count_before=0&count_after=5&lang_list=0"
+      ],
+      "TimeChecker": 30,
+      "Filters": {
+        "Include": [
+          "Patch",
+          "Major update"
+        ],
+        "Fields": [
+          "categories"
+        ]
+      },
+      "Ping": "<@&123456789012345678>"
     }
   }
 }

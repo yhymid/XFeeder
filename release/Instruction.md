@@ -1,4 +1,4 @@
-# XFeeder 3.0 - Rust Update
+# XFeeder 3.1 - Tracker Update
 
 **English** · [Polski](Instruction.pl.md)
 
@@ -15,7 +15,7 @@ webhooks and Telegram. This package is ready to run: one program, nothing else t
 | `systemd/` | Service files to run XFeeder and its dashboard 24/7. |
 | `dashboard-tunnel.sh` | Opens a server's dashboard on your own computer through SSH. |
 | `scrapling/requirements.lock.txt` | Optional: versions for the browser that gets through Cloudflare. |
-| `CHANGELOG.md`, `LICENSE` | What changed in 3.0, and the MIT licence. |
+| `CHANGELOG.md`, `LICENSE` | What changed in 3.1, and the MIT licence. |
 
 The full documentation (every setting explained) is on GitHub:
 <https://github.com/yhymid/XFeeder/tree/main/docs>.
@@ -131,7 +131,7 @@ and set `"Telegram": { "Enabled": true, ... }` in `config.json`.
 it. `config.json`, `.env` and `cache.json` are read as they are; nothing is posted again.
 `node_modules`, `package.json` and the `.js` files are no longer needed.
 
-**From an earlier 3.0 build:**
+**From 3.0 (or an earlier 3.x build):** nothing in `config.json` or `.env` has to change, and nothing old is posted again.
 
 ```sh
 cp cache.json cache.json.backup

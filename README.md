@@ -18,7 +18,7 @@ restart; the web dashboard shows and edits the same settings.
 <div align="center">
 
 ![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust)
-![Version](https://img.shields.io/badge/version-3.0-blue)
+![Version](https://img.shields.io/badge/version-3.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 </div>

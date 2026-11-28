@@ -1,6 +1,6 @@
 [package]
 name = "xfeeder"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Modular RSS/Atom/JSON feed reader for Discord webhooks and Telegram."

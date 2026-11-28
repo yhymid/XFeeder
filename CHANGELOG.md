@@ -180,6 +180,9 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Telegram posts show the date with `<tg-time format="Dt">` (Bot API `date_time`, 9.5), so
+  each reader sees it in their own time zone and language instead of a raw ISO string; the
+  text inside (`2026-11-19 00:57 UTC`) is what older clients show (feed review F06 F2).
 - Steam events keep the publisher's short summary (`localized_summary`, 527 of the events
   in the production feeds) as `contentSummary`. Telegram posts and Discord posts with
   `PostText: false` start with it, followed by the text as before. Filters and SteamMerge

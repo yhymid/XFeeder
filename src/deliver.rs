@@ -786,16 +786,39 @@ fn escape_limited_text(input: &str, max: usize) -> String {
 
 const TELEGRAM_CAPTION_MAX: usize = 1024;
 
+/// The entry date as Telegram's `<tg-time>` (Bot API "date_time"): each
+/// reader sees it in their own time zone and language. The text inside is
+/// what older clients show; an unreadable date is shown as it is.
+fn telegram_time(value: &Value) -> String {
+    let raw = js::to_string_or_empty(value);
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return String::new();
+    }
+    match chrono::DateTime::parse_from_rfc3339(raw) {
+        Ok(t) => {
+            let t = t.with_timezone(&chrono::Utc);
+            format!(
+                r#"<tg-time unix="{}" format="Dt">{}</tg-time>"#,
+                t.timestamp(),
+                t.format("%Y-%m-%d %H:%M UTC")
+            )
+        }
+        Err(_) => escape_limited_text(raw, 64),
+    }
+}
+
 pub fn telegram_text(entry: &Value) -> Result<String, String> {
     const MAX: usize = 4096;
     let title = escape_limited(js::or(&[get(entry, "title"), &json!("New entry")]), 480);
     let snippet = escape_limited_lines(&json!(with_summary(entry)), 2600);
-    let meta_parts: Vec<String> = [get(entry, "author"), get(entry, "isoDate")]
-        .iter()
-        .filter(|v| truthy(v))
-        .map(|v| js::to_string(v))
-        .collect();
-    let meta = escape_limited(&json!(meta_parts.join(" · ")), 320);
+    let author = escape_limited(get(entry, "author"), 300);
+    let date = telegram_time(get(entry, "isoDate"));
+    let meta = [author, date]
+        .into_iter()
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
     let link = http_url(get(entry, "link"));
     let mut attachments: Vec<String> = get(entry, "attachments")
         .as_array()
@@ -1224,6 +1247,21 @@ fn discord_entry(msg: &Value, config: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn telegram_dates_are_local_to_the_reader() {
+        let text = telegram_text(
+            &json!({ "title": "T", "link": "https://a/1", "author": "Ann & Bob",
+            "isoDate": "2026-11-19T00:57:00.000Z", "contentSnippet": "x" }),
+        )
+        .unwrap();
+        assert!(
+            text.contains(r#"Ann &amp; Bob · <tg-time unix="1795049820" format="Dt">2026-11-19 00:57 UTC</tg-time>"#),
+            "{text}"
+        );
+        assert_eq!(telegram_time(&json!("soon <b>")), "soon &lt;b&gt;");
+        assert_eq!(telegram_time(&Value::Null), "");
+    }
 
     #[test]
     fn permanent_target_errors() {

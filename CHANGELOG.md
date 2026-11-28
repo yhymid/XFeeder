@@ -180,6 +180,11 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- FFXIV Lodestone posts have a text again: its Atom summary only repeats the title, so the
+  snippet (used by Telegram and `PostText: false`) was empty for 20 of 20 entries; the
+  content is used instead. Atom entries with several authors show all of them ("Ann, Bob")
+  instead of the feed author, and JSON Feed 1.1 `authors` is read (it was ignored, so every
+  1.1 feed had no author). Only FFXIV changes on the 278 production feeds (F03, F04 L1).
 - Generic JSON APIs map better. The Hearthstone blog's 12 articles now link to the article
   (`defaultUrl`) instead of the API URL, are dated when published (`publish`) instead of when
   the draft was created (7–39 days earlier, so `MaxAgeHours` dropped them), and show their

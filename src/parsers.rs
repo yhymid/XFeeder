@@ -581,6 +581,29 @@ pub fn parse_youtube(url: &str, body: &Body) -> Vec<Value> {
 
 // ------------------------------------------------------------------ Atom --
 
+/// Names of one or more author objects (`{name}` or `[{name}, …]`),
+/// joined: an entry may have several authors (RFC 4287 §4.2.1, JSON Feed
+/// 1.1 `authors`).
+fn author_names(value: &Value) -> Value {
+    let names: Vec<String> = as_list(value)
+        .into_iter()
+        .filter_map(|a| {
+            let name = node_text(if a.is_object() && a.get("VALUE").is_none() {
+                get(a, "name")
+            } else {
+                a
+            });
+            let name = name.trim();
+            (!name.is_empty()).then(|| name.to_string())
+        })
+        .collect();
+    if names.is_empty() {
+        Value::Null
+    } else {
+        json!(names.join(", "))
+    }
+}
+
 /// Whether an Atom text construct is markup (`type="html"`/`"xhtml"`);
 /// `text`, the default, is plain text (RFC 4287 §3.1.1.1).
 fn atom_is_html(node: &Value) -> bool {
@@ -680,11 +703,11 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                 .unwrap_or_else(|| "No title".to_string());
             // When it was published, not when it was last edited (§4.2.9).
             let iso = opt_date(or(&[get(e, "published"), get(e, "updated")]));
-            let author = string_value(or(&[
-                path(e, &["author", "name", "VALUE"]),
-                path(e, &["author", "name"]),
-                path(feed, &["author", "name"]),
-            ]));
+            let author = or(&[
+                &author_names(get(e, "author")),
+                &author_names(get(feed, "author")),
+            ])
+            .clone();
             let author = if truthy(&author) {
                 author
             } else {
@@ -712,18 +735,22 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                     .map_or(Value::Null, |l| path(l, &["ATTR", "href"]).clone());
             }
             let (summary, content_node) = (get(e, "summary"), get(e, "content"));
-            let text_of = |first: &Value, second: &Value| {
+            // A summary that only repeats the title (FFXIV Lodestone) is no
+            // text: the content is used instead.
+            let text_of = |first: &Value, second: &Value, skip_title: bool| {
                 let a = atom_body(first);
-                if a.trim().is_empty() {
+                if a.trim().is_empty()
+                    || (skip_title && js::trim(&strip_html(&a)) == title.as_str())
+                {
                     atom_body(second)
                 } else {
                     a
                 }
             };
-            let description = text_of(summary, content_node);
+            let description = text_of(summary, content_node, true);
             let content = snippet(&description, 500);
             // The full content when there is one; summaries are often a teaser.
-            let full = text_of(content_node, summary);
+            let full = text_of(content_node, summary, false);
             let guid = or(&[get(e, "id"), &link, &json!(title.clone())]).clone();
             let categories = category_list(get(e, "category"));
             with_text(
@@ -915,13 +942,14 @@ pub fn parse_json(url: &str, body: &Body) -> Vec<Value> {
                     &[get(item, "image"), get(item, "banner_image")],
                     Value::Null,
                 );
-                let author = js::or_else(
-                    &[
-                        path(item, &["author", "name"]),
-                        path(data, &["author", "name"]),
-                    ],
-                    Value::Null,
-                );
+                // 1.1 `authors`, then 1.0 `author`; item, then feed.
+                let author = or(&[
+                    &author_names(get(item, "authors")),
+                    &author_names(get(item, "author")),
+                    &author_names(get(data, "authors")),
+                    &author_names(get(data, "author")),
+                ])
+                .clone();
                 let raw = if truthy(get(item, "content_text")) || truthy(get(item, "summary")) {
                     plain(or(&[get(item, "content_text"), get(item, "summary")]))
                 } else if truthy(get(item, "content_html")) {
@@ -1926,6 +1954,20 @@ mod tests {
             r#"<entry><id>x7</id><title type="html">&lt;b&gt;Bold&lt;/b&gt; news</title><link href="https://f.example/7"/></entry>"#,
         );
         assert_eq!(e["title"], "Bold news");
+        // Several authors are joined; a summary that repeats the title is no text.
+        let e = one(
+            r#"<entry><id>x8</id><title>Maintenance</title><link href="https://f.example/8"/><author><name>Ann</name></author><author><name>Bob</name></author><summary>Maintenance</summary><content type="html">&lt;p&gt;Servers down at 9&lt;/p&gt;</content></entry>"#,
+        );
+        assert_eq!(e["author"], "Ann, Bob");
+        assert_eq!(e["contentSnippet"], "Servers down at 9");
+    }
+
+    #[test]
+    fn json_feed_1_1_authors_are_read() {
+        let body = Body::new(r#"{"version":"https://jsonfeed.org/version/1.1","title":"j","authors":[{"name":"Feed"}],"items":[{"id":"1","url":"https://j.example/1","title":"a","content_text":"x","authors":[{"name":"Ann"},{"name":"Bob"}]},{"id":"2","url":"https://j.example/2","title":"b","content_text":"y"}]}"#.into());
+        let items = parse_json("https://j.example/feed.json", &body);
+        assert_eq!(items[0]["author"], "Ann, Bob");
+        assert_eq!(items[1]["author"], "Feed");
     }
 
     #[test]

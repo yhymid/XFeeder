@@ -14,7 +14,7 @@ Szczegółowe pliki są po angielsku, bo adresy, pola i formaty i tak są angiel
 |---|---|---|
 | [games/steam.pl.md](games/steam.pl.md) | Gry na Steamie: trzy źródła Steama, odróżnianie łatek od newsów, obrazki i wszystkie gry ze sprawdzonym AppID | 203 gry |
 | [games/publishers.pl.md](games/publishers.pl.md) | Gry spoza Steama albo z lepszym źródłem niż Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix i inni | 49 gier |
-| [free-stuff.pl.md](free-stuff.pl.md) | Darmowe gry: Epic, Steam (do zatrzymania i darmowe weekendy), GOG, Xbox PC Game Pass (nowe / wkrótce / znikające / EA Play) | 4 sklepy |
+| [free-stuff.pl.md](free-stuff.pl.md) | Darmowe gry: Epic, Steam (do zatrzymania i darmowe weekendy), GOG, Xbox PC Game Pass (nowe / wkrótce / znikające / EA Play), GamerPower dla innych sklepów | 4 sklepy + GamerPower |
 | [drivers.pl.md](drivers.pl.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon i chipset, Intel Arc i Arc Pro, Mesa | 9 źródeł |
 | [ai.pl.md](ai.pl.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 źródeł |
 | [game-dev.pl.md](game-dev.pl.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stabilne / testowe), s&box | 7 narzędzi |

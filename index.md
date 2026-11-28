@@ -90,7 +90,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Elder Scrolls Online | [games/publishers.md](games/publishers.md) | publisher | ✅ RSS/Atom |
 | Enlisted | [games/steam.md](games/steam.md) | Steam 2051620 | ✅ events JSON / RSS |
 | Enshrouded | [games/steam.md](games/steam.md) | Steam 1203620 | ✅ events JSON / RSS |
-| Epic Games | [free-stuff.md](free-stuff.md) | free games | 🔧 adapter needed |
+| Epic Games | [free-stuff.md](free-stuff.md) | free games | ✅ parseFreeGames (Beta 95be43f) |
 | Escape from Tarkov | [games/publishers.md](games/publishers.md) | publisher | ❌ no official source |
 | Euro Truck Simulator 2 | [games/steam.md](games/steam.md) | Steam 227300 | ✅ events JSON / RSS |
 | Europa Universalis V | [games/steam.md](games/steam.md) | Steam 3450310 | ✅ events JSON / RSS |
@@ -118,7 +118,8 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Genshin Impact | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
 | GitHub Copilot | [ai.md](ai.md) | AI tool | ✅ RSS/Atom |
 | Godot | [game-dev.md](game-dev.md) | game dev | ✅ Atom |
-| GOG | [free-stuff.md](free-stuff.md) | free games | 🔧 adapter needed |
+| GamerPower (itch.io, IndieGala, GOG giveaways, Steam keys, …) | [free-stuff.md](free-stuff.md) | free games | ✅ parseFreeGames (Beta 95be43f) |
+| GOG | [free-stuff.md](free-stuff.md) | free games | ✅ parseFreeGames (Beta 95be43f) |
 | Grand Theft Auto V | [games/steam.md](games/steam.md) | Steam 271590 | ✅ events JSON / RSS |
 | Gray Zone Warfare | [games/steam.md](games/steam.md) | Steam 2479810 | ✅ events JSON / RSS |
 | Grok / xAI (API) | [ai.md](ai.md) | AI tool | 🔧 adapter needed |
@@ -152,7 +153,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | iRacing | [games/steam.md](games/steam.md) | Steam 266410 | ✅ events JSON / RSS |
 | Kingdom Come: Deliverance II | [games/steam.md](games/steam.md) | Steam 1771300 | ✅ events JSON / RSS |
 | Last Epoch | [games/steam.md](games/steam.md) | Steam 899770 | ✅ events JSON / RSS |
-| League of Legends | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
+| League of Legends | [games/publishers.md](games/publishers.md) | publisher | ✅ parseRiot (Beta 95be43f) |
 | Left 4 Dead 2 | [games/steam.md](games/steam.md) | Steam 550 | ✅ events JSON / RSS |
 | Legends of Runeterra | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
 | Lethal Company | [games/steam.md](games/steam.md) | Steam 1966720 | ✅ events JSON / RSS |
@@ -261,7 +262,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Starship Troopers: Extermination | [games/steam.md](games/steam.md) | Steam 1268750 | ✅ events JSON / RSS |
 | Steam Deck | [games/steam.md](games/steam.md) | Steam 1675200 | ✅ events JSON / RSS |
 | Steam News | [games/steam.md](games/steam.md) | Steam 593110 | ✅ events JSON / RSS |
-| Steam: free to keep | [free-stuff.md](free-stuff.md) | free games | 🔧 adapter needed |
+| Steam: free to keep | [free-stuff.md](free-stuff.md) | free games | ✅ parseFreeGames (Beta 95be43f) |
 | Steam: free weekend | [free-stuff.md](free-stuff.md) | free games | 🔧 adapter needed |
 | Stellaris | [games/steam.md](games/steam.md) | Steam 281990 | ✅ events JSON / RSS |
 | Subnautica 2 | [games/steam.md](games/steam.md) | Steam 1962700 | ✅ events JSON / RSS |
@@ -270,7 +271,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Supermarket Simulator | [games/steam.md](games/steam.md) | Steam 2670630 | ✅ events JSON / RSS |
 | SUPERVIVE | [games/steam.md](games/steam.md) | Steam 1283700 | ✅ events JSON / RSS |
 | Team Fortress 2 | [games/steam.md](games/steam.md) | Steam 440 | ✅ events JSON / RSS |
-| Teamfight Tactics | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
+| Teamfight Tactics | [games/publishers.md](games/publishers.md) | publisher | ✅ parseRiot (Beta 95be43f) |
 | Tekken 8 | [games/steam.md](games/steam.md) | Steam 1778820 | ✅ events JSON / RSS |
 | Terraria | [games/steam.md](games/steam.md) | Steam 105600 | ✅ events JSON / RSS |
 | The Blood of Dawnwalker | [games/steam.md](games/steam.md) | Steam 3751260 | ✅ events JSON / RSS |
@@ -289,7 +290,7 @@ Every game, tool, driver and store in this database, A–Z. A game can appear tw
 | Unturned | [games/steam.md](games/steam.md) | Steam 304930 | ✅ events JSON / RSS |
 | V Rising | [games/steam.md](games/steam.md) | Steam 1604030 | ✅ events JSON / RSS |
 | Valheim | [games/steam.md](games/steam.md) | Steam 892970 | ✅ events JSON / RSS |
-| Valorant | [games/publishers.md](games/publishers.md) | publisher | 🔧 adapter needed |
+| Valorant | [games/publishers.md](games/publishers.md) | publisher | ✅ parseRiot (Beta 95be43f) |
 | Vermintide 2 | [games/steam.md](games/steam.md) | Steam 552500 | ✅ events JSON / RSS |
 | Victoria 3 | [games/steam.md](games/steam.md) | Steam 529340 | ✅ events JSON / RSS |
 | VRChat | [games/steam.md](games/steam.md) | Steam 438100 | ✅ events JSON / RSS |

@@ -13,10 +13,13 @@ Sprawdzone **2026-11-23** anonimowymi zapytaniami GET, rynek **PL / PLN**. Wszys
 | Steam: darmowy weekend | https://store.steampowered.com/api/featuredcategories/?cc=pl&l=english + GetItems `free_weekend` | wyróżnione darmowe weekendy | ✅ | ✅ 200 | — |
 | GOG | https://catalog.gog.com/v1/catalog?limit=48&price=between:0,0&discounted=eq:true&productType=in:game,pack,dlc&countryCode=PL&locale=en-US&currencyCode=PLN&order=desc:trending&page=1 | tytuły ze zniżką 100 % | ❌ bez daty końca | ✅ 200 | blok rozdawnictwa na stronie głównej (HTML) |
 | Xbox PC Game Pass | `https://catalog.gamepass.com/sigls/v2?id=<LIST>&language=en-us&market=PL` | listy id (bez dat) | ❌ porównywać listy między sprawdzeniami | ✅ 200 | RSS Xbox Wire https://news.xbox.com/en-us/feed/ |
+| Inne sklepy (itch.io, IndieGala, rozdawnictwa GOG, klucze Steam, …) | https://www.gamerpower.com/api/giveaways?type=game | aktywne rozdawnictwa, wartość, kroki odbioru | ✅ `end_date` (albo `N/A`) | ✅ 200 | `/api/filter?platform=…&type=game` |
 | Prime Gaming / Luna | brak: aplikacja JS z prywatnym API | — | — | ❌ | — |
 | Darmowe gry Ubisoftu / EA | brak publicznego | — | — | ❌ | — |
 
-Źródeł społeczności **nie da się** używać bez przeglądarki: SteamDB zwraca botom 403, a RSS r/FreeGameFindings zwraca 404 albo 429.
+Źródła społeczności: SteamDB zwraca botom 403, a RSS r/FreeGameFindings zwraca 404 albo 429. [GamerPower](https://www.gamerpower.com/api-read) działa (sprawdzone **2026-11-28**, niżej).
+
+XFeeder czyta Epic, Steam (do zatrzymania), GOG i GamerPower od Bety 95be43f (`parseFreeGames`).
 
 ## Epic Games
 
@@ -77,6 +80,16 @@ Klucz do odsiewania duplikatów: `steam:<appid>:<discount_end_date | free_weeken
   - `https://api.gog.com/products/<id>?locale=en-US`
   - `https://api.gog.com/products/<id>/prices?countryCode=PL`
 - Klucz do odsiewania duplikatów: `gog:<id>:<first_seen_date>`.
+
+## GamerPower (inne sklepy)
+
+Sprawdzone **2026-11-28**. Publiczne API JSON bez klucza: darmowe do użytku prywatnego i komercyjnego **pod warunkiem aktywnego linku do GamerPower.com**, najwyżej 10 zapytań na sekundę.
+
+- `https://www.gamerpower.com/api/giveaways?type=game`: tablica JSON (21 aktywnych 2026-11-28: itch.io, IndieGala, GOG, klucze Steam, Epic). Brak wyników daje HTTP 201 i `{"status":0,"status_message":"No active giveaways…"}`.
+- Pola: `id`, `title`, `worth` (`$2.99` albo `N/A`), `image`, `description`, `instructions` (kroki z `\r\n`), `open_giveaway_url`, `gamerpower_url`, `published_date` i `end_date` (`YYYY-MM-DD HH:MM:SS` albo `N/A`), `platforms` (`PC, Itch.io, DRM-Free`), `status` (`Active`).
+- `gamerpower_url` bywa `https://www.gamerpower.com/n-a`: wtedy trzeba wziąć `open_giveaway_url`.
+- Lista zawiera też darmowe gry Epic, więc kanał z backendem Epic powinien odrzucać wpisy `Epic Games Store`.
+- Klucz deduplikacji: `gamerpower:<id>`.
 
 ## Xbox PC Game Pass
 

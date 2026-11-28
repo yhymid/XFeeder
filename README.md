@@ -12,7 +12,7 @@ The code of the bot is on the [`main`](https://github.com/yhymid/XFeeder/tree/ma
 |---|---|---|
 | [games/steam.md](games/steam.md) | PC games on Steam: how Steam's three sources work, how to tell patches from news, images, and every game with a checked AppID | 203 games |
 | [games/publishers.md](games/publishers.md) | Games outside Steam, or with a better source than Steam: Riot, Blizzard, Mojang, HoYoverse, EA, Ubisoft, Activision, Epic, Bungie, Jagex, GGG, Wargaming, Square Enix and others | 49 games |
-| [free-stuff.md](free-stuff.md) | Free games: Epic, Steam (free to keep and free weekends), GOG, Xbox PC Game Pass (added / coming / leaving / EA Play) | 4 stores |
+| [free-stuff.md](free-stuff.md) | Free games: Epic, Steam (free to keep and free weekends), GOG, Xbox PC Game Pass (added / coming / leaving / EA Play), GamerPower for other stores | 4 stores + GamerPower |
 | [drivers.md](drivers.md) | NVIDIA Game Ready / Studio / Linux, AMD Radeon and chipset, Intel Arc and Arc Pro, Mesa | 9 sources |
 | [ai.md](ai.md) | Claude, ChatGPT / OpenAI, Gemini, GitHub Copilot, Cursor, Ollama, OpenClaw, Grok, Artificial Analysis | 17 sources |
 | [game-dev.md](game-dev.md) | Unreal Engine, Unity, Roblox, Blender, OBS Studio, Godot (4.x / 3.x, stable / pre-release), s&box | 7 tools |

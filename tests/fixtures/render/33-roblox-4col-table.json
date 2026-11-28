@@ -1,0 +1,7 @@
+{
+ "source": "devforum.roblox.com_c_updates_announcements_36.rss #8",
+ "kind": "html",
+ "title": "[Studio Beta] UI Particles",
+ "link": "https://devforum.roblox.com/t/studio-beta-ui-particles/4996850",
+ "raw": "<table>\n<thead>\n<tr>\n<th><img src=\"//devforum-uploads.s3.dualstack.us-east-2.amazonaws.com/uploads/original/5X/3/7/b/5/37b51d5072ff594309954f36c7da92cedab685ed.gif\" alt=\"\" data-base62-sha1=\"7WOipmoRp8PqfyA3SaWvnUPnTul\" width=\"690\" height=\"388\" role=\"presentation\" class=\"animated\"></th>\n<th><img src=\"//devforum-uploads.s3.dualstack.us-east-2.amazonaws.com/uploads/original/5X/3/d/7/5/3d75934166029c01d64b49a7e84014a03bde41d2.gif\" alt=\"\" data-base62-sha1=\"8LH1P9JrAVOwKS5HfqNR2PNPsX0\" width=\"690\" height=\"388\" role=\"presentation\" class=\"animated\"></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>To trigger a one-shot burst, call <code>:Emit(n)</code>. To clear all active particles instantly, call <code>:Clear()</code>.</td>\n<td>To create slow-motion effects, set <code>TimeScale</code> to <code>0.5</code>. Freeze particles in place by setting it to <code>0</code>.</td>\n</tr>\n</tbody>\n</table>"
+}

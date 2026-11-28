@@ -180,6 +180,13 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Markup the feed escaped twice (Cursor: `<figure><video …>` as text, 6 posts) no longer
+  shows as a line of tags; text like `<DmgType>` stays. A link that leaves no text (an avatar)
+  no longer leaves a double space (28 GitHub posts) (feed review F06 F9).
+- Post text has snapshot tests: 33 entries (31 real excerpts of the 27.11 data, two crafted
+  after real posts instead of copying player names) in `tests/fixtures/render`, with the
+  expected Discord text and Telegram message. Refresh after an intended change with
+  `XFEEDER_UPDATE_SNAPSHOTS=1 cargo test render` and read the diff (feed review F06).
 - Telegram posts show the date with `<tg-time format="Dt">` (Bot API `date_time`, 9.5), so
   each reader sees it in their own time zone and language instead of a raw ISO string; the
   text inside (`2026-11-19 00:57 UTC`) is what older clients show (feed review F06 F2).

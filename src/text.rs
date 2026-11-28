@@ -278,6 +278,18 @@ pub fn html_to_text(input: &str) -> String {
         if line.is_empty() {
             continue;
         }
+        // Markup escaped twice in the feed (Cursor: `&lt;figure&gt;&lt;video
+        // …&gt;`) is left after one decode; a line of only such tags goes.
+        // Text like `<DmgType>` is not a known tag and stays.
+        static LEFTOVER: OnceLock<Regex> = OnceLock::new();
+        if re(
+            &LEFTOVER,
+            r"(?i)^(?:\s*</?(?:figure|figcaption|video|audio|source|track|img|iframe|picture|div|p|span|br)(?-u:\b)[^<>]*>)+\s*$",
+        )
+        .is_match(line)
+        {
+            continue;
+        }
         // "• 7f3a037" + "docs: crop…" (a commit id on its own) → one line.
         if bullet.is_none()
             && let Some(last) = lines.last_mut()
@@ -972,6 +984,9 @@ fn rich_line_body(line: &str) -> Option<String> {
     });
     // Markers of a link that did not close on this line must not leak.
     let line = line.replace([LINK_OPEN, LINK_MID, LINK_CLOSE], " ");
+    // A link that left no text (an avatar) leaves no double space.
+    static SPACES: OnceLock<Regex> = OnceLock::new();
+    let line = re(&SPACES, r" {2,}").replace_all(&line, " ").into_owned();
     let line = line.trim();
     let whole = line.starts_with(HEAD_OPEN)
         && line.ends_with(HEAD_CLOSE)
@@ -1447,6 +1462,13 @@ mod tests {
                 "<pre style='white-space:pre-wrap;width:81ex'>Fix the parser\n\nKeeps entities.</pre>"
             ),
             "Fix the parser\nKeeps entities."
+        );
+        // Twice-escaped markup leaves no tag line; real angle-bracket text stays.
+        assert_eq!(
+            html_to_text(
+                "<p>a</p><p>&lt;figure&gt;&lt;video src=\"https://x/v.mp4\" controls&gt;&lt;/video&gt;&lt;/figure&gt;</p><p>&lt;DmgType&gt; b</p>"
+            ),
+            "a\n<DmgType> b"
         );
         // Plain text keeps the words only.
         assert_eq!(html_to_text("<blockquote><p>q</p></blockquote>"), "q");

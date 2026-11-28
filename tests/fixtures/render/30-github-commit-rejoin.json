@@ -1,0 +1,7 @@
+{
+ "source": "github.com_yhymid_Operator_commits_telegram.atom #8",
+ "kind": "html",
+ "title": "Drop JavaScript and Discord leftovers from .gitignore",
+ "link": "https://github.com/yhymid/Operator/commit/c4cdce78d9b5b5fa4d4f4e61f94d6683af3021e5",
+ "raw": "\n      <pre style='white-space:pre-wrap;width:81ex'>Drop JavaScript and Discord leftovers from .gitignore\n\nnode_modules/, operator.local.*, *.sqlite* belonged to the JS bot;\nconfig.json and .local-lavalink/ belong to the Discord bot. The Telegram\nbot never creates them.\n\nCo-Authored-By: Claude Opus 5.5 &lt;noreply@anthropic.com&gt;</pre>\n    "
+}

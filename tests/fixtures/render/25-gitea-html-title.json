@@ -1,0 +1,7 @@
+{
+ "source": "git.marmak.net.pl_MARMAK_mirror.rss #0",
+ "kind": "html",
+ "title": "Kierownik223 pushed to main at MARMAK/mirror",
+ "link": "/MARMAK/mirror/compare/a2f43f5deb35af19a3adfacb2415a72041232f99...a62b73460bf5e7ce046609acb504a570a82cd9de",
+ "raw": "<a href=\"https://git.marmak.net.pl/MARMAK/mirror/commit/a62b73460bf5e7ce046609acb504a570a82cd9de\" rel=\"nofollow\">a62b73460bf5e7ce046609acb504a570a82cd9de</a>\nAdd APPX publisher parsing (X.509)\n\n<a href=\"https://git.marmak.net.pl/MARMAK/mirror/commit/8f65309c07a30c57e1621de3295f8f6e686320c7\" rel=\"nofollow\">8f65309c07a30c57e1621de3295f8f6e686320c7</a>\nAdd better processor names to APPX packages"
+}

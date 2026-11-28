@@ -22,6 +22,8 @@ mod ping;
 mod preview;
 #[cfg(test)]
 mod profile_tests;
+#[cfg(test)]
+mod render_tests;
 mod requests;
 mod rerender;
 mod scrapling;

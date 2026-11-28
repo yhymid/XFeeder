@@ -728,24 +728,6 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
             };
             let links = get(e, "link");
             let link = atom_link(links, get(e, "id"));
-            let mut image = or(&[
-                path(e, &["media:thumbnail", "ATTR", "url"]),
-                path(e, &["media:content", "ATTR", "url"]),
-            ])
-            .clone();
-            if !truthy(&image)
-                && let Value::Array(list) = links
-            {
-                image = list
-                    .iter()
-                    .find(|l| {
-                        path(l, &["ATTR", "rel"]) == "enclosure"
-                            && path(l, &["ATTR", "type"])
-                                .as_str()
-                                .is_some_and(|t| t.starts_with("image/"))
-                    })
-                    .map_or(Value::Null, |l| path(l, &["ATTR", "href"]).clone());
-            }
             let (summary, content_node) = (get(e, "summary"), get(e, "content"));
             // A summary that only repeats the title (FFXIV Lodestone) is no
             // text: the content is used instead.
@@ -763,6 +745,27 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
             let content = snippet(&description, 500);
             // The full content when there is one; summaries are often a teaser.
             let full = text_of(content_node, summary, false);
+            // A thumbnail first (GitHub), then any media node (lists and
+            // media:group too, videos skipped), an image enclosure link
+            // (FFXIV), and last the first real picture in the HTML.
+            let is_html_image = |l: &&&Value| {
+                path(l, &["ATTR", "rel"]) == "enclosure"
+                    && path(l, &["ATTR", "type"])
+                        .as_str()
+                        .is_some_and(|t| t.starts_with("image/"))
+            };
+            let image = as_list(get(e, "media:thumbnail"))
+                .into_iter()
+                .find_map(|n| js::trimmed_str(path(n, &["ATTR", "url"])).map(str::to_string))
+                .or_else(|| item_image(e))
+                .or_else(|| {
+                    as_list(links).iter().find(is_html_image).and_then(|l| {
+                        js::trimmed_str(path(l, &["ATTR", "href"])).map(str::to_string)
+                    })
+                })
+                .or_else(|| first_image_in_html(&full))
+                .or_else(|| first_image_in_html(&description))
+                .map_or(Value::Null, Value::String);
             let guid = or(&[get(e, "id"), &link, &json!(title.clone())]).clone();
             let categories = category_list(get(e, "category"));
             with_text(
@@ -1974,6 +1977,19 @@ mod tests {
         );
         assert_eq!(e["author"], "Ann, Bob");
         assert_eq!(e["contentSnippet"], "Servers down at 9");
+        // Images: several thumbnails, a video skipped for a picture, the HTML.
+        let e = one(
+            r#"<entry xmlns:media="http://search.yahoo.com/mrss/"><id>x9</id><title>i</title><link href="https://f.example/9"/><media:thumbnail url="https://f.example/t1.jpg"/><media:thumbnail url="https://f.example/t2.jpg"/></entry>"#,
+        );
+        assert_eq!(e["enclosure"], "https://f.example/t1.jpg");
+        let e = one(
+            r#"<entry xmlns:media="http://search.yahoo.com/mrss/"><id>x10</id><title>i</title><link href="https://f.example/10"/><media:group><media:content url="https://f.example/v.mp4" type="video/mp4"/><media:content url="https://f.example/p.jpg" type="image/jpeg"/></media:group></entry>"#,
+        );
+        assert_eq!(e["enclosure"], "https://f.example/p.jpg");
+        let e = one(
+            r#"<entry><id>x11</id><title>i</title><link href="https://f.example/11"/><content type="html">&lt;img src="https://f.example/e.png" class="emoji"&gt;&lt;img src="https://f.example/real.jpg?w=1&amp;amp;h=2"&gt;</content></entry>"#,
+        );
+        assert_eq!(e["enclosure"], "https://f.example/real.jpg?w=1&h=2");
     }
 
     #[test]

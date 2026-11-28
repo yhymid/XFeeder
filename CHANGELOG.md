@@ -180,6 +180,10 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Atom entries find their image like RSS items: several `media:thumbnail`/`media:content`
+  nodes and `media:group` are read, a video is never taken as the image, and the first real
+  picture in the content is used last. Unreal Engine's 10 posts now have their image (only
+  change on the 278 production feeds) (feed review F08 H3, L2).
 - Links in post text are kept. Relative links (`/owner/repo/tree/…` on GitHub and Gitea,
   Godot, Roblox devforum) are resolved against the entry's page instead of being dropped; a
   link with a bracket or a space (`Foo_(bar)`) is encoded instead of dropped; text like

@@ -21,7 +21,7 @@ Format legend:
 | Legends of Runeterra | https://playruneterra.com/en-us/news/ | JS only | — | ❌ no data in the HTML | none; game in maintenance mode |
 | World of Warcraft (+ Classic) | https://news.blizzard.com/en-us/api/news/blizzard?feedCxpProductIds%5B%5D=blt2caca37e42f19839 | JSON | title `/hotfix\|patch notes/i`; Classic = title contains `Classic` | ✅ 200 | — |
 | Overwatch 2 | https://overwatch.blizzard.com/en-us/news/patch-notes/ | HTML | every `h3.PatchNotes-patchTitle`; anchor `id="patch-YYYY-MM-DD"` | ✅ 200 | Steam 2357570 |
-| Hearthstone | https://hearthstone.blizzard.com/en-us/api/blog/articleList/?page=1&pageSize=12 | JSON (full HTML body) | `tags` contains `patch` or title `/patch notes/i` | ✅ 200 | Blizzard API `blt5cfc6affa3ca0638` |
+| Hearthstone | https://hearthstone.blizzard.com/en-us/api/blog/articleList/?page=1&pageSize=12 | JSON (full HTML body; date = `publish` epoch ms, `created_at` is the draft time 7–39 days earlier; article link = `defaultUrl`; image = `thumbnail.url`) | `tags` contains `patch` or title `/patch notes/i` | ✅ 200 | Blizzard API `blt5cfc6affa3ca0638` |
 | Diablo IV | https://news.blizzard.com/en-us/api/news/blizzard?feedCxpProductIds%5B%5D=blt795c314400d7ded9 | JSON | title `/patch notes/i` (also PTR) | ✅ 200 | Steam 2344520 |
 | Diablo III | …`feedCxpProductIds%5B%5D=blt2031aef34200656d` | JSON | **must** check `cxpProduct.title == "Diablo III"` (feed mixes in D4) | ✅ 200 | — |
 | Diablo II: Resurrected | …`feedCxpProductIds%5B%5D=blt54fbd3787a705054` | JSON | title `/patch notes/i` | ID found, feed not tested | — |

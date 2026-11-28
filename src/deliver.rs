@@ -441,6 +441,9 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
                 js::or(&[title, &json!("Media")]).clone(),
             )]);
         }
+        if let Some(line) = offer_line(entry, false) {
+            c.text(line);
+        }
         // Who wrote it, or else which site it is from (feeds like Steam,
         // SteamDB and onet name no author), and when.
         let who = if truthy(get(entry, "author")) {
@@ -473,6 +476,8 @@ fn webhook_payload(entry: &Value) -> (Value, String) {
                 js::to_string(js::or(&[get(merged, "title"), &json!("SteamDB build")]))
             ));
             c.buttons(&[("Open", link), ("SteamDB", get(merged, "link"))]);
+        } else if truthy(get(get(entry, "offer"), "status")) {
+            c.button("Claim", link);
         } else {
             c.button("Open", link);
         }
@@ -808,6 +813,45 @@ fn telegram_time(value: &Value) -> String {
     }
 }
 
+/// The "Free until …" line of a free game (`offer`, see `free_games.rs`):
+/// Discord timestamps (every reader's own time zone, plus "in 5 days") or
+/// Telegram's `<tg-time>`, and the normal price struck through.
+fn offer_line(entry: &Value, telegram: bool) -> Option<String> {
+    let offer = get(entry, "offer");
+    let status = js::trimmed_str(get(offer, "status"))?;
+    let time = |key: &str| {
+        let raw = js::trimmed_str(get(offer, key))?;
+        let at = crate::text::parse_date_str(raw)?.timestamp();
+        Some(if telegram {
+            telegram_time(get(offer, key))
+        } else {
+            format!("<t:{at}:f> (<t:{at}:R>)")
+        })
+    };
+    let (icon, when) = if status == "Upcoming" {
+        ("⏳", time("starts").map(|t| format!("from {t}")))
+    } else {
+        ("🎁", time("until").map(|t| format!("until {t}")))
+    };
+    let price = js::trimmed_str(get(offer, "price")).map(|p| {
+        if telegram {
+            format!("<s>{}</s>", escape_html(p))
+        } else {
+            format!("~~{}~~", crate::text::escape_markdown(p))
+        }
+    });
+    let status = if telegram {
+        format!("<b>{}</b>", escape_html(status))
+    } else {
+        format!("**{}**", crate::text::escape_markdown(status))
+    };
+    let parts: Vec<String> = [Some(format!("{icon} {status}")), when, price]
+        .into_iter()
+        .flatten()
+        .collect();
+    Some(parts.join(" · "))
+}
+
 pub fn telegram_text(entry: &Value) -> Result<String, String> {
     const MAX: usize = 4096;
     let title = escape_limited(js::or(&[get(entry, "title"), &json!("New entry")]), 480);
@@ -834,7 +878,8 @@ pub fn telegram_text(entry: &Value) -> Result<String, String> {
     {
         attachments.push(enclosure);
     }
-    let mut parts: Vec<String> = [format!("<b>{title}</b>"), meta, snippet]
+    let offer = offer_line(entry, true).unwrap_or_default();
+    let mut parts: Vec<String> = [format!("<b>{title}</b>"), offer, meta, snippet]
         .into_iter()
         .filter(|p| !p.is_empty())
         .collect();
@@ -1528,6 +1573,40 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("Anonymous"));
+    }
+
+    #[test]
+    fn free_game_offer_line() {
+        let entry = json!({ "title": "Bread and Fred", "link": "https://store.epicgames.com/en-US/p/bread",
+            "contentSnippet": "Fun.", "contentText": "Fun.",
+            "offer": { "status": "Free now", "until": "2026-12-03T16:00:00.000Z", "price": "PLN 63.00" } });
+        let (payload, _) = webhook_payload(&entry);
+        let text = payload.to_string();
+        assert!(
+            text.contains(
+                "🎁 **Free now** · until <t:1796313600:f> (<t:1796313600:R>) · ~~PLN 63.00~~"
+            ),
+            "{text}"
+        );
+        let tg = telegram_text(&entry).unwrap();
+        assert!(
+            tg.contains(r#"🎁 <b>Free now</b> · until <tg-time unix="1796313600" format="Dt">2026-12-03 16:00 UTC</tg-time> · <s>PLN 63.00</s>"#),
+            "{tg}"
+        );
+        let upcoming = json!({ "title": "X", "link": "https://a/x",
+            "offer": { "status": "Upcoming", "starts": "2026-12-03T16:00:00.000Z", "until": "2026-12-10T16:00:00.000Z" } });
+        let text = webhook_payload(&upcoming).0.to_string();
+        assert!(
+            text.contains("⏳ **Upcoming** · from <t:1796313600:f>"),
+            "{text}"
+        );
+        assert!(text.contains(r#""label":"Claim""#), "{text}");
+        let plain = json!({ "title": "X", "link": "https://a/x" });
+        let text = webhook_payload(&plain).0.to_string();
+        assert!(
+            !text.contains("🎁") && text.contains(r#""label":"Open""#),
+            "{text}"
+        );
     }
 }
 

@@ -1191,6 +1191,20 @@ impl Pipeline<'_> {
             // Steam events with only broadcasts/streams: nothing to send, and
             // the generic JSON parser must not turn the answer into entries.
             || steam_items.as_ref().is_some_and(Vec::is_empty);
+        // Free-game stores and Riot pages are read by their own parser only:
+        // a store answer with no free game today is an empty feed, and the
+        // generic parsers would turn its JSON or HTML into junk entries.
+        let own = if crate::free_games::is_api(url) {
+            Some("parseFreeGames")
+        } else if crate::riot::is_page(url) {
+            Some("parseRiot")
+        } else {
+            None
+        };
+        let empty_api = empty_api
+            || (own == Some("parseFreeGames")
+                && crate::free_games::answered(url, &body)
+                && crate::free_games::parse(url, &body).is_empty());
         // A GitHub API answer is read by the GitHub parser only: what it does
         // not map (a draft release, `releases/latest`'s assets, an unknown
         // endpoint) must not become entries with API links (F04 M2).
@@ -1199,6 +1213,7 @@ impl Pipeline<'_> {
             .iter()
             .filter(|_| !empty_api)
             .filter(|(name, _)| !github || *name == "parseGitHubAPI")
+            .filter(|(name, _)| own.is_none_or(|own| *name == own))
         {
             expert("feed.parser.begin", json!({ "url": url, "parser": name }));
             let items = match steam_items.take() {
@@ -1234,7 +1249,7 @@ impl Pipeline<'_> {
                 json!({ "url": url, "parser": name }),
             );
         }
-        let items = if empty_api || github {
+        let items = if empty_api || github || own.is_some() {
             Vec::new()
         } else {
             parsers::regex_items(&dl.data)

@@ -3,6 +3,20 @@
 Releases are cut by hand when enough has changed. Each release on GitHub uses the matching
 section below as its description.
 
+## Unreleased
+
+### Added
+- Free games as sources (`src/free_games.rs`): Epic Games (free now and upcoming), Steam
+  (free to keep), GOG (100 % off) from the stores' own backends, and
+  [GamerPower](https://www.gamerpower.com/api-read) for other stores (itch.io, GOG giveaways,
+  Steam keys, Ubisoft, EA, Prime Gaming, …). Only games that are free and normally paid are
+  posted. A post shows "🎁 Free now · until …" (Discord timestamps, Telegram `<tg-time>`), the
+  normal price struck through and a `Claim` button. See the sources table in
+  docs/configuration.md.
+- Riot news pages as sources (`src/riot.rs`): League of Legends, TFT and Valorant patch notes
+  (`https://www.leagueoflegends.com/en-us/news/tags/patch-notes/`), read from the page data
+  because Riot has no RSS.
+
 ## 3.1 - Tracker Update (2026-11-28)
 
 XFeeder 3.1 follows game updates the way patch trackers do: Steam builds and branches straight

@@ -230,7 +230,7 @@ pub fn html_to_rich(input: &str) -> String {
     // while a text is built; a feed must not be able to send them.
     let cleaned: String = input
         .chars()
-        .filter(|c| !('\u{E010}'..='\u{E016}').contains(c))
+        .filter(|c| !('\u{E010}'..='\u{E018}').contains(c))
         .collect();
     let input = cleaned.as_str();
     // `<hN>`, and Steam's RSS form `<div class="bb_h1">` (557 of 564
@@ -256,6 +256,21 @@ pub fn html_to_rich(input: &str) -> String {
             })
             .into_owned();
     }
+    // Spoilers stay hidden, struck-through text stays struck through.
+    static SPOILER: OnceLock<Regex> = OnceLock::new();
+    static STRIKE: OnceLock<Regex> = OnceLock::new();
+    let html = re(
+        &SPOILER,
+        r#"(?is)<span\s+class=["']bb_spoiler["'][^>]*>(.*?)</span\s*>"#,
+    )
+    .replace_all(&html, format!("{SPOILER_MARK}$1{SPOILER_MARK}").as_str())
+    .into_owned();
+    let html = re(
+        &STRIKE,
+        r"(?is)<(?:s|strike|del)>(.*?)</(?:s|strike|del)\s*>",
+    )
+    .replace_all(&html, format!("{STRIKE_MARK}$1{STRIKE_MARK}").as_str())
+    .into_owned();
     let html = re(
         &ANCHOR,
         r#"(?is)<a(?-u:\b)[^>]*?(?-u:\b)href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a\s*>"#,
@@ -476,11 +491,31 @@ fn rich_line(line: &str) -> Option<String> {
         return None;
     }
     let line = escape_line_start(line).replace(AUTHOR_BOLD_MARK, "**");
+    let line = marker_pairs(&line, SPOILER_MARK, "||");
+    let line = marker_pairs(&line, STRIKE_MARK, "~~");
     Some(named_url(&line).unwrap_or(line))
 }
 
 /// Stands for an author's `**` while a line is escaped.
 const AUTHOR_BOLD_MARK: char = '\u{E016}';
+/// Spoiler (`||…||`) and struck-through (`~~…~~`) text while a line is
+/// escaped.
+const SPOILER_MARK: char = '\u{E017}';
+const STRIKE_MARK: char = '\u{E018}';
+
+/// A marker pair becomes Discord markdown when it is balanced on the line
+/// and holds text; otherwise it goes.
+fn marker_pairs(line: &str, mark: char, markdown: &str) -> String {
+    let count = line.matches(mark).count();
+    if count == 0 {
+        return line.to_string();
+    }
+    let empty = format!("{mark}{mark}");
+    if count % 2 == 1 || line.contains(&empty) {
+        return line.replace(&empty, "").replace(mark, "");
+    }
+    line.replace(mark, markdown)
+}
 
 /// A line that is only a URL becomes a short named link.
 fn named_url(line: &str) -> Option<String> {

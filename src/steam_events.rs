@@ -104,7 +104,12 @@ fn clan_url(text: &str) -> String {
 /// HTML and the first image of the body.
 pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
     static URL_OPEN: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?i)\[url=\s*["']?([^"'\]\s]+)["']?[^\]]*\]"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"(?i)\[url=\s*["']*([^"'\]\s]+)["']*[^\]]*\]"#).unwrap());
+    // `[url]EA.com[/url]`: the text is the address.
+    static URL_BARE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)\[url\]\s*((?:https?://)?[a-z0-9.-]+\.[a-z]{2,}(?:/[^\[\s]*)?)\s*\[/url\]")
+            .unwrap()
+    });
     // A link card: `[dynamiclink href="…"][/dynamiclink]`, sometimes with the
     // URL repeated inside (like `[previewyoutube=ID]URL[/previewyoutube]`).
     static DYNAMIC: LazyLock<Regex> = LazyLock::new(|| {
@@ -119,12 +124,12 @@ pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
     });
     static DROP: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
-            r"(?is)\[video[^\]]*\].*?\[/video\]|\[/?(carousel|noparse|expand|spoiler|color|size|align)(?:[= ][^\]]*)?\]",
+            r"(?is)\[video[^\]]*\].*?\[/video\]|\[/?(carousel|noparse|expand|color|size|align|center|left|right)(?:[= ][^\]]*)?\]|\[/?previewyoutube[^\]]*\]|\[img[^\]]*\]\s*$",
         )
         .unwrap()
     });
     static TAG: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)\[(/?)(p|b|i|u|strike|h1|h2|h3|h4|h5|list|olist|\*|quote|code|c|hr|table|tr|th|td)(?:[= ][^\]]*)?\]")
+        Regex::new(r"(?i)\[(/?)(p|b|i|u|strike|spoiler|h1|h2|h3|h4|h5|list|olist|\*|quote|code|c|hr|table|tr|th|td)(?:[= ][^\]]*)?\]")
             .unwrap()
     });
     // `\[` and `\]` are literal brackets; keep them out of the tag pass.
@@ -150,6 +155,14 @@ pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
     let text = YOUTUBE.replace_all(&text, "<p>https://youtu.be/$1</p>");
     let text = DYNAMIC.replace_all(&text, "<p>$1</p>");
     let text = DROP.replace_all(&text, "");
+    let text = URL_BARE.replace_all(&text, |c: &Captures| {
+        let href = if c[1].contains("://") {
+            c[1].to_string()
+        } else {
+            format!("https://{}", &c[1])
+        };
+        format!(r#"<a href="{href}">{}</a>"#, &c[1])
+    });
     let text = URL_OPEN.replace_all(&text, r#"<a href="$1">"#);
     let text = text.replace("[/url]", "</a>").replace("[/URL]", "</a>");
     let text = TAG.replace_all(&text, |c: &Captures| {
@@ -161,6 +174,8 @@ pub fn bbcode_to_html(body: &str) -> (String, Option<String>) {
             "list" => "ul",
             "olist" => "ol",
             "strike" => "s",
+            "spoiler" if close => return "</span>".into(),
+            "spoiler" => return r#"<span class="bb_spoiler">"#.into(),
             "quote" => "blockquote",
             "code" => "pre",
             "c" => "code",
@@ -295,6 +310,46 @@ mod tests {
             crate::text::html_to_text(&html),
             "Watch:\nhttps://youtu.be/AX6OFBzjmlk\nhttps://store.steampowered.com/app/1/X/"
         );
+    }
+
+    #[test]
+    fn leftover_bbcode_does_not_leak() {
+        let text = |b: &str| crate::text::html_to_text(&bbcode_to_html(b).0);
+        assert_eq!(text("[center]Patch[/center]"), "Patch");
+        assert_eq!(
+            text("read the guides at [url]EA.com[/url]."),
+            "read the guides at EA.com."
+        );
+        assert!(
+            bbcode_to_html("[url]EA.com[/url]")
+                .0
+                .contains(r#"href="https://EA.com""#)
+        );
+        assert!(
+            bbcode_to_html(r#"by [url=""https://veroz.artstation.com/""]VEROZ[/url]"#)
+                .0
+                .contains(r#"href="https://veroz.artstation.com/""#)
+        );
+        assert_eq!(
+            text(
+                "[previewyoutube=CJJPYpQ6kOo;full][previewyoutube=CJJPYpQ6kOo;full]x[/previewyoutube][/previewyoutube]"
+            ),
+            "https://youtu.be/CJJPYpQ6kOo"
+        );
+        assert_eq!(text("Done.\n[img]"), "Done.");
+        // Discord hides spoilers and strikes through; plain text shows the words.
+        let rich = |b: &str| crate::text::html_to_rich(&bbcode_to_html(b).0);
+        assert_eq!(
+            rich("after deciding [spoiler]her parents'[/spoiler] fate."),
+            "after deciding ||her parents'|| fate."
+        );
+        assert_eq!(
+            rich("[strike]masochists[/strike] brave heroes"),
+            "~~masochists~~ brave heroes"
+        );
+        assert_eq!(text("[spoiler]x[/spoiler] y"), "x y");
+        // A pipe or tilde of the feed is still escaped.
+        assert_eq!(rich("[spoiler]a|b[/spoiler]"), "||a\\|b||");
     }
 
     #[test]

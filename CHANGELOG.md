@@ -180,6 +180,12 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Steam BBCode: on Discord `[spoiler]` stays hidden (`||…||`) and `[strike]` is struck
+  through (`~~…~~`); before, a spoiler was shown openly and a struck joke read as meant.
+  `[center]`, a bare `[url]EA.com[/url]`, `[url=""…""]` with doubled quotes, a nested
+  `[previewyoutube]` and a trailing unclosed `[img]` no longer leak as text. On the 278
+  production feeds 36 Steam posts change (43 spoilers, 22 strikes, 19 `[center]`); identities
+  do not (feed review F05).
 - FFXIV Lodestone posts have a text again: its Atom summary only repeats the title, so the
   snippet (used by Telegram and `PostText: false`) was empty for 20 of 20 entries; the
   content is used instead. Atom entries with several authors show all of them ("Ann, Bob")

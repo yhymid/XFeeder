@@ -450,7 +450,75 @@ pub fn finish(url: &str, mut items: Vec<Value>) -> Vec<Value> {
         }
     }
     mark_shared_links(&mut items);
+    mark_same_link_and_guid(&mut items);
     items
+}
+
+/// Different posts that share both link and guid (OpenAI listed two
+/// "retell-ai" posts, 2025 and 2026, under one address) would share one
+/// identity, so the newer one could never be sent. The oldest keeps the
+/// plain identity (it is the one history knows); the others get
+/// `link#c:<fingerprint of title and snippet>`. Exact duplicates stay one
+/// entry. At worst one post goes out twice; none is lost.
+fn mark_same_link_and_guid(items: &mut [Value]) {
+    let key = |item: &Value| {
+        let link = crate::text::normalize_link(&js::to_string_or_empty(or(&[
+            get(item, "sourceLink"),
+            get(item, "link"),
+        ])));
+        let guid = js::to_string_or_empty(get(item, "guid")).trim().to_string();
+        (!link.is_empty() && !truthy(get(item, "identityKey"))).then_some((link, guid))
+    };
+    let fingerprint = |item: &Value| {
+        // FNV-1a: stable across Rust versions, unlike the std hasher.
+        let text = format!(
+            "{}\n{}",
+            js::to_string_or_empty(get(item, "title")).trim(),
+            js::to_string_or_empty(get(item, "contentSnippet")).trim()
+        );
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in text.bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+        format!("{:08x}", hash >> 32)
+    };
+    let mut groups: std::collections::HashMap<(String, String), Vec<usize>> = Default::default();
+    for (i, item) in items.iter().enumerate() {
+        if let Some(k) = key(item) {
+            groups.entry(k).or_default().push(i);
+        }
+    }
+    for ((link, _), members) in groups {
+        if members.len() < 2 {
+            continue;
+        }
+        let prints: Vec<String> = members.iter().map(|&i| fingerprint(&items[i])).collect();
+        if prints.iter().all(|p| *p == prints[0]) {
+            continue;
+        }
+        // The oldest by date; undated or equal: the last in the feed.
+        let date = |i: usize| {
+            get(&items[i], "isoDate")
+                .as_str()
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+                .map(|d| d.timestamp_millis())
+                .unwrap_or(i64::MAX)
+        };
+        let holder = *members
+            .iter()
+            .rev()
+            .min_by_key(|&&i| date(i))
+            .expect("two members");
+        for (&i, print) in members.iter().zip(&prints) {
+            if i != holder
+                && *print != prints[members.iter().position(|&m| m == holder).unwrap_or(0)]
+                && let Some(map) = items[i].as_object_mut()
+            {
+                map.insert("identityKey".into(), json!(format!("{link}#c:{print}")));
+            }
+        }
+    }
 }
 
 /// Entries that share one link but have different guids (kernel.org lists
@@ -2012,6 +2080,33 @@ mod tests {
         let items = parse_json("https://j.example/feed.json", &body);
         assert_eq!(items[0]["author"], "Ann, Bob");
         assert_eq!(items[1]["author"], "Feed");
+    }
+
+    #[test]
+    fn different_posts_under_one_link_and_guid_are_told_apart() {
+        let item = |title: &str, date: &str| {
+            json!({ "title": title, "link": "https://openai.com/index/retell-ai", "guid": "https://openai.com/index/retell-ai",
+                    "contentSnippet": title, "isoDate": date })
+        };
+        let out = finish(
+            "https://openai.com/news/rss.xml",
+            vec![
+                item("Retell uses OpenAI models", "2026-10-27T00:00:00.000Z"),
+                item("No-code voice agents", "2025-06-26T00:00:00.000Z"),
+                item("No-code voice agents", "2025-06-26T00:00:00.000Z"),
+            ],
+        );
+        let ids: Vec<String> = out
+            .iter()
+            .map(|e| crate::text::entry_identity(e, true))
+            .collect();
+        // The 2025 post keeps its identity (and its exact copy shares it).
+        assert_eq!(ids[1], "https://openai.com/index/retell-ai");
+        assert_eq!(ids[2], ids[1]);
+        assert!(
+            ids[0].starts_with("https://openai.com/index/retell-ai#c:"),
+            "{ids:?}"
+        );
     }
 
     #[test]

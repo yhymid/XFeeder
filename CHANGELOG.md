@@ -180,6 +180,12 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Different posts that share both link and guid are told apart. OpenAI lists two "retell-ai"
+  posts (June 2025 and October 2026) under one address; the newer one had the older one's
+  identity and could never be sent. The oldest keeps its identity, the others get
+  `link#c:<fingerprint>`; exact duplicates stay one entry. On the 278 production feeds only
+  that post changes identity, and it was never sent, so the 3.1 deploy posts it once in the
+  channel that follows OpenAI (feed review F07-8).
 - Markup the feed escaped twice (Cursor: `<figure><video …>` as text, 6 posts) no longer
   shows as a line of tags; text like `<DmgType>` stays. A link that leaves no text (an avatar)
   no longer leaves a double space (28 GitHub posts) (feed review F06 F9).

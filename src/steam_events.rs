@@ -246,6 +246,12 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
                 .as_str()
                 .and_then(|s| serde_json::from_str(s).ok())
                 .unwrap_or(Value::Null);
+            // The publisher's own short summary (545 of 1948 events): used
+            // where the full text is not shown (Telegram, PostText off).
+            // Filters and SteamMerge keep reading the snippet.
+            let summary = first_file(&json_data, "localized_summary")
+                .map(|s| crate::text::clean_invisible(&crate::text::strip_html(&s)))
+                .filter(|s| !s.trim().is_empty());
             let clan = js::to_string_or_empty(get(announcement, "clanid"));
             let image = first_file(&json_data, "localized_capsule_image")
                 .or_else(|| first_file(&json_data, "localized_title_image"))
@@ -259,7 +265,7 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
                 .filter(|t| *t > 0)
                 .or_else(|| get(event, "rtime32_start_time").as_i64())
                 .unwrap_or(0);
-            Some(json!({
+            let mut item = json!({
                 "title": if title.is_empty() { "No title".to_string() } else { title },
                 "link": link,
                 "contentSnippet": crate::parsers::snippet(&html, 500),
@@ -269,7 +275,11 @@ pub fn parse(url: &str, body: &Body) -> Vec<Value> {
                 "author": Value::Null,
                 "guid": link,
                 "categories": [label, format!("event_type:{event_type}")],
-            }))
+            });
+            if let Some(summary) = summary {
+                item["contentSummary"] = json!(summary);
+            }
+            Some(item)
         })
         .collect()
 }
@@ -378,6 +388,35 @@ mod tests {
             "jsondata": "{\"localized_capsule_image\":[\"cap.png\"]}",
             "announcement_body": { "clanid": "3381077", "body": body, "tags": tags, "hidden": 0 }
         })
+    }
+
+    #[test]
+    fn a_publisher_summary_is_kept_apart_from_the_snippet() {
+        let mut with = event(
+            "9",
+            12,
+            "Update 3",
+            &["patchnotes"],
+            "[p]Long body text[/p]",
+        );
+        with["jsondata"] = json!("{\"localized_summary\":[\"Short summary\"]}");
+        let body = Body {
+            text: String::new(),
+            json: Some(
+                json!({ "success": 1, "events": [with, event("10", 12, "Update 4", &["patchnotes"], "[p]b[/p]")] }),
+            ),
+            xml: Default::default(),
+        };
+        let items = parse(URL, &body);
+        assert_eq!(items[0]["contentSummary"], "Short summary");
+        // Filters and SteamMerge still see the body.
+        assert_eq!(items[0]["contentSnippet"], "Long body text");
+        assert!(items[1].get("contentSummary").is_none());
+        let telegram = crate::deliver::telegram_text(&items[0]).unwrap();
+        assert!(
+            telegram.contains("Short summary\n\nLong body text"),
+            "{telegram}"
+        );
     }
 
     #[test]

@@ -76,6 +76,25 @@ fn post_text_length(root: &Value) -> usize {
     }
 }
 
+/// The plain text of an entry, led by the publisher's own summary (Steam)
+/// when there is one and the text does not already start with it.
+fn with_summary(entry: &Value) -> String {
+    let text = js::to_string_or_empty(js::or(&[
+        get(entry, "contentSnippet"),
+        get(entry, "content"),
+    ]));
+    match js::trimmed_str(get(entry, "contentSummary")) {
+        Some(summary) if !text.trim_start().starts_with(summary) => {
+            if text.trim().is_empty() {
+                summary.to_string()
+            } else {
+                format!("{summary}\n\n{text}")
+            }
+        }
+        _ => text,
+    }
+}
+
 fn post_body(entry: &Value) -> String {
     let length = POST_TEXT.load(std::sync::atomic::Ordering::Relaxed);
     match get(entry, "contentText").as_str() {
@@ -83,7 +102,7 @@ fn post_body(entry: &Value) -> String {
             crate::text::cut_text(text.trim(), length)
         }
         // The snippet is plain text (Telegram uses it as is): escaped here.
-        _ => crate::text::escape_markdown(&truncate(get(entry, "contentSnippet"), 800)),
+        _ => crate::text::escape_markdown(&truncate(&json!(with_summary(entry)), 800)),
     }
 }
 
@@ -770,14 +789,7 @@ const TELEGRAM_CAPTION_MAX: usize = 1024;
 pub fn telegram_text(entry: &Value) -> Result<String, String> {
     const MAX: usize = 4096;
     let title = escape_limited(js::or(&[get(entry, "title"), &json!("New entry")]), 480);
-    let snippet = escape_limited_lines(
-        js::or(&[
-            get(entry, "contentSnippet"),
-            get(entry, "content"),
-            &json!(""),
-        ]),
-        2600,
-    );
+    let snippet = escape_limited_lines(&json!(with_summary(entry)), 2600);
     let meta_parts: Vec<String> = [get(entry, "author"), get(entry, "isoDate")]
         .iter()
         .filter(|v| truthy(v))

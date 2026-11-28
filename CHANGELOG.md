@@ -180,6 +180,10 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Steam events keep the publisher's short summary (`localized_summary`, 527 of the events
+  in the production feeds) as `contentSummary`. Telegram posts and Discord posts with
+  `PostText: false` start with it, followed by the text as before. Filters and SteamMerge
+  still read the unchanged snippet (feed review F04 L6).
 - Code and quotes look like code and quotes on Discord. A `<pre>` block (Steam `[code]`)
   becomes a fenced code block with its lines and indent and nothing escaped inside (a cut
   inside one closes it); GitHub commit messages, which are prose in a `pre-wrap` block, stay

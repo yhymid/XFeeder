@@ -180,6 +180,12 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Code and quotes look like code and quotes on Discord. A `<pre>` block (Steam `[code]`)
+  becomes a fenced code block with its lines and indent and nothing escaped inside (a cut
+  inside one closes it); GitHub commit messages, which are prose in a `pre-wrap` block, stay
+  text. A `<blockquote>` (Steam `[quote]`) gets `> ` on each line. On the 278 production feeds
+  143 posts change (59 code blocks, 380 quoted lines); Telegram text and identities do not
+  (feed review F06 F8).
 - Tables read as tables on Discord. Before, every cell was its own line and bold cells
   became headings. Now a header row over a header column becomes `**row** — H1: v1 · H2: v2`;
   up to four short columns become `**H1 · H2**` and one `v1 · v2` line per row; two columns

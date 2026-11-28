@@ -372,9 +372,35 @@ pub fn html_to_rich(input: &str) -> String {
     // while a text is built; a feed must not be able to send them.
     let cleaned: String = input
         .chars()
-        .filter(|c| !('\u{E010}'..='\u{E018}').contains(c))
+        .filter(|c| !('\u{E010}'..='\u{E022}').contains(c))
         .collect();
     let input = cleaned.as_str();
+    // Code keeps its lines and indent and is not escaped: each `<pre>` is
+    // set aside and comes back as a fenced block.
+    static PRE: OnceLock<Regex> = OnceLock::new();
+    let mut code: Vec<String> = Vec::new();
+    // GitHub commit messages are prose in `<pre style="white-space:pre-wrap">`;
+    // they stay text.
+    let input = re(&PRE, r"(?is)<pre(?-u:\b)([^>]*)>(.*?)</pre\s*>").replace_all(
+        input,
+        |c: &regex::Captures| {
+            if c[1].to_ascii_lowercase().contains("pre-wrap") {
+                return c[0].to_string();
+            }
+            code.push(code_text(&c[2]));
+            format!("<p>{CODE_MARK}{}{CODE_MARK}</p>", code.len() - 1)
+        },
+    );
+    // A quote's lines get `> ` once they are built.
+    static QUOTE: OnceLock<Regex> = OnceLock::new();
+    let input = re(
+        &QUOTE,
+        r"(?is)<blockquote(?-u:\b)[^>]*>(.*?)</blockquote\s*>",
+    )
+    .replace_all(&input, |c: &regex::Captures| {
+        format!("<div>{QUOTE_OPEN}</div>{}<div>{QUOTE_CLOSE}</div>", &c[1])
+    });
+    let input = input.as_ref();
     // `<hN>`, and Steam's RSS form `<div class="bb_h1">` (557 of 564
     // headings in the 11 Steam RSS feeds, 27.11).
     let html = re(
@@ -433,7 +459,39 @@ pub fn html_to_rich(input: &str) -> String {
     let text = html_to_text(&html);
     // An empty line before a heading that follows text sets sections apart.
     let mut out: Vec<String> = Vec::new();
-    for line in text.lines().filter_map(rich_line) {
+    let mut quoted = false;
+    for line in text.lines() {
+        let line = if line.contains([QUOTE_OPEN, QUOTE_CLOSE]) {
+            if line.contains(QUOTE_OPEN) {
+                quoted = true;
+            }
+            if line.contains(QUOTE_CLOSE) {
+                quoted = false;
+            }
+            let rest = line.replace([QUOTE_OPEN, QUOTE_CLOSE], "");
+            if rest.trim().is_empty() {
+                continue;
+            }
+            rest
+        } else {
+            line.to_string()
+        };
+        if let Some(block) = line
+            .trim()
+            .strip_prefix(CODE_MARK)
+            .and_then(|l| l.strip_suffix(CODE_MARK))
+            .and_then(|n| n.parse::<usize>().ok())
+            .and_then(|n| code.get(n))
+        {
+            if !block.is_empty() {
+                out.push(format!("```\n{block}\n```"));
+            }
+            continue;
+        }
+        let Some(line) = rich_line(&line) else {
+            continue;
+        };
+        let line = if quoted { format!("> {line}") } else { line };
         let heading = line.starts_with("**") && line.ends_with("**");
         let after_text = out
             .last()
@@ -949,6 +1007,28 @@ fn rich_line_body(line: &str) -> Option<String> {
     Some(named_url(&line).unwrap_or(line))
 }
 
+/// A `<pre>` block set aside (`\u{E021}N\u{E021}`) and a quote's start and end.
+const CODE_MARK: char = '\u{E021}';
+const QUOTE_OPEN: char = '\u{E022}';
+const QUOTE_CLOSE: char = '\u{E019}';
+
+/// The text of a `<pre>` block for a Discord code fence: tags gone,
+/// entities decoded, lines and indent kept, a ``` inside broken up, and at
+/// most 1500 characters.
+fn code_text(html: &str) -> String {
+    static BR: OnceLock<Regex> = OnceLock::new();
+    static TAG: OnceLock<Regex> = OnceLock::new();
+    let text = re(&BR, r"(?i)<br\s*/?>").replace_all(html, "\n");
+    let text = re(&TAG, r"<[^>]*>").replace_all(&text, "");
+    let text = decode_entities(&text).replace("```", "`\u{200b}``");
+    let text = text.trim_matches(['\n', '\r']).trim_end();
+    if text.chars().count() <= 1500 {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(1500).collect();
+    format!("{}\n…", cut.trim_end())
+}
+
 /// Stands for an author's `**` while a line is escaped.
 const AUTHOR_BOLD_MARK: char = '\u{E016}';
 /// Spoiler (`||…||`) and struck-through (`~~…~~`) text while a line is
@@ -1343,6 +1423,33 @@ mod tests {
             ),
             "https://site/post"
         );
+    }
+
+    #[test]
+    fn code_and_quotes() {
+        assert_eq!(
+            html_to_rich(
+                "<p>Run:</p><pre><code>fn main() {\n    let x = a*b_c;\n}</code></pre><p>done</p>"
+            ),
+            "Run:\n```\nfn main() {\n    let x = a*b_c;\n}\n```\ndone"
+        );
+        assert_eq!(
+            html_to_rich("<pre>a ``` b</pre>"),
+            "```\na `\u{200b}`` b\n```"
+        );
+        assert_eq!(
+            html_to_rich("<blockquote><p>Quoted *one*</p><p>&gt; two</p></blockquote><p>after</p>"),
+            "> Quoted \\*one\\*\n> \\> two\nafter"
+        );
+        // A GitHub commit message stays text.
+        assert_eq!(
+            html_to_rich(
+                "<pre style='white-space:pre-wrap;width:81ex'>Fix the parser\n\nKeeps entities.</pre>"
+            ),
+            "Fix the parser\nKeeps entities."
+        );
+        // Plain text keeps the words only.
+        assert_eq!(html_to_text("<blockquote><p>q</p></blockquote>"), "q");
     }
 
     #[test]

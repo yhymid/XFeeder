@@ -81,7 +81,13 @@ pub(crate) fn rich(raw: &str) -> String {
     // a page of links and the shortening never applies (OpenClaw).
     let text = crate::text::html_to_rich(raw);
     let text: Vec<String> = text.lines().map(short_mentions).collect();
-    crate::text::cut_text(&text.join("\n"), 4000)
+    let text = crate::text::cut_text(&text.join("\n"), 4000);
+    // A cut inside a code block closes it.
+    if text.lines().filter(|l| l.trim() == "```").count() % 2 == 1 {
+        format!("{text}\n```")
+    } else {
+        text
+    }
 }
 
 fn with_text(mut entry: Value, raw: &str, feed_url: &str) -> Value {
@@ -130,8 +136,16 @@ fn tidy_text(text: &str, title: &str, rejoin: bool) -> String {
         return lines.join("\n");
     }
     let mut out: Vec<String> = Vec::new();
+    let mut fenced = false;
     for line in lines {
-        let continues = line.starts_with(|c: char| c.is_lowercase())
+        // Code lines are never joined.
+        if line.trim() == "```" {
+            fenced = !fenced;
+            out.push(line.to_string());
+            continue;
+        }
+        let continues = !fenced
+            && line.starts_with(|c: char| c.is_lowercase())
             && out.last().is_some_and(|prev| {
                 !prev.is_empty()
                     && !prev.ends_with(['.', ':', '!', '?', '*'])

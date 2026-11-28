@@ -180,6 +180,14 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Tables read as tables on Discord. Before, every cell was its own line and bold cells
+  became headings. Now a header row over a header column becomes `**row** — H1: v1 · H2: v2`;
+  up to four short columns become `**H1 · H2**` and one `v1 · v2` line per row; two columns
+  become `**key**: value`; long rows become one bullet per row with its fields below; a single
+  row is one line; a lone header cell over a grid is its title; empty spacer columns go.
+  Tables used for page layout (a picture beside paragraphs, lowcygier) stay as before. On the
+  278 production feeds 81 posts change and their text shrinks from 6355 to 4366 lines;
+  identities and Telegram text do not change (feed review F06 D2).
 - Nested and numbered lists keep their shape. A sub-list is indented (EM SPACE, so Discord
   does not trim it or read it as code) with `◦`, then `▪`; an ordered list (`<ol>`, Steam
   `[olist]`) is numbered `1.`, `2.`… (`start` honoured). Before, every item was a flat `•`,

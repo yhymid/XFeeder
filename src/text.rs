@@ -429,6 +429,7 @@ pub fn html_to_rich(input: &str) -> String {
             .replace('>', "&gt;");
         format!("{LINK_OPEN}{text}{LINK_MID}{}{LINK_CLOSE}", &c[1])
     });
+    let html = render_tables(&html);
     let text = html_to_text(&html);
     // An empty line before a heading that follows text sets sections apart.
     let mut out: Vec<String> = Vec::new();
@@ -443,6 +444,271 @@ pub fn html_to_rich(input: &str) -> String {
         out.push(line);
     }
     out.join("\n")
+}
+
+/// Tables as lines Discord can show (it has no tables; every cell was its
+/// own line and bold cells became headings). Innermost tables first.
+/// - one cell: its text; one column: one line (a bullet each if several);
+/// - two columns without a header row: `**key**: value`;
+/// - a header row over a header column (a matrix): `**row** — H1: v1 · H2: v2`;
+/// - up to four short columns: `**H1 · H2**` then `v1 · v2` per row;
+/// - else one bullet per row with its fields below.
+fn render_tables(html: &str) -> String {
+    let mut html = html.to_string();
+    for _ in 0..64 {
+        let lower = html.to_ascii_lowercase();
+        let Some(end) = lower.find("</table") else {
+            break;
+        };
+        let Some(start) = lower[..end].rfind("<table") else {
+            break;
+        };
+        let close = lower[end..].find('>').map_or(html.len(), |i| end + i + 1);
+        let open_end = lower[start..end].find('>').map_or(end, |i| start + i + 1);
+        let inner = &html[open_end..end];
+        let rendered = if layout_table(inner) {
+            // Kept as before: each cell becomes its own block.
+            format!("<div>{inner}</div>")
+        } else {
+            render_table(inner)
+        };
+        html.replace_range(start..close, &rendered);
+    }
+    html
+}
+
+/// A table used for page layout (lowcygier: a picture cell beside a text
+/// cell with paragraphs), not for data: a cell holds a picture or blocks.
+fn layout_table(inner: &str) -> bool {
+    static MEDIA: OnceLock<Regex> = OnceLock::new();
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    static BREAK: OnceLock<Regex> = OnceLock::new();
+    if re(
+        &MEDIA,
+        r"(?i)<(?:img|ul|ol|blockquote|pre|figure|video|iframe)(?-u:\b)",
+    )
+    .is_match(inner)
+    {
+        return true;
+    }
+    // More than one paragraph or line of text in one cell (a callout box).
+    let breaks = re(&BREAK, r"(?i)</?(?:p|div|br)(?-u:\b)[^>]*>");
+    re(&CELL, r"(?is)<t[hd](?-u:\b)[^>]*>(.*?)(?:</t[hd]\s*>|$)")
+        .captures_iter(inner)
+        .any(|c| {
+            breaks
+                .split(&c[1])
+                .filter(|part| !strip_html(part).trim().is_empty())
+                .count()
+                > 1
+        })
+}
+
+fn render_table(inner: &str) -> String {
+    static ROW: OnceLock<Regex> = OnceLock::new();
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    static BOLD: OnceLock<Regex> = OnceLock::new();
+    let row_re = re(&ROW, r"(?is)<tr(?-u:\b)[^>]*>(.*?)(?:</tr\s*>|$)");
+    let cell_re = re(&CELL, r"(?is)<(th|td)(?-u:\b)[^>]*>(.*?)(?:</t[hd]\s*>|$)");
+    let bold_re = re(
+        &BOLD,
+        r"(?is)^\s*(?:<p(?-u:\b)[^>]*>\s*)?<(?:b|strong)>.*</(?:b|strong)>\s*(?:</p>\s*)?$",
+    );
+    let esc = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
+    let mut rows: Vec<Vec<(String, bool)>> = row_re
+        .captures_iter(inner)
+        .map(|r| {
+            cell_re
+                .captures_iter(&r[1])
+                .map(|c| {
+                    let raw = &c[2];
+                    let headed = raw.contains(HEAD_OPEN);
+                    let text = strip_html(&raw.replace([HEAD_OPEN, HEAD_CLOSE], ""))
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let header = c[1].eq_ignore_ascii_case("th") || headed || bold_re.is_match(raw);
+                    (text, header)
+                })
+                .collect()
+        })
+        .collect();
+    rows.retain(|r| r.iter().any(|(t, _)| !t.is_empty()));
+    let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let used: Vec<usize> = (0..width)
+        .filter(|&i| {
+            rows.iter()
+                .any(|r| r.get(i).is_some_and(|(t, _)| !t.is_empty()))
+        })
+        .collect();
+    let rows: Vec<Vec<(String, bool)>> = rows
+        .into_iter()
+        .map(|r| {
+            used.iter()
+                .map(|&i| r.get(i).cloned().unwrap_or_default())
+                .collect()
+        })
+        .collect();
+    let cols = used.len();
+    if rows.is_empty() {
+        return " ".to_string();
+    }
+    let b = |s: &str| format!("{AUTHOR_BOLD_MARK}{}{AUTHOR_BOLD_MARK}", esc(s));
+    // A first row with a single header cell over several columns is the
+    // table's title (Black Desert: "Featured Rewards" over a grid).
+    let mut rows = rows;
+    let mut title = None;
+    if rows.len() > 1 && cols > 1 {
+        let filled: Vec<&(String, bool)> = rows[0].iter().filter(|(t, _)| !t.is_empty()).collect();
+        if let [(text, true)] = filled.as_slice() {
+            title = Some(format!("<p>{}</p>", b(text)));
+            rows.remove(0);
+        }
+    }
+    let body = render_rows(&rows, cols, &b, &esc);
+    match title {
+        Some(title) => format!("{title}{body}"),
+        None => body,
+    }
+}
+
+/// The visible length of a cell text: a link counts as its text only.
+fn visible_len(text: &str) -> usize {
+    let mut n = 0;
+    let mut in_url = false;
+    for c in text.chars() {
+        match c {
+            LINK_MID => in_url = true,
+            LINK_CLOSE => in_url = false,
+            LINK_OPEN => {}
+            _ if !in_url => n += 1,
+            _ => {}
+        }
+    }
+    n
+}
+
+fn render_rows(
+    rows: &[Vec<(String, bool)>],
+    cols: usize,
+    b: &dyn Fn(&str) -> String,
+    esc: &dyn Fn(&str) -> String,
+) -> String {
+    let para = |lines: Vec<String>| format!("<p>{}</p>", lines.join("<br>"));
+    let list = |items: Vec<String>| {
+        format!(
+            "<ul>{}</ul>",
+            items
+                .iter()
+                .map(|i| format!("<li>{i}</li>"))
+                .collect::<String>()
+        )
+    };
+    let joined = |r: &Vec<(String, bool)>| {
+        r.iter()
+            .map(|(t, _)| t.as_str())
+            .filter(|t| !t.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ")
+    };
+    if cols <= 1 {
+        let lines: Vec<String> = rows.iter().map(|r| esc(&r[0].0)).collect();
+        return if lines.len() > 1 {
+            list(lines)
+        } else {
+            para(lines)
+        };
+    }
+    // One row: its cells on one line, or one line each when long
+    // (language links, a row of buttons).
+    if rows.len() == 1 {
+        let line = joined(&rows[0]);
+        return if visible_len(&line) <= 200 {
+            para(vec![esc(&line)])
+        } else {
+            para(
+                rows[0]
+                    .iter()
+                    .filter(|(t, _)| !t.is_empty())
+                    .map(|(t, _)| esc(t))
+                    .collect(),
+            )
+        };
+    }
+    let header_row = rows[0].iter().all(|(t, h)| t.is_empty() || *h)
+        && rows[0].iter().any(|(t, _)| !t.is_empty());
+    let key_value = |data: &[Vec<(String, bool)>]| {
+        para(
+            data.iter()
+                .map(|r| match (r[0].0.is_empty(), r[1].0.is_empty()) {
+                    (false, false) => format!("{}: {}", b(&r[0].0), esc(&r[1].0)),
+                    (true, _) => esc(&r[1].0),
+                    (_, true) => esc(&r[0].0),
+                })
+                .collect(),
+        )
+    };
+    if cols == 2 && !header_row {
+        return key_value(rows);
+    }
+    let data = if header_row { &rows[1..] } else { rows };
+    let heads: Vec<&str> = if header_row {
+        rows[0].iter().map(|(t, _)| t.as_str()).collect()
+    } else {
+        Vec::new()
+    };
+    let field = |i: usize, v: &str| match heads.get(i).filter(|h| !h.is_empty()) {
+        Some(h) => format!("{}: {}", esc(h), esc(v)),
+        None => esc(v),
+    };
+    let matrix = header_row && heads[0].is_empty() && data.iter().all(|r| r[0].1);
+    if matrix {
+        return para(
+            data.iter()
+                .map(|r| {
+                    let rest: Vec<String> = (1..cols)
+                        .filter(|&i| !r[i].0.is_empty())
+                        .map(|i| field(i, &r[i].0))
+                        .collect();
+                    format!("{} — {}", b(&r[0].0), rest.join(" · "))
+                })
+                .collect(),
+        );
+    }
+    let short = cols <= 4 && rows.iter().all(|r| visible_len(&joined(r)) <= 100);
+    if short {
+        let mut lines = Vec::new();
+        if header_row {
+            lines.push(b(&joined(&rows[0])));
+        }
+        lines.extend(data.iter().map(|r| esc(&joined(r))));
+        return para(lines);
+    }
+    // Two long columns under a header (Roblox "Field / Meaning").
+    if cols == 2 {
+        return key_value(data);
+    }
+    list(
+        data.iter()
+            .map(|r| {
+                let fields: Vec<String> = (0..cols)
+                    .filter(|&i| !r[i].0.is_empty())
+                    .map(|i| field(i, &r[i].0))
+                    .collect();
+                match fields.split_first() {
+                    Some((first, rest)) if !rest.is_empty() => {
+                        format!("{first}{}", list(rest.to_vec()))
+                    }
+                    Some((first, _)) => first.clone(),
+                    None => String::new(),
+                }
+            })
+            .collect(),
+    )
 }
 
 /// Feed text as Discord markdown that shows exactly what the feed says:
@@ -1076,6 +1342,67 @@ mod tests {
                 false
             ),
             "https://site/post"
+        );
+    }
+
+    #[test]
+    fn tables_become_readable_lines() {
+        let e = '\u{2003}';
+        // A matrix (World of Tanks event times).
+        assert_eq!(
+            html_to_rich(
+                "<table><tr><th></th><th>EU (CET)</th><th>NA (PT | ET)</th></tr><tr><td><b>Event Start</b></td><td>December 1 at 05:00</td><td>December 1 at 02:00 | 05:00</td></tr></table>"
+            ),
+            "**Event Start** — EU (CET): December 1 at 05:00 · NA (PT \\| ET): December 1 at 02:00 \\| 05:00"
+        );
+        // A one-cell layout box: its text, the bold no heading of its own.
+        assert_eq!(
+            html_to_rich(
+                "<p>Before</p><table><tr><td><b>Update 02/10</b> is live</td></tr></table>"
+            ),
+            "Before\nUpdate 02/10 is live"
+        );
+        // Key and value, with an empty spacer column dropped.
+        assert_eq!(
+            html_to_rich(
+                "<table><tr><td>Event Name</td><td></td><td>[Attendance] Support</td></tr><tr><td>Event Period</td><td></td><td>Dec 1 - Dec 8</td></tr></table>"
+            ),
+            "**Event Name**: [Attendance] Support\n**Event Period**: Dec 1 - Dec 8"
+        );
+        // Short columns with a header.
+        assert_eq!(
+            html_to_rich(
+                "<table><tr><th>State</th><th>Icon</th><th>Meaning</th></tr><tr><td>Open</td><td>green</td><td>active</td></tr><tr><td>Closed</td><td>purple</td><td>done</td></tr></table>"
+            ),
+            "**State · Icon · Meaning**\nOpen · green · active\nClosed · purple · done"
+        );
+        // One row of links: one line; a title cell over a grid.
+        assert_eq!(
+            html_to_rich(
+                r#"<table><tr><td><a href="https://x.example/ko">한국어</a></td><td><a href="https://x.example/de">Deutsch</a></td></tr></table>"#
+            ),
+            "[한국어](https://x.example/ko) · [Deutsch](https://x.example/de)"
+        );
+        assert_eq!(
+            html_to_rich(
+                "<table><tr><th>Featured Rewards</th><th></th><th></th></tr><tr><td>Box</td><td>Horn</td><td>Draught</td></tr><tr><td>Censer</td><td>Gear</td><td>Perfume</td></tr></table>"
+            ),
+            "**Featured Rewards**\nBox · Horn · Draught\nCenser · Gear · Perfume"
+        );
+        // A layout table (picture beside paragraphs) keeps its blocks.
+        assert_eq!(
+            html_to_rich(
+                r#"<table><tr><td><img src="https://x.example/i.jpg"></td><td><p>One.</p><p>Two.</p></td></tr></table>"#
+            ),
+            "One.\nTwo."
+        );
+        // Long rows: one bullet per row, fields below.
+        let long = "x".repeat(120);
+        assert_eq!(
+            html_to_rich(&format!(
+                "<table><tr><th>Component</th><th>Version</th><th>Notes</th></tr><tr><td>IGC</td><td>2.20</td><td>{long}</td></tr></table>"
+            )),
+            format!("• Component: IGC\n{e}◦ Version: 2.20\n{e}◦ Notes: {long}")
         );
     }
 

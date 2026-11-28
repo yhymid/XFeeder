@@ -1191,7 +1191,15 @@ impl Pipeline<'_> {
             // Steam events with only broadcasts/streams: nothing to send, and
             // the generic JSON parser must not turn the answer into entries.
             || steam_items.as_ref().is_some_and(Vec::is_empty);
-        for (name, parser) in parsers::PARSERS.iter().filter(|_| !empty_api) {
+        // A GitHub API answer is read by the GitHub parser only: what it does
+        // not map (a draft release, `releases/latest`'s assets, an unknown
+        // endpoint) must not become entries with API links (F04 M2).
+        let github = crate::github_api::is_api(url);
+        for (name, parser) in parsers::PARSERS
+            .iter()
+            .filter(|_| !empty_api)
+            .filter(|(name, _)| !github || *name == "parseGitHubAPI")
+        {
             expert("feed.parser.begin", json!({ "url": url, "parser": name }));
             let items = match steam_items.take() {
                 Some(items) if *name == "parseSteamEvents" => items,
@@ -1226,7 +1234,7 @@ impl Pipeline<'_> {
                 json!({ "url": url, "parser": name }),
             );
         }
-        let items = if empty_api {
+        let items = if empty_api || github {
             Vec::new()
         } else {
             parsers::regex_items(&dl.data)
@@ -1246,7 +1254,13 @@ impl Pipeline<'_> {
                 None,
             ));
         }
-        if empty_api || parsers::is_feed_document(&body) {
+        if github && !empty_api {
+            crate::info!(
+                "Feed pipeline",
+                "GitHub answered with nothing to post (only drafts, or an endpoint XFeeder does not read): {}",
+                sanitize_url(url)
+            );
+        } else if empty_api || parsers::is_feed_document(&body) {
             crate::info!(
                 "Feed pipeline",
                 "Feed has no entries: {}",

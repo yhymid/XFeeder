@@ -180,6 +180,14 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Generic JSON APIs map better. The Hearthstone blog's 12 articles now link to the article
+  (`defaultUrl`) instead of the API URL, are dated when published (`publish`) instead of when
+  the draft was created (7–39 days earlier, so `MaxAgeHours` dropped them), and show their
+  thumbnail (an image given as an object with `url`). Their delivery identity is unchanged,
+  so nothing is posted again. Publication fields (`published_at`, `publish`) now come before
+  `created_at`. Only change on the 278 production feeds (feed review F04 H2).
+- A GitHub API answer is read only by the GitHub parser. A draft release, the assets of
+  `releases/latest` or an unknown endpoint no longer become posts with API links (F04 M2).
 - XML namespaces are matched by their URI, not by the prefix a feed uses. The s&box news feed
   writes Atom's author as `a10:author`, so its 50 posts had no author; now they do (only
   change on the 278 production feeds) (feed review F02).

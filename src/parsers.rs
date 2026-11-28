@@ -1057,15 +1057,35 @@ fn standardize(raw: &Value) -> Option<Value> {
     } else {
         Value::Null
     };
-    let link = js::or_else(
-        &[
-            get(raw, "url"),
-            get(raw, "link"),
-            get(raw, "permalink"),
-            &id_link,
-        ],
-        Value::Null,
-    );
+    // A web address of the item itself before an `#id` fallback (that one
+    // resolves against the API URL: every Hearthstone article got the same
+    // link, F04 H2).
+    let web = |v: &Value| {
+        v.as_str().is_some_and(|s| {
+            s.starts_with("http://") || s.starts_with("https://") || s.starts_with('/')
+        })
+    };
+    let link = [
+        get(raw, "url"),
+        get(raw, "link"),
+        get(raw, "permalink"),
+        get(raw, "defaultUrl"),
+        get(raw, "canonical_url"),
+        get(raw, "permalink_url"),
+        get(raw, "html_url"),
+    ]
+    .into_iter()
+    .find(|v| web(v))
+    .cloned()
+    .unwrap_or_else(|| js::or_else(&[get(raw, "url"), get(raw, "link"), &id_link], Value::Null));
+    // Entries that used to fall back to `#id` keep that as their identity,
+    // so history from before the article links does not post them again.
+    let old_identity = (!truthy(get(raw, "url"))
+        && !truthy(get(raw, "link"))
+        && !truthy(get(raw, "permalink"))
+        && truthy(&id_link)
+        && link != id_link)
+        .then(|| crate::text::normalize_link(&js::to_string(&id_link)));
     let description = or(&[
         get(raw, "summary"),
         get(raw, "description"),
@@ -1073,36 +1093,45 @@ fn standardize(raw: &Value) -> Option<Value> {
         get(raw, "text"),
         get(raw, "content"),
     ]);
+    // Publication first: `created_at` is often the draft time (Hearthstone:
+    // 7–39 days before the article went out, so MaxAgeHours dropped them).
     let date = js::or_else(
         &[
+            get(raw, "published_at"),
+            get(raw, "publish"),
+            get(raw, "publishedAt"),
             get(raw, "date"),
+            get(raw, "timestamp"),
             get(raw, "created_at"),
             get(raw, "updated_at"),
-            get(raw, "published_at"),
-            get(raw, "timestamp"),
         ],
         Value::Null,
     );
-    let image = js::or_else(
-        &[
-            get(raw, "image"),
-            get(raw, "thumbnail"),
-            get(raw, "banner"),
-            get(raw, "media_url"),
-            get(raw, "preview_image"),
-        ],
-        Value::Null,
-    );
-    let author = js::or_else(
-        &[
-            path(raw, &["author", "name"]),
-            get(raw, "author"),
-            path(raw, &["user", "name"]),
-            get(raw, "user"),
-            get(raw, "by"),
-        ],
-        Value::Null,
-    );
+    // An image may be an object with its address in `url`.
+    let image = [
+        get(raw, "image"),
+        get(raw, "thumbnail"),
+        get(raw, "banner"),
+        get(raw, "header"),
+        get(raw, "media_url"),
+        get(raw, "preview_image"),
+    ]
+    .into_iter()
+    .map(|v| if v.is_object() { get(v, "url") } else { v })
+    .find(|v| v.as_str().is_some_and(|s| !s.trim().is_empty()))
+    .cloned()
+    .unwrap_or(Value::Null);
+    let author = [
+        path(raw, &["author", "name"]),
+        get(raw, "author"),
+        path(raw, &["user", "name"]),
+        get(raw, "user"),
+        get(raw, "by"),
+    ]
+    .into_iter()
+    .find(|v| v.as_str().is_some_and(|s| !s.trim().is_empty()))
+    .cloned()
+    .unwrap_or(Value::Null);
     let content = match description {
         Value::String(text) => js::trim(prefix16(&strip_html(text), 500)).to_string(),
         v if !truthy(v) => String::new(),
@@ -1119,6 +1148,10 @@ fn standardize(raw: &Value) -> Option<Value> {
         guid,
         js::or_else(&[get(raw, "tags"), get(raw, "categories")], json!([])),
     );
+    let mut item = item;
+    if let (Some(key), Some(map)) = (old_identity, item.as_object_mut()) {
+        map.insert("identityKey".into(), json!(key));
+    }
     (truthy(&item["link"]) && truthy(&item["title"])).then_some(item)
 }
 
@@ -1817,6 +1850,25 @@ mod tests {
         assert!(parse_fallback("https://a/feed", &rss).is_empty());
         let page = Body::new("<html><head><title>Page</title></head><body></body></html>".into());
         assert_eq!(parse_html_page("https://a/", &page).len(), 1);
+    }
+
+    #[test]
+    fn generic_json_takes_the_article_link_publish_date_and_image_url() {
+        // Hearthstone's blog API (F04 H2), trimmed.
+        let body = Body::new(r#"[{"id":24316976,"title":"37.0 Patch Notes","created_at":"2026-11-05T22:59:23.108Z","publish":1795456500000,"updated_at":"2026-11-23T19:41:10.535Z","defaultUrl":"https://playhearthstone.com/en-us/blog/24316976","thumbnail":{"mediaId":1,"url":"https://cdn.example/t.jpg"},"author":"Team 5","summary":"Patch"}]"#.into());
+        let items = parse_api_x(
+            "https://hearthstone.example/api/blog/articleList/?page=1",
+            &body,
+        );
+        assert_eq!(
+            items[0]["link"],
+            "https://playhearthstone.com/en-us/blog/24316976"
+        );
+        assert_eq!(items[0]["isoDate"], "2026-11-23T17:55:00.000Z");
+        assert_eq!(items[0]["enclosure"], "https://cdn.example/t.jpg");
+        assert_eq!(items[0]["author"], "Team 5");
+        // Same identity as before the article links.
+        assert_eq!(crate::text::entry_identity(&items[0], true), "#24316976");
     }
 
     #[test]

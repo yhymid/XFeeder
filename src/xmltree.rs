@@ -74,11 +74,54 @@ fn attach(parent: &mut Map<String, Value>, name: String, value: Value) {
     }
 }
 
+/// Namespaces by URI, not by the prefix a feed happens to use: sbox writes
+/// Atom's `author` as `a10:author`, Debian's Dublin Core has no trailing
+/// slash. Known URIs get one fixed prefix.
+fn canonical_prefix(uri: &str) -> Option<&'static str> {
+    match uri.trim().trim_end_matches('/') {
+        "http://www.w3.org/2005/Atom" => Some("atom"),
+        "http://purl.org/dc/elements/1.1" => Some("dc"),
+        "http://search.yahoo.com/mrss" => Some("media"),
+        "http://purl.org/rss/1.0/modules/content" => Some("content"),
+        "http://www.youtube.com/xml/schemas/2015" => Some("yt"),
+        _ => None,
+    }
+}
+
+/// Declarations of one element: prefix → its canonical prefix.
+fn declarations(attrs: &Map<String, Value>) -> Vec<(String, &'static str)> {
+    attrs
+        .iter()
+        .filter_map(|(k, v)| {
+            let prefix = k.strip_prefix("xmlns:")?;
+            Some((prefix.to_string(), canonical_prefix(v.as_str()?)?))
+        })
+        .collect()
+}
+
+fn canonical_name(name: &str, scopes: &[Vec<(String, &'static str)>]) -> Option<String> {
+    let (prefix, local) = name.split_once(':')?;
+    let canon = scopes
+        .iter()
+        .rev()
+        .flat_map(|s| s.iter())
+        .find(|(p, _)| p == prefix)
+        .map(|(_, c)| *c)?;
+    (canon != prefix).then(|| format!("{canon}:{local}"))
+}
+
 pub fn parse(xml: &str) -> Result<Value, String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().check_end_names = true;
     let mut stack: Vec<Frame> = Vec::new();
+    let mut scopes: Vec<Vec<(String, &'static str)>> = Vec::new();
     let mut root: Option<Value> = None;
+    let open = |frame: &mut Frame, scopes: &mut Vec<Vec<(String, &'static str)>>| {
+        scopes.push(declarations(&frame.attrs));
+        if let Some(name) = canonical_name(&frame.name, scopes) {
+            frame.name = name;
+        }
+    };
     let start = |e: &quick_xml::events::BytesStart| -> Result<Frame, String> {
         let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
         let mut attrs = Map::new();
@@ -108,13 +151,17 @@ pub fn parse(xml: &str) -> Result<Value, String> {
                 if stack.len() >= MAX_DEPTH {
                     return Err(format!("XML nested deeper than {MAX_DEPTH} levels"));
                 }
-                stack.push(start(&e)?);
+                let mut frame = start(&e)?;
+                open(&mut frame, &mut scopes);
+                stack.push(frame);
             }
             Event::Empty(e) => {
                 if root.is_some() {
                     break;
                 }
-                let frame = start(&e)?;
+                let mut frame = start(&e)?;
+                open(&mut frame, &mut scopes);
+                scopes.pop();
                 let name = frame.name.clone();
                 let value = finish(frame);
                 match stack.last_mut() {
@@ -124,6 +171,7 @@ pub fn parse(xml: &str) -> Result<Value, String> {
             }
             Event::End(_) => {
                 let frame = stack.pop().ok_or("Unexpected end tag")?;
+                scopes.pop();
                 let name = frame.name.clone();
                 let value = finish(frame);
                 match stack.last_mut() {

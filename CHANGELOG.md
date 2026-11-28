@@ -180,6 +180,9 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- XML namespaces are matched by their URI, not by the prefix a feed uses. The s&box news feed
+  writes Atom's author as `a10:author`, so its 50 posts had no author; now they do (only
+  change on the 278 production feeds) (feed review F02).
 - Atom follows RFC 4287 more closely: the date is `published` (the last edit, `updated`, only
   when there is none); a link without `rel` counts as the post link, `text/html` alternates
   come first, and `self`, `edit` or `enclosure` links are never used as the post link (an

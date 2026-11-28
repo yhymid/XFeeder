@@ -795,6 +795,7 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
             let author = string_value(or(&[
                 path(e, &["author", "name"]),
                 path(e, &["author", "VALUE"]),
+                path(e, &["atom:author", "atom:name"]),
                 get(e, "dc:creator"),
                 get(e, "creator"),
                 get(e, "author"),
@@ -1816,6 +1817,15 @@ mod tests {
         assert!(parse_fallback("https://a/feed", &rss).is_empty());
         let page = Body::new("<html><head><title>Page</title></head><body></body></html>".into());
         assert_eq!(parse_html_page("https://a/", &page).len(), 1);
+    }
+
+    #[test]
+    fn namespaces_are_matched_by_uri() {
+        // sbox: Atom's author under the prefix a10 inside RSS.
+        let body = Body::new(r#"<rss version="2.0" xmlns:a10="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/"><channel><title>s</title><item><title>t</title><link>https://s.example/1</link><a10:author><a10:name>Garry</a10:name></a10:author><m:thumbnail url="https://s.example/i.jpg"/></item></channel></rss>"#.into());
+        let items = parse_xml("https://s.example/rss", &body);
+        assert_eq!(items[0]["author"], "Garry");
+        assert_eq!(items[0]["enclosure"], "https://s.example/i.jpg");
     }
 
     #[test]

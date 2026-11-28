@@ -180,6 +180,12 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Nested and numbered lists keep their shape. A sub-list is indented (EM SPACE, so Discord
+  does not trim it or read it as code) with `◦`, then `▪`; an ordered list (`<ol>`, Steam
+  `[olist]`) is numbered `1.`, `2.`… (`start` honoured). Before, every item was a flat `•`,
+  and an item could run into the heading after the list. On the 278 production feeds 2426
+  lines get their indent and 234 their number, in 280 posts; identities do not change
+  (feed review F06 D3).
 - Atom entries find their image like RSS items: several `media:thumbnail`/`media:content`
   nodes and `media:group` are read, a video is never taken as the image, and the first real
   picture in the content is used last. Unreal Engine's 10 posts now have their image (only

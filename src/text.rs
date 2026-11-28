@@ -256,25 +256,30 @@ pub fn html_to_text(input: &str) -> String {
     // WordPress feeds (blender.org) start every body with `<?xml encoding="utf-8"?>`.
     static PI: OnceLock<Regex> = OnceLock::new();
     let input = re(&PI, r"(?s)<\?.*?\?>").replace_all(&input, "");
-    let marked = re(&LI, r"(?i)<li(?-u:\b)[^>]*>").replace_all(&input, "\n•\n");
+    let input: String = input.chars().filter(|c| *c != LIST_MARK).collect();
+    let marked = list_markers(&input, re(&LI, r"(?i)<(/?)(ul|ol|li)(?-u:\b)([^>]*)>"));
     let text = clean_invisible(&strip_html(&marked))
         // Steam escapes BBCode brackets in its HTML ("\[ MAPS ]").
         .replace("\\[", "[")
         .replace("\\]", "]");
     let mut lines: Vec<String> = Vec::new();
-    let mut bullet = false;
+    let mut bullet: Option<String> = None;
     for line in text.lines() {
+        // A list marker keeps its EM SPACE indent (`\s` would flatten it).
+        if let Some(label) = line
+            .trim_matches(|c: char| c.is_ascii_whitespace())
+            .strip_prefix(LIST_MARK)
+        {
+            bullet = Some(format!("{label} "));
+            continue;
+        }
         let line = re(&SPACE, r"\s+").replace_all(line, " ");
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        if line == "•" {
-            bullet = true;
-            continue;
-        }
         // "• 7f3a037" + "docs: crop…" (a commit id on its own) → one line.
-        if !bullet
+        if bullet.is_none()
             && let Some(last) = lines.last_mut()
             && let Some(word) = last.strip_prefix("• ")
             && !word.contains(' ')
@@ -284,14 +289,66 @@ pub fn html_to_text(input: &str) -> String {
             last.push_str(line);
             continue;
         }
-        lines.push(if bullet {
-            format!("• {line}")
-        } else {
-            line.to_string()
+        lines.push(match bullet.take() {
+            Some(prefix) => format!("{prefix}{line}"),
+            None => line.to_string(),
         });
-        bullet = false;
     }
     lines.join("\n")
+}
+
+/// Marks a list item on its own line; the rest of the line is the item's
+/// prefix (indent and label).
+const LIST_MARK: char = '\u{E020}';
+/// Nested lists are indented with EM SPACE (Discord trims ordinary spaces
+/// and would read four of them as code).
+const LIST_INDENT: char = '\u{2003}';
+
+/// `<li>` becomes a marker line carrying its prefix: `• `, `◦ ` and `▪ ` by
+/// depth for bullets, `1. `, `2. `… for ordered lists (`start` honoured),
+/// indented one EM SPACE per level below the first (at most two).
+fn list_markers(input: &str, tags: &Regex) -> String {
+    static START: OnceLock<Regex> = OnceLock::new();
+    let mut stack: Vec<Option<u64>> = Vec::new();
+    let mut out = String::with_capacity(input.len() + 64);
+    let mut last = 0;
+    for c in tags.captures_iter(input) {
+        let whole = c.get(0).expect("match");
+        out.push_str(&input[last..whole.start()]);
+        last = whole.end();
+        let close = &c[1] == "/";
+        match (close, c[2].to_ascii_lowercase().as_str()) {
+            (false, "ul") => stack.push(None),
+            (false, "ol") => {
+                let start = re(&START, r#"(?i)(?-u:\b)start\s*=\s*["']?(\d{1,6})"#)
+                    .captures(&c[3])
+                    .and_then(|s| s[1].parse::<u64>().ok())
+                    .unwrap_or(1);
+                stack.push(Some(start.saturating_sub(1)));
+            }
+            (true, "ul" | "ol") => {
+                stack.pop();
+            }
+            (false, "li") => {
+                let depth = stack.len().max(1);
+                let label = match stack.last_mut() {
+                    Some(Some(n)) => {
+                        *n += 1;
+                        format!("{n}.")
+                    }
+                    _ => ["•", "◦", "▪"][depth.min(3) - 1].to_string(),
+                };
+                let indent: String = std::iter::repeat_n(LIST_INDENT, depth.min(3) - 1).collect();
+                out.push_str(&format!("\n{LIST_MARK}{indent}{label}\n"));
+                continue;
+            }
+            _ => {}
+        }
+        // List tags themselves are block breaks, like before.
+        out.push_str(whole.as_str());
+    }
+    out.push_str(&input[last..]);
+    out
 }
 
 // Markers that survive `strip_html` (they are not tags) and become Discord
@@ -480,6 +537,13 @@ fn escape_line_start(line: String) -> String {
 }
 
 fn rich_line(line: &str) -> Option<String> {
+    // A nested list item's indent is not trimmed away.
+    let indent: String = line.chars().take_while(|c| *c == LIST_INDENT).collect();
+    let line = &line[indent.len()..];
+    rich_line_body(line).map(|l| format!("{indent}{l}"))
+}
+
+fn rich_line_body(line: &str) -> Option<String> {
     static LINK: OnceLock<Regex> = OnceLock::new();
     let link = re(
         &LINK,
@@ -1012,6 +1076,38 @@ mod tests {
                 false
             ),
             "https://site/post"
+        );
+    }
+
+    #[test]
+    fn nested_and_ordered_lists() {
+        let e = '\u{2003}';
+        assert_eq!(
+            html_to_text("<ul><li>A<ul><li>A1</li><li>A2</li></ul></li><li>B</li></ul>"),
+            format!("• A\n{e}◦ A1\n{e}◦ A2\n• B")
+        );
+        assert_eq!(
+            html_to_text("<ol><li>one</li><li>two<ol><li>sub</li></ol></li></ol>"),
+            format!("1. one\n2. two\n{e}1. sub")
+        );
+        assert_eq!(
+            html_to_text(r#"<ol start="5"><li>five</li></ol>"#),
+            "5. five"
+        );
+        assert_eq!(
+            html_to_text("<li><p>Fixed ledges</p></li>"),
+            "• Fixed ledges"
+        );
+        assert_eq!(
+            html_to_text(
+                "<ul><li>1<ul><li>2<ul><li>3<ul><li>4</li></ul></li></ul></li></ul></li></ul>"
+            ),
+            format!("• 1\n{e}◦ 2\n{e}{e}▪ 3\n{e}{e}▪ 4")
+        );
+        // Discord: the indent stays, a number is escaped (no markdown list).
+        assert_eq!(
+            html_to_rich("<ol><li>one</li><li>two<ol><li>sub</li></ol></li></ol>"),
+            format!("1\\. one\n2\\. two\n{e}1\\. sub")
         );
     }
 

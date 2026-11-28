@@ -84,8 +84,20 @@ pub(crate) fn rich(raw: &str) -> String {
     crate::text::cut_text(&text.join("\n"), 4000)
 }
 
-fn with_text(mut entry: Value, raw: &str) -> Value {
-    let text = rich(raw);
+fn with_text(mut entry: Value, raw: &str, feed_url: &str) -> Value {
+    // Relative links in the text point from the entry's page (Gitea
+    // `/owner/repo/…`, Godot, Roblox devforum: 139 links were lost).
+    let base = url::Url::parse(feed_url)
+        .ok()
+        .map(|feed| match get(&entry, "link").as_str() {
+            Some(link) => feed.join(link.trim()).unwrap_or(feed),
+            None => feed,
+        });
+    let raw = match &base {
+        Some(base) => crate::text::absolute_hrefs(raw, base),
+        None => std::borrow::Cow::Borrowed(raw),
+    };
+    let text = rich(&raw);
     if !text.is_empty() {
         entry["contentText"] = json!(text);
     }
@@ -765,6 +777,7 @@ pub fn parse_atom(url: &str, body: &Body) -> Vec<Value> {
                     categories,
                 ),
                 &full,
+                url,
             )
         })
         .filter(|item| truthy(&item["link"]) || truthy(&item["title"]))
@@ -883,6 +896,7 @@ pub fn parse_xml(url: &str, body: &Body) -> Vec<Value> {
                     categories,
                 ),
                 &raw,
+                url,
             )
         })
         .collect();

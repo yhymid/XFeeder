@@ -74,8 +74,8 @@ fn named_entity(name: &str) -> Option<&'static str> {
         "deg" => "°",
         "times" => "×",
         "shy" => "",
-        "zwnj" => "",
-        "zwj" => "",
+        "zwnj" => "\u{200c}",
+        "zwj" => "\u{200d}",
         _ => return None,
     })
 }
@@ -106,6 +106,95 @@ const BLOCK_TAGS: [&str; 24] = [
     "img",
     "pre",
 ];
+
+/// `href`s made absolute against `base` (only web results; `#top`,
+/// `mailto:` and other schemes stay as they are).
+pub fn absolute_hrefs<'a>(html: &'a str, base: &Url) -> std::borrow::Cow<'a, str> {
+    static ANCHOR: OnceLock<Regex> = OnceLock::new();
+    if !html.contains("href") {
+        return std::borrow::Cow::Borrowed(html);
+    }
+    re(
+        &ANCHOR,
+        r#"(?is)(<a(?-u:\b)[^>]*?(?-u:\b)href\s*=\s*)(["'])([^"']*)(["'])([^>]*>)(.*?)(</a\s*>)"#,
+    )
+    .replace_all(html, |c: &regex::Captures| {
+        let href = c[3].trim();
+        let relative = (!href.is_empty() && !href.starts_with('#') && !href.contains(':'))
+            || href.starts_with("//");
+        // A link around only an image (an avatar, a screenshot) has no
+        // text to show; it stays as it was and is left out.
+        let has_text = !strip_html(&c[6]).trim().is_empty();
+        let resolved = (relative && has_text)
+            .then(|| base.join(&decode_entities(href)).ok())
+            .flatten()
+            .filter(|u| matches!(u.scheme(), "http" | "https"));
+        match resolved {
+            Some(u) => format!(
+                "{}{}{}{}{}{}{}",
+                &c[1],
+                &c[2],
+                u.as_str().replace('"', "%22").replace('\'', "%27"),
+                &c[4],
+                &c[5],
+                &c[6],
+                &c[7]
+            ),
+            None => c[0].to_string(),
+        }
+    })
+}
+
+/// Invisible characters that only cause trouble go: zero-width spaces, the
+/// BOM, bidi overrides and isolates (`dev \u{202E}txt.exe` spoofing), and
+/// lines made only of direction marks. A zero-width joiner stays between two
+/// non-ASCII characters (🧑‍🎨, 🐈‍⬛ were split into two emoji) and a
+/// non-joiner between two letters (Persian).
+pub fn clean_invisible(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    for (i, &c) in chars.iter().enumerate() {
+        let prev = i.checked_sub(1).and_then(|p| chars.get(p)).copied();
+        let next = chars.get(i + 1).copied();
+        let keep = match c {
+            '\u{200b}'
+            | '\u{2060}'
+            | '\u{feff}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2066}'..='\u{2069}' => false,
+            '\u{200d}' => {
+                let symbol =
+                    |c: Option<char>| c.is_some_and(|c| !c.is_ascii() && !c.is_whitespace());
+                symbol(prev) && symbol(next)
+            }
+            '\u{200c}' => {
+                let letter =
+                    |c: Option<char>| c.is_some_and(|c| !c.is_ascii() && c.is_alphabetic());
+                letter(prev) && letter(next)
+            }
+            _ => true,
+        };
+        if keep {
+            out.push(c);
+        }
+    }
+    if !out.contains(['\u{200e}', '\u{200f}']) {
+        return out;
+    }
+    out.split('\n')
+        .map(|line| {
+            if line
+                .chars()
+                .all(|c| c.is_whitespace() || c == '\u{200e}' || c == '\u{200f}')
+            {
+                ""
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// Remove markup like `string-strip-html`: script/style bodies and comments
 /// disappear, block tags become whitespace, inline tags vanish.
@@ -168,11 +257,7 @@ pub fn html_to_text(input: &str) -> String {
     static PI: OnceLock<Regex> = OnceLock::new();
     let input = re(&PI, r"(?s)<\?.*?\?>").replace_all(&input, "");
     let marked = re(&LI, r"(?i)<li(?-u:\b)[^>]*>").replace_all(&input, "\n•\n");
-    let text = strip_html(&marked)
-        .replace(
-            ['\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}', '\u{feff}'],
-            "",
-        )
+    let text = clean_invisible(&strip_html(&marked))
         // Steam escapes BBCode brackets in its HTML ("\[ MAPS ]").
         .replace("\\[", "[")
         .replace("\\]", "]");
@@ -442,18 +527,56 @@ fn rich_line(line: &str) -> Option<String> {
     let line = link.replace_all(line, |c: &regex::Captures| {
         let raw = c[1].trim().replace(['[', ']'], "");
         let text = escape_markdown(&raw);
-        let url = c[2].trim();
-        let web = url.starts_with("https://") || url.starts_with("http://");
+        // Spaces and brackets would end the markdown link early; encoded,
+        // `Foo_(bar)` keeps its link. Junk like `https://(SWTOR.COM/…)` has
+        // no host and still shows only its text.
+        let encoded = c[2]
+            .trim()
+            .replace(' ', "%20")
+            .replace('(', "%28")
+            .replace(')', "%29")
+            .replace('<', "%3C")
+            .replace('>', "%3E");
+        let url = encoded.as_str();
+        let web = (url.starts_with("https://") || url.starts_with("http://"))
+            && Url::parse(url).is_ok_and(|u| {
+                u.host_str().is_some_and(|h| {
+                    h.contains('.')
+                        && h.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '[' | ']' | ':'))
+                })
+            });
         // Text that looks like an address shows the real one: no
         // "[https://bank.example](https://evil.example)".
+        // Versions and file names ("v1.2.3", "3.0-beta", "README.md") are
+        // not addresses (37 GitHub links showed the long URL), and text
+        // naming the link's own host is no spoofing.
         static ADDRESS: OnceLock<Regex> = OnceLock::new();
         let address = re(
             &ADDRESS,
-            r"(?i)^(?:[a-z][a-z0-9+.-]*://|www\.)|^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/\S*)?$",
+            r"(?i)^(?:[a-z][a-z0-9+.-]*://|www\.)|^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.([a-z]{2,24})(?:[/:]\S*)?$",
         );
-        if !web || url.contains([' ', ')']) {
+        let looks_like_address = address.captures(&raw).is_some_and(|c| {
+            let not_tld = [
+                "md", "js", "ts", "json", "rs", "toml", "txt", "exe", "zip", "yml", "yaml", "lock",
+                "sh", "py", "html", "css", "png", "jpg", "gif", "svg", "pdf", "dll", "so", "deb",
+                "rpm", "tar", "gz", "xz", "msi", "apk", "jar",
+            ];
+            match c.get(1) {
+                None => true,
+                Some(tld) => !not_tld.contains(&tld.as_str().to_ascii_lowercase().as_str()),
+            }
+        });
+        let same_host = || {
+            let host = |s: &str| {
+                Url::parse(&if s.contains("://") { s.to_string() } else { format!("https://{s}") })
+                    .ok()
+                    .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_ascii_lowercase()))
+            };
+            host(&raw).is_some() && host(&raw) == host(url)
+        };
+        if !web {
             text
-        } else if raw.is_empty() || raw == url || address.is_match(&raw) {
+        } else if raw.is_empty() || raw == url || (looks_like_address && !same_host()) {
             url.to_string()
         } else {
             format!("[{text}]({url})")
@@ -890,6 +1013,58 @@ mod tests {
             ),
             "https://site/post"
         );
+    }
+
+    #[test]
+    fn links_keep_their_target() {
+        let base = Url::parse("https://github.com/yhymid/XFeeder/compare/a...b").unwrap();
+        let html = r##"<a href="/yhymid/XFeeder/tree/3.0-beta">3.0-beta</a> <a href="#top">top</a> <a href="mailto:a@b.c">mail</a>"##;
+        let abs = absolute_hrefs(html, &base);
+        assert!(
+            abs.contains(r#"href="https://github.com/yhymid/XFeeder/tree/3.0-beta""#),
+            "{abs}"
+        );
+        assert!(abs.contains(r##"href="#top""##) && abs.contains("mailto:a@b.c"));
+        assert_eq!(
+            html_to_rich(&abs),
+            "[3.0-beta](https://github.com/yhymid/XFeeder/tree/3.0-beta) top mail"
+        );
+        // Versions and file names are link text, not addresses.
+        assert_eq!(
+            html_to_rich(r#"<a href="https://github.com/o/r/releases/tag/v1.2.3">v1.2.3</a>"#),
+            "[v1.2.3](https://github.com/o/r/releases/tag/v1.2.3)"
+        );
+        assert_eq!(
+            html_to_rich(r#"<a href="https://github.com/o/r/blob/main/README.md">README.md</a>"#),
+            "[README.md](https://github.com/o/r/blob/main/README.md)"
+        );
+        // Brackets and spaces are encoded instead of losing the link.
+        assert_eq!(
+            html_to_rich(r#"<a href="https://en.wikipedia.org/wiki/Foo_(bar)">Foo</a>"#),
+            "[Foo](https://en.wikipedia.org/wiki/Foo_%28bar%29)"
+        );
+        assert_eq!(
+            html_to_rich(r#"<a href="https://(SWTOR.COM/x)">site</a>"#),
+            "site"
+        );
+    }
+
+    #[test]
+    fn invisible_characters_are_cleaned_but_emoji_stay_whole() {
+        assert_eq!(
+            html_to_text("🧑&zwj;🎨 and 🐈\u{200d}⬛"),
+            "🧑\u{200d}🎨 and 🐈\u{200d}⬛"
+        );
+        assert_eq!(
+            html_to_text("👨&#x200D;💻 dev &#x202E;txt.exe"),
+            "👨\u{200d}💻 dev txt.exe"
+        );
+        assert_eq!(clean_invisible("a\u{200d}b c\u{200b}d\u{feff}"), "ab cd");
+        assert_eq!(
+            clean_invisible("می\u{200c}خواهم x\u{200c}y"),
+            "می\u{200c}خواهم xy"
+        );
+        assert_eq!(clean_invisible("one\n\u{200e}\ntwo"), "one\n\ntwo");
     }
 
     #[test]

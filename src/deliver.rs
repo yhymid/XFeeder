@@ -96,6 +96,7 @@ fn post_title(title: &Value) -> String {
     } else {
         text
     };
+    let text = crate::text::clean_invisible(&text);
     crate::text::escape_markdown(&js::collapse_ws(&text).trim().replace('\n', " "))
 }
 
@@ -704,7 +705,8 @@ fn escape_html(text: &str) -> String {
 }
 
 fn escape_limited(value: &Value, max: usize) -> String {
-    let input = js::trim(&js::collapse_ws(&js::to_string_or_empty(value))).to_string();
+    let input = crate::text::clean_invisible(&js::to_string_or_empty(value));
+    let input = js::trim(&js::collapse_ws(&input)).to_string();
     escape_limited_text(&input, max)
 }
 

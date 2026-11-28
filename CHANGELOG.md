@@ -180,6 +180,18 @@ section below as its description.
   later, one 282 days later, so they had future dates); patch notes for a build on a beta
   branch are `Beta` instead of `Patch` (about 25 on 27.11); titles like "Update 21" or
   "Latest Update 11/16/2026" count as patches (only one-digit numbers did).
+- Links in post text are kept. Relative links (`/owner/repo/tree/…` on GitHub and Gitea,
+  Godot, Roblox devforum) are resolved against the entry's page instead of being dropped; a
+  link with a bracket or a space (`Foo_(bar)`) is encoded instead of dropped; text like
+  `v1.2.3`, `3.0-beta` or `README.md` is no longer taken for an address, so it stays the link
+  text instead of becoming the long URL; text naming the link's own host (`mod.io`) stays a
+  short link. On the 278 production feeds 265 more links are shown, in 109 posts; links
+  around only an image still add nothing (feed review F06 F5).
+- Emoji made of several characters stay whole (🐈‍⬛ and 🧑‍🤝‍🧑 were split into two or three
+  emoji, 7 posts): a zero-width joiner is kept between two non-ASCII characters, a non-joiner
+  between two letters. Bidi overrides (`dev \u{202E}txt.exe` spoofing), zero-width spaces and
+  lines of only direction marks are removed, now also from titles on Discord and Telegram
+  (F06 F4).
 - Steam BBCode: on Discord `[spoiler]` stays hidden (`||…||`) and `[strike]` is struck
   through (`~~…~~`); before, a spoiler was shown openly and a struck joke read as meant.
   `[center]`, a bare `[url]EA.com[/url]`, `[url=""…""]` with doubled quotes, a nested
